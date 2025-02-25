@@ -1,0 +1,67 @@
+[
+    {
+        "name": "Sierra Nevada Pale Ale",
+        "style": "Pale Ale",
+        "description": "Uma clássica American Pale Ale com notas cítricas e maltadas.",
+        "alcohol": 5.6,
+        "taste": "Cítrico e maltado",
+        "aroma": "Floral e resinoso",
+        "color": "Âmbar",
+        "body": "Médio",
+        "carbonation": "Média",
+        "finish": "Limpa e equilibrada",
+        "imageUrl": "https://www.sierranevada.com/wp-content/uploads/2021/04/PaleAle_Can.png"
+    },
+    {
+        "name": "Lagunitas IPA",
+        "style": "India Pale Ale",
+        "description": "Uma IPA clássica e bem lupulada com final seco.",
+        "alcohol": 6.2,
+        "taste": "Amargo e levemente doce",
+        "aroma": "Cítrico e floral",
+        "color": "Âmbar dourado",
+        "body": "Médio",
+        "carbonation": "Média",
+        "finish": "Seca e persistente",
+        "imageUrl": "https://lagunitas.com/wp-content/uploads/2020/10/ipa-main-1024x1024.png"
+    },
+    {
+        "name": "Founders All Day IPA",
+        "style": "Session IPA",
+        "description": "Uma IPA leve e equilibrada para beber o dia todo.",
+        "alcohol": 4.7,
+        "taste": "Frutado e maltado",
+        "aroma": "Cítrico e herbal",
+        "color": "Dourado",
+        "body": "Médio",
+        "carbonation": "Média",
+        "finish": "Refrescante e limpa",
+        "imageUrl": "https://foundersbrewing.com/wp-content/uploads/2021/07/AllDayIPA_Can-1.png"
+    },
+    {
+        "name": "New Belgium Fat Tire",
+        "style": "Amber Ale",
+        "description": "Uma Amber Ale clássica com notas de caramelo e biscoito.",
+        "alcohol": 5.2,
+        "taste": "Maltado e levemente tostado",
+        "aroma": "Caramelo e floral",
+        "color": "Âmbar",
+        "body": "Médio",
+        "carbonation": "Média",
+        "finish": "Suave e equilibrada",
+        "imageUrl": "https://www.newbelgium.com/globalassets/fat-tire/fat-tire-12oz-can.png"
+    },
+    {
+        "name": "Bells Two Hearted Ale",
+        "style": "American IPA",
+        "description": "Uma IPA icônica com lúpulo Centennial em destaque.",
+        "alcohol": 7.0,
+        "taste": "Amargo e frutado",
+        "aroma": "Resinoso e cítrico",
+        "color": "Âmbar alaranjado",
+        "body": "Médio",
+        "carbonation": "Média",
+        "finish": "Limpa e persistente",
+        "imageUrl": "https://www.bellsbeer.com/sites/default/files/2022-04/two-hearted_can.png"
+    }
+]

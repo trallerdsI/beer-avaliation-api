@@ -1,0 +1,27 @@
+services:
+  postgres:
+    image: postgres:latest
+    restart: always
+    environment:
+      POSTGRES_USER: youruser
+      POSTGRES_PASSWORD: yourpassword
+      POSTGRES_DB: beer_review
+    ports:
+      - "5432:5432"
+    networks:
+      - app-network
+
+  api:
+    build: .
+    environment:
+      DBConnString: "postgres://youruser:yourpassword@postgres:5432/beer_review?sslmode=disable"  # <-- Use 'postgres' service name
+    depends_on:
+      - postgres
+    networks:
+      - app-network
+    ports:
+      - "8082:8082"
+
+networks:
+  app-network:
+    driver: bridge
