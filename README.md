@@ -33,7 +33,6 @@ beer-review-app/
 │   ├── middleware/     # HTTP middleware
 │   ├── errors/        # Error handling
 │   └── response/      # HTTP response helpers
-└── config/            # Configuration
 ```
 
 ## Prerequisites

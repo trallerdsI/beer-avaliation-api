@@ -14,7 +14,6 @@ import (
 
 	"beer-review-app/internal/beer/repository"
 	"beer-review-app/internal/beer/usecase"
-	"beer-review-app/internal/config"
 
 	"go.uber.org/zap"
 
@@ -76,19 +75,13 @@ func main() {
 	logger, _ := zap.NewProduction()
 	defer logger.Sync()
 
-	// Load configuration
-	cfg, err := config.LoadConfig()
-	if err != nil {
-		logger.Fatal("Failed to load config", zap.Error(err))
-	}
-
 	// Initialize database
-	db := initDB(cfg.DBConnString)
+	db := initDB(os.Getenv("DB_CONN_STRING"))
 	defer db.Close()
 
 	// Initialize Redis client
 	redisClient := redis.NewClient(&redis.Options{
-		Addr: cfg.RedisURL,
+		Addr: os.Getenv("REDIS_URL"),
 	})
 	defer redisClient.Close()
 
@@ -147,7 +140,7 @@ func main() {
 
 	// Start server
 	server := &http.Server{
-		Addr:         ":" + cfg.ServerPort,
+		Addr:         ":" + os.Getenv("SERVER_PORT"),
 		Handler:      router,
 		ReadTimeout:  15 * time.Second,
 		WriteTimeout: 15 * time.Second,
@@ -222,7 +215,7 @@ func initDB(dbConnString string) *sql.DB {
 	}
 
 	log.Println("All tables and indexes created successfully!")
-	return db 
+	return db
 }
 
 // executeSQLFile reads and executes the SQL file

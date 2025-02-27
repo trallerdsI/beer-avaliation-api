@@ -1,4 +1,0 @@
-serverPort: 8082
-DBConnString: "postgres://youruser:yourpassword@postgres:5432/beer_review?sslmode=disable"
-
-RedisURL: "redis://localhost:6379"

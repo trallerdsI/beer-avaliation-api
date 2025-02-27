@@ -25,8 +25,6 @@ WORKDIR /root/
 # Copy the pre-built binary file from the previous stage
 COPY --from=builder /app/main /root/main
 
-# Copy the config.yaml file directly
-COPY config.yaml /root/config.yaml
 COPY migrations/ /root/migrations/
 
 # Expose port 8082 to the outside world

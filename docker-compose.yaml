@@ -1,11 +1,13 @@
+version: '3'
+
 services:
   postgres:
     image: postgres:latest
     restart: always
     environment:
-      POSTGRES_USER: youruser
-      POSTGRES_PASSWORD: yourpassword
-      POSTGRES_DB: beer_review
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
     ports:
       - "5432:5432"
     networks:
@@ -14,13 +16,15 @@ services:
   api:
     build: .
     environment:
-      DBConnString: "postgres://youruser:yourpassword@postgres:5432/beer_review?sslmode=disable"  # <-- Use 'postgres' service name
+      DBConnString: ${DB_CONN_STRING}
+      REDIS_URL: ${REDIS_URL}
+      SERVER_PORT: ${SERVER_PORT}
     depends_on:
       - postgres
     networks:
       - app-network
     ports:
-      - "8082:8082"
+      - "${SERVER_PORT}:${SERVER_PORT}"
 
 networks:
   app-network:
