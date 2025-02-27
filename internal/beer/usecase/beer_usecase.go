@@ -90,7 +90,7 @@ func (u *beerUsecase) Create(ctx context.Context, beer model.Beer) error {
 // GetByID retrieves a beer by its ID using circuit breaker pattern.
 func (u *beerUsecase) GetByID(ctx context.Context, id string) (model.Beer, error) {
 	result, err := u.cb.Execute(func() (interface{}, error) {
-		return u.repo.GetByID(ctx, id) // Ensure GetByID is defined in repository
+		return u.repo.GetByID(ctx, id)
 	})
 	if err != nil {
 		return model.Beer{}, errors.NewAppError(500, "Failed to retrieve beer by ID", err)

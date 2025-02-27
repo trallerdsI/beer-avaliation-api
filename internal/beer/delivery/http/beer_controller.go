@@ -14,6 +14,7 @@ import (
 	"github.com/microcosm-cc/bluemonday"
 	"github.com/prometheus/client_golang/prometheus"
 
+	"beer-review-app/pkg/errors"
 	"beer-review-app/internal/beer/model"
 	"beer-review-app/internal/beer/usecase"
 	"beer-review-app/pkg/response"
@@ -208,18 +209,28 @@ func (c *BeerController) DeleteBeer(w http.ResponseWriter, r *http.Request) {
 // @Failure 404 {object} map[string]string
 // @Router /beers/{id} [get]
 func (c *BeerController) GetBeerByID(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	id := vars["id"]
+	beerID := mux.Vars(r)["id"]
 
-	beer, err := c.usecase.GetByID(r.Context(), id)
+	// Fetch beer by ID from the use case
+	beer, err := c.usecase.GetByID(r.Context(), beerID)
 	if err != nil {
-		c.logger.Error("Failed to retrieve beer", zap.Error(err))
-		response.SendError(w, "Beer not found", http.StatusNotFound)
+		if appErr, ok := err.(*errors.AppError); ok && appErr.Code == 404 {
+			http.Error(w, appErr.Message, http.StatusNotFound)
+			return
+		}
+		http.Error(w, "Failed to retrieve beer", http.StatusInternalServerError)
 		return
 	}
 
-	response.SendResponse(w, http.StatusOK, beer)
+	// Return beer if found
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	if err := json.NewEncoder(w).Encode(beer); err != nil {
+		http.Error(w, "Failed to encode beer", http.StatusInternalServerError)
+	}
 }
+
+
 
 // @Summary Add a comment to a beer
 // @Description Add a comment to a beer by ID

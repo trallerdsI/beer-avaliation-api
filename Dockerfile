@@ -27,7 +27,6 @@ COPY --from=builder /app/main /root/main
 
 # Copy the config.yaml file directly
 COPY config.yaml /root/config.yaml
-COPY .env /root/.env
 COPY migrations/ /root/migrations/
 
 # Expose port 8082 to the outside world

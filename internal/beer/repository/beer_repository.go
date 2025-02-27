@@ -3,12 +3,12 @@ package repository
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"fmt"
 	"log"
 	"sync"
 
 	"beer-review-app/internal/beer/model"
+	"beer-review-app/pkg/errors"
 
 	_ "github.com/lib/pq"
 )
@@ -55,7 +55,7 @@ func (r *InMemoryBeerRepository) GetByID(ctx context.Context, id string) (model.
 			return beer, nil
 		}
 	}
-	return model.Beer{}, errors.New("beer not found")
+	return model.Beer{}, errors.NewAppError(404, "beer not found", nil)
 }
 
 // GetAll retrieves all beers from the in-memory repository with pagination.
@@ -98,7 +98,7 @@ func (r *InMemoryBeerRepository) Update(ctx context.Context, id string, beer mod
 			return nil
 		}
 	}
-	return errors.New("beer not found")
+	return errors.NewAppError(404, "beer not found", nil)
 }
 
 // Delete removes a beer from the in-memory repository.
@@ -112,7 +112,7 @@ func (r *InMemoryBeerRepository) Delete(ctx context.Context, id string) error {
 			return nil
 		}
 	}
-	return errors.New("beer not found")
+	return errors.NewAppError(404, "beer not found", nil)
 }
 
 // AddComment adds a comment to a beer in the in-memory repository.
@@ -126,7 +126,7 @@ func (r *InMemoryBeerRepository) AddComment(ctx context.Context, id string, comm
 			return nil
 		}
 	}
-	return errors.New("beer not found")
+	return errors.NewAppError(404, "beer not found", nil)
 }
 
 // DeleteComment removes a comment from a beer in the in-memory repository.
@@ -142,10 +142,10 @@ func (r *InMemoryBeerRepository) DeleteComment(ctx context.Context, id string, c
 					return nil
 				}
 			}
-			return errors.New("comment not found")
+			return errors.NewAppError(404, "comment not found", nil)
 		}
 	}
-	return errors.New("beer not found")
+	return errors.NewAppError(404, "beer not found", nil)
 }
 
 // PostgresBeerRepository is a PostgreSQL implementation of BeerRepository.
@@ -186,7 +186,7 @@ func (r *PostgresBeerRepository) Create(ctx context.Context, beer model.Beer) er
 		return err
 	}
 	if rowsAffected == 0 {
-		return errors.New("no rows were inserted")
+		return errors.NewAppError(500, "no rows were inserted", nil)
 	}
 
 	// Insert comments if any (empty array here means no comments to insert)
@@ -235,7 +235,7 @@ func (r *PostgresBeerRepository) GetByID(ctx context.Context, id string) (model.
 			&beer.Finish)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return model.Beer{}, errors.New("beer not found")
+			return model.Beer{}, errors.NewAppError(404, "beer not found", nil)
 		}
 		return model.Beer{}, err
 	}
@@ -320,7 +320,7 @@ func (r *PostgresBeerRepository) Update(ctx context.Context, id string, beer mod
 		return err
 	}
 	if rowsAffected == 0 {
-		return errors.New("beer not found or no changes made")
+		return errors.NewAppError(404, "beer not found", nil)
 	}
 	return nil
 }
@@ -337,7 +337,7 @@ func (r *PostgresBeerRepository) Delete(ctx context.Context, id string) error {
 		return err
 	}
 	if rowsAffected == 0 {
-		return errors.New("beer not found")
+		return errors.NewAppError(404, "beer not found", nil)
 	}
 	return nil
 }
