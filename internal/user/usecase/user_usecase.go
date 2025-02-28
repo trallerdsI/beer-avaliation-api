@@ -10,7 +10,6 @@ import (
 	"beer-review-app/pkg/auth"
 	"beer-review-app/pkg/errors"
 
-	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -49,11 +48,10 @@ func (u *userUsecase) Register(ctx context.Context, user model.User) error {
 	}
 
 	// Prepare user data
-	user.ID = uuid.New().String()
 	user.Password = string(hashedPassword)
 	user.Created = time.Now().UTC().Format(time.RFC3339)
 
-	// Create user in the repository
+	// Create user in the repository (user.ID will be auto-generated)
 	if err := u.repo.Create(ctx, user); err != nil {
 		log.Printf("Failed to create user %s: %v", user.Email, err)
 		return errors.NewAppError(500, "failed to create user", err)
