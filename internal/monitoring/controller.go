@@ -74,7 +74,6 @@ func (c *MonitoringController) HealthCheck(w http.ResponseWriter, r *http.Reques
 		},
 		"dependencies": map[string]string{
 			"database": c.checkDatabaseHealth(),
-			"redis":    c.checkRedisHealth(),
 		},
 	}
 
@@ -114,7 +113,3 @@ func (c *MonitoringController) checkDatabaseHealth() string {
 	return "up"
 }
 
-func (c *MonitoringController) checkRedisHealth() string {
-	// Implement actual Redis health check
-	return "up"
-}

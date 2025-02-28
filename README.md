@@ -9,7 +9,6 @@ A modern, scalable REST API for managing beer reviews and ratings built with Go.
 - 🔍 Advanced search with filters
 - 📊 Monitoring and metrics
 - 🔐 Authentication and authorization
-- 💾 Redis caching
 - 🔄 Circuit breaker pattern
 - 📝 Swagger documentation
 
@@ -39,7 +38,6 @@ beer-review-app/
 
 - Go 1.21+
 - PostgreSQL 14+
-- Redis 6+
 - Docker (optional)
 
 ## Getting Started
@@ -115,7 +113,6 @@ The application exposes metrics for Prometheus at `/metrics` and includes:
 - Response times
 - Error counts
 - Request counts
-- Cache hit/miss ratios
 
 ## Contributing
 

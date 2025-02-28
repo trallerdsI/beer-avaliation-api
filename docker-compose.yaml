@@ -17,7 +17,6 @@ services:
     build: .
     environment:
       DBConnString: ${DB_CONN_STRING}
-      REDIS_URL: ${REDIS_URL}
       SERVER_PORT: ${SERVER_PORT}
     depends_on:
       - postgres

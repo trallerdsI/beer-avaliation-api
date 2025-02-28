@@ -17,7 +17,6 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/go-redis/redis/v8"
 	"github.com/gorilla/mux"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -74,10 +73,6 @@ func main() {
 	db := initDB(os.Getenv("DB_CONN_STRING"))
 	defer db.Close()
 
-	// Initialize Redis client
-	redisClient := initRedis(os.Getenv("REDIS_URL"))
-	defer redisClient.Close()
-
 	// Initialize repositories
 	beerRepo, err := repository.NewPostgresBeerRepository(db)
 	if err != nil {
@@ -86,7 +81,7 @@ func main() {
 	userRepo := userRepo.NewPostgresUserRepository(db)
 
 	// Initialize usecases
-	beerUsecase := usecase.NewBeerUsecase(beerRepo, redisClient)
+	beerUsecase := usecase.NewBeerUsecase(beerRepo)
 	userUsecase := userUsecase.NewUserUsecase(userRepo)
 
 	// Initialize controllers
@@ -128,7 +123,7 @@ func main() {
 
 	// Monitoring routes
 	apiRouter.HandleFunc("/stats", monitoringController.GetStats).Methods("GET")
-	apiRouter.HandleFunc("/health", healthCheckHandler(db, redisClient)).Methods("GET")
+	apiRouter.HandleFunc("/health", healthCheckHandler(db)).Methods("GET")
 	router.Handle("/metrics", promhttp.Handler())
 
 	// Start server with increased timeouts
@@ -158,32 +153,6 @@ func main() {
 	}
 
 	logger.Info("Server exiting")
-}
-
-func initRedis(redisURL string) *redis.Client {
-	redisClient := redis.NewClient(&redis.Options{
-		Addr: redisURL,
-	})
-
-	// Retry logic for Redis
-	retries := 5
-	for retries > 0 {
-		_, err := redisClient.Ping(context.Background()).Result()
-		if err == nil {
-			break
-		}
-
-		retries--
-		log.Printf("Waiting for Redis to be ready... retries left: %d, error: %s", retries, err.Error())
-		time.Sleep(5 * time.Second)
-	}
-
-	if retries == 0 {
-		log.Fatal("Redis is not reachable after several attempts")
-	}
-
-	log.Println("Connected to Redis successfully!")
-	return redisClient
 }
 
 func initDB(dbConnString string) *sql.DB {
@@ -239,15 +208,9 @@ func executeSQLFile(db *sql.DB, filePath string) error {
 	return err
 }
 
-// Health check handler that checks both Redis and DB connections
-func healthCheckHandler(db *sql.DB, redisClient *redis.Client) http.HandlerFunc {
+// Health check handler that checks DB connections
+func healthCheckHandler(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// Check Redis connection
-		if _, err := redisClient.Ping(context.Background()).Result(); err != nil {
-			http.Error(w, "Redis not ready", http.StatusServiceUnavailable)
-			return
-		}
-
 		// Check DB connection
 		if err := db.Ping(); err != nil {
 			http.Error(w, "Database not ready", http.StatusServiceUnavailable)
