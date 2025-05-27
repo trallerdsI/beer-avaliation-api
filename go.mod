@@ -2,8 +2,6 @@ module beer-review-app
 
 go 1.22
 
-toolchain go1.24.1
-
 require (
 	github.com/go-playground/validator/v10 v10.26.0
 	github.com/gorilla/mux v1.8.1
