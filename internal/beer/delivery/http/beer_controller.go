@@ -41,11 +41,13 @@ func init() {
 	prometheus.MustRegister(beerSubmissionCounter, responseDurationHistogram)
 }
 
+// BeerController handles HTTP requests related to beers.
 type BeerController struct {
 	usecase usecase.BeerUsecase
 	logger  *zap.Logger
 }
 
+// makes new controller for beer
 func NewBeerController(u usecase.BeerUsecase, logger *zap.Logger) *BeerController {
 	return &BeerController{usecase: u, logger: logger}
 }
