@@ -1,6 +1,6 @@
 module beer-review-app
 
-go 1.22
+go 1.24
 
 require (
 	github.com/go-playground/validator/v10 v10.26.0
