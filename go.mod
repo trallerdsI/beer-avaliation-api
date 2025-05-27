@@ -1,13 +1,15 @@
 module beer-review-app
 
-go 1.20
+go 1.22
+
+toolchain go1.24.3
 
 require (
 	github.com/go-playground/validator/v10 v10.26.0
 	github.com/gorilla/mux v1.8.1
 	github.com/lib/pq v1.10.9
 	github.com/microcosm-cc/bluemonday v1.0.27
-	github.com/prometheus/client_golang v1.22.0
+	github.com/prometheus/client_golang v1.20.4
 	github.com/sony/gobreaker v1.0.0
 	github.com/stretchr/testify v1.10.0
 	go.uber.org/zap v1.27.0
@@ -16,6 +18,7 @@ require (
 require (
 	github.com/fsnotify/fsnotify v1.8.0 // indirect
 	github.com/go-viper/mapstructure/v2 v2.2.1 // indirect
+	github.com/klauspost/compress v1.17.9 // indirect
 	github.com/pelletier/go-toml/v2 v2.2.3 // indirect
 	github.com/sagikazarmark/locafero v0.7.0 // indirect
 	github.com/sourcegraph/conc v0.3.0 // indirect
