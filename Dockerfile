@@ -1,5 +1,5 @@
 # Use a more recent Go version
-FROM golang:1.22-alpine AS builder
+FROM golang:1.24-alpine AS builder
 
 # Set the working directory
 WORKDIR /app
@@ -10,6 +10,7 @@ RUN go mod download
 
 # Copy the source code
 COPY . .
+COPY .env .env
 
 # Build the application
 RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o main cmd/server/main.go
