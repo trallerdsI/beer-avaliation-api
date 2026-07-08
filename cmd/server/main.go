@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -16,19 +17,18 @@ import (
 )
 
 func main() {
+	viper.AutomaticEnv()
+	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	viper.SetConfigFile(".env")
 	if err := viper.ReadInConfig(); err != nil {
-		log.Fatalf("Erro ao ler arquivo de configuração: %s", err)
+		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
+			log.Printf("Aviso: não foi possível ler .env: %s", err)
+		}
 	}
 
-	// Agora você pode acessar as variáveis do .env
 	dbUser := viper.GetString("DB_USER")
 	dbPassword := viper.GetString("DB_PASSWORD")
 	log.Printf("DB User: %s, DB Password: %s", dbUser, dbPassword)
-
-	if err := viper.ReadInConfig(); err != nil {
-		log.Fatalf("Erro ao ler arquivo de configuração: %s", err)
-	}
 
 	logger, err := zap.NewProduction()
 	if err != nil {
@@ -42,7 +42,10 @@ func main() {
 		log.Fatalf("As variáveis de ambiente SERVER_PORT ou DB_CONN_STRING não estão definidas.")
 	}
 
-	db := app.InitDB(dbConnString)
+	db, err := app.InitDB(dbConnString)
+	if err != nil {
+		log.Fatalf("Erro ao inicializar banco de dados: %v", err)
+	}
 	defer db.Close()
 
 	router := app.BuildRouter(db, logger)

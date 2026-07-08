@@ -1,6 +1,9 @@
 package metrics
 
 import (
+	"log"
+	"os"
+
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
@@ -46,6 +49,15 @@ var (
 )
 
 func RecordMetrics(path, method, status string, duration float64) {
+	if IsServerlessRuntime() {
+		log.Printf(`{"event":"http_request","path":"%s","method":"%s","status":"%s","duration_seconds":%.6f}`, path, method, status, duration)
+		return
+	}
+
 	RequestDuration.WithLabelValues(path, method, status).Observe(duration)
 	TotalRequests.WithLabelValues(path, method, status).Inc()
-} 
+}
+
+func IsServerlessRuntime() bool {
+	return os.Getenv("VERCEL") != "" || os.Getenv("NOW_REGION") != "" || os.Getenv("AWS_LAMBDA_FUNCTION_NAME") != ""
+}

@@ -23,6 +23,7 @@ import (
 	userHttp "beer-review-app/internal/user/delivery/http"
 	userRepository "beer-review-app/internal/user/repository"
 	userUsecase "beer-review-app/internal/user/usecase"
+	appMetrics "beer-review-app/pkg/metrics"
 	middleware "beer-review-app/pkg/middleware"
 )
 
@@ -69,7 +70,9 @@ func BuildRouter(db *sql.DB, logger *zap.Logger) http.Handler {
 
 	apiRouter.HandleFunc("/stats", monitoringController.GetStats).Methods("GET")
 	apiRouter.HandleFunc("/health", healthCheckHandler(db)).Methods("GET")
-	router.Handle("/metrics", promhttp.Handler())
+	if !appMetrics.IsServerlessRuntime() {
+		router.Handle("/metrics", promhttp.Handler())
+	}
 
 	return router
 }
@@ -80,14 +83,18 @@ func InitDBFromEnv() (*sql.DB, error) {
 		return nil, fmt.Errorf("database connection string is not configured")
 	}
 
-	return InitDB(dbConnString), nil
+	return InitDB(dbConnString)
 }
 
-func InitDB(dbConnString string) *sql.DB {
+func InitDB(dbConnString string) (*sql.DB, error) {
 	db, err := sql.Open("postgres", dbConnString)
 	if err != nil {
-		log.Fatalf("Erro ao conectar com o banco de dados: %v", err)
+		return nil, fmt.Errorf("erro ao conectar com o banco de dados: %w", err)
 	}
+
+	db.SetMaxOpenConns(2)
+	db.SetMaxIdleConns(1)
+	db.SetConnMaxLifetime(5 * time.Minute)
 
 	retries := 5
 	for retries > 0 {
@@ -97,16 +104,20 @@ func InitDB(dbConnString string) *sql.DB {
 		}
 		retries--
 		log.Printf("Tentando conectar ao banco de dados... Tentativas restantes: %d", retries)
-		time.Sleep(5 * time.Second)
+		time.Sleep(2 * time.Second)
 	}
 
 	if retries == 0 {
-		log.Fatalf("Banco de dados não está disponível após várias tentativas.")
+		db.Close()
+		return nil, fmt.Errorf("banco de dados não está disponível após várias tentativas")
 	}
 
-	migrateDB(db)
+	if err := migrateDB(db); err != nil {
+		db.Close()
+		return nil, err
+	}
 
-	return db
+	return db, nil
 }
 
 func resolveDBConnString() string {
@@ -125,7 +136,7 @@ func resolveDBConnString() string {
 	return ""
 }
 
-func migrateDB(db *sql.DB) {
+func migrateDB(db *sql.DB) error {
 	sqlFiles := []string{
 		"migrations/create_users_table.sql",
 		"migrations/create_beers_table.sql",
@@ -136,10 +147,11 @@ func migrateDB(db *sql.DB) {
 	for _, file := range sqlFiles {
 		err := executeSQLFile(db, file)
 		if err != nil {
-			log.Fatalf("Erro ao executar migração no arquivo %s: %v", file, err)
+			return fmt.Errorf("erro ao executar migração no arquivo %s: %w", file, err)
 		}
 	}
 	log.Println("Todas as tabelas e índices foram criados com sucesso!")
+	return nil
 }
 
 func executeSQLFile(db *sql.DB, filePath string) error {

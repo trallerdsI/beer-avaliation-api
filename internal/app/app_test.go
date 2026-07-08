@@ -3,6 +3,8 @@ package app
 import (
 	"os"
 	"testing"
+
+	appMetrics "beer-review-app/pkg/metrics"
 )
 
 func TestResolveDBConnStringPrefersExplicitEnvVars(t *testing.T) {
@@ -20,5 +22,12 @@ func TestResolveDBConnStringFallsBackToVercelStyleEnv(t *testing.T) {
 
 	if got := resolveDBConnString(); got != "postgres://vercel" {
 		t.Fatalf("expected DBConnString fallback, got %q", got)
+	}
+}
+
+func TestIsServerlessRuntimeDetectsVercelEnv(t *testing.T) {
+	t.Setenv("VERCEL", "1")
+	if got := appMetrics.IsServerlessRuntime(); !got {
+		t.Fatal("expected Vercel environment to be detected as serverless")
 	}
 }

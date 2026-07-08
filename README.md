@@ -100,7 +100,31 @@ go test -cover ./...
 
 ## Deployment
 
-The application can be deployed using Docker:
+### Vercel + Neon (recommended for serverless)
+
+This application is ready to run on Vercel as a serverless function and uses a PostgreSQL database on Neon.
+
+#### 1. Create the database on Neon
+- Create a free project on Neon.
+- Copy the pooled connection string from the dashboard.
+- Run the SQL files from the migrations folder in the Neon SQL Editor before the first deploy.
+
+#### 2. Configure environment variables in Vercel
+Add these variables in Vercel project settings:
+
+- `DBConnString`: the pooled connection string from Neon
+- `SERVER_PORT`: `8080`
+
+#### 3. Deploy
+The repository already includes:
+- [vercel.json](vercel.json)
+- [api/index.go](api/index.go)
+
+Once the project is imported into Vercel, the API routes will be served through the Go handler automatically.
+
+### Docker deployment
+
+The application can also be deployed locally using Docker:
 
 ```bash
 docker build -t beer-review-app .

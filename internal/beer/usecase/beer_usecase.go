@@ -2,6 +2,7 @@ package usecase
 
 import (
 	"context"
+	"os"
 	"time"
 
 	"beer-review-app/internal/beer/model"
@@ -31,16 +32,19 @@ type beerUsecase struct {
 
 // NewBeerUsecase creates a new instance of BeerUsecase.
 func NewBeerUsecase(repo repository.BeerRepository) BeerUsecase {
-	cb := gobreaker.NewCircuitBreaker(gobreaker.Settings{
-		Name:        "beer-service",
-		MaxRequests: 5,
-		Interval:    10 * time.Second,
-		Timeout:     30 * time.Second,
-		ReadyToTrip: func(counts gobreaker.Counts) bool {
-			failureRatio := float64(counts.TotalFailures) / float64(counts.Requests)
-			return counts.Requests >= 3 && failureRatio >= 0.6
-		},
-	})
+	var cb *gobreaker.CircuitBreaker
+	if !isServerlessRuntime() {
+		cb = gobreaker.NewCircuitBreaker(gobreaker.Settings{
+			Name:        "beer-service",
+			MaxRequests: 5,
+			Interval:    10 * time.Second,
+			Timeout:     30 * time.Second,
+			ReadyToTrip: func(counts gobreaker.Counts) bool {
+				failureRatio := float64(counts.TotalFailures) / float64(counts.Requests)
+				return counts.Requests >= 3 && failureRatio >= 0.6
+			},
+		})
+	}
 
 	return &beerUsecase{
 		repo: repo,
@@ -70,6 +74,10 @@ func (u *beerUsecase) Create(ctx context.Context, beer model.Beer) error {
 
 // GetByID retrieves a beer by its ID using circuit breaker pattern.
 func (u *beerUsecase) GetByID(ctx context.Context, id string) (model.Beer, error) {
+	if u.cb == nil {
+		return u.repo.GetByID(ctx, id)
+	}
+
 	result, err := u.cb.Execute(func() (interface{}, error) {
 		return u.repo.GetByID(ctx, id)
 	})
@@ -78,6 +86,10 @@ func (u *beerUsecase) GetByID(ctx context.Context, id string) (model.Beer, error
 	}
 
 	return result.(model.Beer), nil
+}
+
+func isServerlessRuntime() bool {
+	return os.Getenv("VERCEL") != "" || os.Getenv("NOW_REGION") != "" || os.Getenv("AWS_LAMBDA_FUNCTION_NAME") != ""
 }
 
 // GetPaginated retrieves paginated beers.
