@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"sync"
 
-	"beer-review-app/internal/app"
+	"beer-review-app/pkg/vercel"
 )
 
 var (
@@ -14,7 +14,7 @@ var (
 
 func Handler(w http.ResponseWriter, r *http.Request) {
 	once.Do(func() {
-		handler = app.InitializeVercelHandler()
+		handler = vercel.NewHandler()
 	})
 
 	if handler == nil {
