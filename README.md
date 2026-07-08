@@ -37,7 +37,7 @@ beer-review-app/
 ## Prerequisites
 
 - Go 1.24+
-- PostgreSQL 14+
+- PostgreSQL 17+
 - Docker (optional)
 
 ## Getting Started
