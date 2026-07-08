@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"time"
 
 	"github.com/gorilla/mux"
@@ -115,7 +117,8 @@ func InitDB(dbConnString string) (*sql.DB, error) {
 	}
 
 	if err := migrateDB(db); err != nil {
-		log.Printf("Migração automática ignorada em runtime: %v", err)
+		db.Close()
+		return nil, fmt.Errorf("migrations failed: %w", err)
 	}
 
 	return db, nil
@@ -156,13 +159,68 @@ func migrateDB(db *sql.DB) error {
 }
 
 func executeSQLFile(db *sql.DB, filePath string) error {
-	sqlBytes, err := os.ReadFile(filepath.Clean(filePath))
+	resolvedPath, err := resolveMigrationPath(filePath)
+	if err != nil {
+		return err
+	}
+
+	sqlBytes, err := os.ReadFile(resolvedPath)
 	if err != nil {
 		return fmt.Errorf("erro ao ler arquivo SQL: %v", err)
 	}
 
 	_, err = db.Exec(string(sqlBytes))
 	return err
+}
+
+func resolveMigrationPath(filePath string) (string, error) {
+	cleanPath := filepath.Clean(filePath)
+	if filepath.IsAbs(cleanPath) {
+		if _, err := os.Stat(cleanPath); err == nil {
+			return cleanPath, nil
+		}
+		return "", fmt.Errorf("migration file not found: %s", cleanPath)
+	}
+
+	candidates := []string{
+		cleanPath,
+		filepath.Join(".", cleanPath),
+		filepath.Join("..", cleanPath),
+		filepath.Join("..", "..", cleanPath),
+	}
+
+	for _, candidate := range candidates {
+		if _, err := os.Stat(candidate); err == nil {
+			return candidate, nil
+		}
+	}
+
+	if _, file, _, ok := runtime.Caller(0); ok {
+		baseDir := filepath.Dir(file)
+		for _, candidate := range []string{
+			filepath.Join(baseDir, "..", "..", cleanPath),
+			filepath.Join(baseDir, "..", cleanPath),
+			filepath.Join(baseDir, cleanPath),
+		} {
+			if _, err := os.Stat(candidate); err == nil {
+				return candidate, nil
+			}
+		}
+	}
+
+	workingDir, err := os.Getwd()
+	if err != nil {
+		return "", fmt.Errorf("failed to resolve migration path: %w", err)
+	}
+
+	if strings.Contains(workingDir, "/api") || strings.Contains(workingDir, "\\api") {
+		rootCandidate := filepath.Join(workingDir, "..", cleanPath)
+		if _, err := os.Stat(rootCandidate); err == nil {
+			return rootCandidate, nil
+		}
+	}
+
+	return "", fmt.Errorf("migration file not found: %s", cleanPath)
 }
 
 func healthCheckHandler(db *sql.DB) http.HandlerFunc {
