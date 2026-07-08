@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"log"
 	"net/http"
 	"os"
@@ -26,29 +27,31 @@ func main() {
 		}
 	}
 
-	dbUser := viper.GetString("DB_USER")
-	dbPassword := viper.GetString("DB_PASSWORD")
-	log.Printf("DB User: %s, DB Password: %s", dbUser, dbPassword)
-
 	logger, err := zap.NewProduction()
 	if err != nil {
-		log.Fatalf("Erro ao criar logger: %s", err)
+		logger = zap.NewNop()
 	}
 	defer logger.Sync()
 
 	serverPort := viper.GetString("SERVER_PORT")
-	dbConnString := viper.GetString("DB_CONN_STRING")
-	if serverPort == "" || dbConnString == "" {
-		log.Fatalf("As variáveis de ambiente SERVER_PORT ou DB_CONN_STRING não estão definidas.")
+	if serverPort == "" {
+		serverPort = "8082"
 	}
 
-	db, err := app.InitDB(dbConnString)
+	var db *sql.DB
+	db, err = app.InitDBFromEnv()
 	if err != nil {
-		log.Fatalf("Erro ao inicializar banco de dados: %v", err)
+		log.Printf("Inicialização sem banco: %v", err)
 	}
-	defer db.Close()
 
-	router := app.BuildRouter(db, logger)
+	var router http.Handler
+	if db != nil {
+		router = app.BuildRouter(db, logger)
+	} else {
+		router = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			http.Error(w, "database is not ready", http.StatusServiceUnavailable)
+		})
+	}
 
 	server := &http.Server{
 		Addr:         ":" + serverPort,
@@ -59,7 +62,7 @@ func main() {
 
 	go func() {
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("Erro ao iniciar o servidor: %v", err)
+			log.Printf("Erro ao iniciar o servidor: %v", err)
 		}
 	}()
 
@@ -70,7 +73,7 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := server.Shutdown(ctx); err != nil {
-		log.Fatalf("Erro ao desligar o servidor: %v", err)
+		log.Printf("Erro ao desligar o servidor: %v", err)
 	}
 
 	log.Println("Servidor finalizado")
