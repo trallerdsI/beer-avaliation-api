@@ -36,7 +36,7 @@ beer-review-app/
 
 ## Prerequisites
 
-- Go 1.23+
+- Go 1.24+
 - PostgreSQL 14+
 - Docker (optional)
 
@@ -113,7 +113,7 @@ This application is ready to run on Vercel as a serverless function and uses a P
 Add these variables in Vercel project settings:
 
 - `DBConnString`: the pooled connection string from Neon
-- `SERVER_PORT`: `8080`
+- `SERVER_PORT`: `8082`
 
 #### 3. Deploy
 The repository already includes:
