@@ -3,7 +3,6 @@ package app
 import (
 	"database/sql"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
@@ -11,7 +10,7 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
-	_ "github.com/lib/pq"
+	_ "github.com/lib/pq" // Register the PostgreSQL driver.
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/spf13/viper"
 	"go.uber.org/zap"
@@ -27,6 +26,7 @@ import (
 	middleware "beer-review-app/pkg/middleware"
 )
 
+// BuildRouter creates the main HTTP router for the application.
 func BuildRouter(db *sql.DB, logger *zap.Logger) http.Handler {
 	if logger == nil {
 		logger = zap.NewNop()
@@ -77,6 +77,7 @@ func BuildRouter(db *sql.DB, logger *zap.Logger) http.Handler {
 	return router
 }
 
+// InitDBFromEnv initializes the database connection using environment variables.
 func InitDBFromEnv() (*sql.DB, error) {
 	dbConnString := resolveDBConnString()
 	if dbConnString == "" {
@@ -86,6 +87,7 @@ func InitDBFromEnv() (*sql.DB, error) {
 	return InitDB(dbConnString)
 }
 
+// InitDB opens and configures the PostgreSQL connection pool.
 func InitDB(dbConnString string) (*sql.DB, error) {
 	db, err := sql.Open("postgres", dbConnString)
 	if err != nil {
@@ -155,7 +157,7 @@ func migrateDB(db *sql.DB) error {
 }
 
 func executeSQLFile(db *sql.DB, filePath string) error {
-	sqlBytes, err := ioutil.ReadFile(filepath.Clean(filePath))
+	sqlBytes, err := os.ReadFile(filepath.Clean(filePath))
 	if err != nil {
 		return fmt.Errorf("erro ao ler arquivo SQL: %v", err)
 	}
@@ -174,6 +176,7 @@ func healthCheckHandler(db *sql.DB) http.HandlerFunc {
 	}
 }
 
+// InitializeVercelHandler returns the shared handler the Vercel function uses.
 func InitializeVercelHandler() http.Handler {
 	logger, err := zap.NewProduction()
 	if err != nil {

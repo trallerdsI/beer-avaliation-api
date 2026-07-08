@@ -9,6 +9,7 @@ import (
 )
 
 var (
+	// RequestDuration stores the duration of HTTP requests by route, method, and status.
 	RequestDuration = promauto.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Name:    "http_request_duration_seconds",
@@ -18,6 +19,7 @@ var (
 		[]string{"path", "method", "status"},
 	)
 
+	// TotalRequests counts HTTP requests by path, method, and status.
 	TotalRequests = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "http_requests_total",
@@ -48,6 +50,7 @@ var (
 	)
 )
 
+// RecordMetrics logs or records request metrics depending on the runtime environment.
 func RecordMetrics(path, method, status string, duration float64) {
 	if IsServerlessRuntime() {
 		log.Printf(`{"event":"http_request","path":"%s","method":"%s","status":"%s","duration_seconds":%.6f}`, path, method, status, duration)
@@ -58,6 +61,7 @@ func RecordMetrics(path, method, status string, duration float64) {
 	TotalRequests.WithLabelValues(path, method, status).Inc()
 }
 
+// IsServerlessRuntime returns true when the application is running in serverless mode.
 func IsServerlessRuntime() bool {
 	return os.Getenv("VERCEL") != "" || os.Getenv("NOW_REGION") != "" || os.Getenv("AWS_LAMBDA_FUNCTION_NAME") != ""
 }
