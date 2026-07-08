@@ -1,0 +1,46 @@
+openapi: 3.0.3
+info:
+  title: Beer Avaliation API
+  version: 1.0.0
+  description: API for managing beers, comments, and user accounts.
+servers:
+  - url: https://beer-avaliation-api.vercel.app
+paths:
+  /api/v1/health:
+    get:
+      summary: Health check
+      responses:
+        '200':
+          description: Service is healthy
+  /api/v1/beers:
+    get:
+      summary: List beers
+      parameters:
+        - in: query
+          name: page
+          schema:
+            type: integer
+        - in: query
+          name: pageSize
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Paginated list of beers
+    post:
+      summary: Create beer
+      responses:
+        '201':
+          description: Beer created
+  /api/v1/beers/{id}:
+    get:
+      summary: Get beer by ID
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Beer details
