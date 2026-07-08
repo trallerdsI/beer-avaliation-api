@@ -78,6 +78,7 @@ func BuildRouter(db *sql.DB, logger *zap.Logger) http.Handler {
 	apiRouter.HandleFunc("/health", healthCheckHandler(db)).Methods("GET")
 
 	router.HandleFunc("/docs", docsHandler()).Methods("GET")
+	router.HandleFunc("/docs/openapi.yaml", openapiSpecHandler()).Methods("GET")
 	if !appMetrics.IsServerlessRuntime() {
 		router.Handle("/metrics", promhttp.Handler())
 	}
@@ -253,54 +254,52 @@ func healthCheckHandler(db *sql.DB) http.HandlerFunc {
 
 func docsHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = fmt.Fprint(w, `<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Beer Avaliation API Docs</title>
+    <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5.17.14/swagger-ui.css" />
+    <style>
+      body { margin: 0; background: #fafafa; }
+      #swagger-ui { max-width: 1200px; margin: 0 auto; padding: 20px; }
+    </style>
+  </head>
+  <body>
+    <div id="swagger-ui"></div>
+    <script src="https://unpkg.com/swagger-ui-dist@5.17.14/swagger-ui-bundle.js"></script>
+    <script>
+      window.onload = () => {
+        SwaggerUIBundle({
+          url: '/docs/openapi.yaml',
+          dom_id: '#swagger-ui',
+          deepLinking: true,
+          presets: [SwaggerUIBundle.presets.apis],
+        });
+      };
+    </script>
+  </body>
+</html>`)
+	}
+}
+
+func openapiSpecHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		specPath := filepath.Join(".", "openapi.yaml")
+		if _, file, _, ok := runtime.Caller(0); ok {
+			specPath = filepath.Join(filepath.Dir(file), "..", "..", "openapi.yaml")
+		}
+
+		specData, err := os.ReadFile(specPath)
+		if err != nil {
+			http.Error(w, "openapi spec not found", http.StatusNotFound)
+			return
+		}
+
 		w.Header().Set("Content-Type", "application/yaml")
-		_, _ = fmt.Fprint(w, `openapi: 3.0.3
-info:
-  title: Beer Avaliation API
-  version: 1.0.0
-  description: API for managing beers, comments, and user accounts.
-servers:
-  - url: https://beer-avaliation-api.vercel.app
-paths:
-  /api/v1/health:
-    get:
-      summary: Health check
-      responses:
-        '200':
-          description: Service is healthy
-  /api/v1/beers:
-    get:
-      summary: List beers
-      parameters:
-        - in: query
-          name: page
-          schema:
-            type: integer
-        - in: query
-          name: pageSize
-          schema:
-            type: integer
-      responses:
-        '200':
-          description: Paginated list of beers
-    post:
-      summary: Create beer
-      responses:
-        '201':
-          description: Beer created
-  /api/v1/beers/{id}:
-    get:
-      summary: Get beer by ID
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: string
-      responses:
-        '200':
-          description: Beer details
-`)
+		_, _ = w.Write(specData)
 	}
 }
 
