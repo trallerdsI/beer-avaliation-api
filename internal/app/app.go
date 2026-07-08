@@ -32,6 +32,9 @@ import (
 //go:embed migrations/*.sql
 var embeddedMigrations embed.FS
 
+//go:embed openapi.yaml
+var embeddedOpenAPI embed.FS
+
 // BuildRouter creates the main HTTP router for the application.
 func BuildRouter(db *sql.DB, logger *zap.Logger) http.Handler {
 	if logger == nil {
@@ -287,12 +290,7 @@ func docsHandler() http.HandlerFunc {
 
 func openapiSpecHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		specPath := filepath.Join(".", "openapi.yaml")
-		if _, file, _, ok := runtime.Caller(0); ok {
-			specPath = filepath.Join(filepath.Dir(file), "..", "..", "openapi.yaml")
-		}
-
-		specData, err := os.ReadFile(specPath)
+		specData, err := embeddedOpenAPI.ReadFile("openapi.yaml")
 		if err != nil {
 			http.Error(w, "openapi spec not found", http.StatusNotFound)
 			return

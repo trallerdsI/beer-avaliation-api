@@ -1,0 +1,443 @@
+openapi: 3.0.3
+info:
+  title: Beer Avaliation API
+  version: 1.0.0
+  description: Complete API for managing beers, beer comments, users, and basic statistics.
+servers:
+  - url: https://beer-avaliation-api.vercel.app
+paths:
+  /api/v1/health:
+    get:
+      summary: Health check
+      responses:
+        '200':
+          description: Service is healthy
+        '503':
+          description: Database unavailable
+
+  /api/v1/beers:
+    get:
+      summary: List beers with pagination
+      parameters:
+        - in: query
+          name: page
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - in: query
+          name: pageSize
+          schema:
+            type: integer
+            minimum: 1
+            default: 10
+      responses:
+        '200':
+          description: Paginated list of beers
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BeerListResponse'
+    post:
+      summary: Create a beer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BeerInput'
+      responses:
+        '201':
+          description: Beer created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Beer'
+        '400':
+          description: Invalid request payload
+
+  /api/v1/beers/search:
+    get:
+      summary: Search beers by filters
+      parameters:
+        - in: query
+          name: query
+          schema:
+            type: string
+        - in: query
+          name: style
+          schema:
+            type: string
+        - in: query
+          name: taste
+          schema:
+            type: string
+        - in: query
+          name: aroma
+          schema:
+            type: string
+        - in: query
+          name: page
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - in: query
+          name: pageSize
+          schema:
+            type: integer
+            minimum: 1
+            default: 10
+      responses:
+        '200':
+          description: Search results
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BeerListResponse'
+
+  /api/v1/beers/{id}:
+    get:
+      summary: Get a beer by ID
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Beer details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Beer'
+        '404':
+          description: Beer not found
+    put:
+      summary: Update a beer
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BeerInput'
+      responses:
+        '200':
+          description: Beer updated successfully
+        '404':
+          description: Beer not found
+    delete:
+      summary: Delete a beer
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Beer deleted successfully
+        '404':
+          description: Beer not found
+
+  /api/v1/beers/{id}/comments:
+    post:
+      summary: Add a comment to a beer
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CommentInput'
+      responses:
+        '201':
+          description: Comment added successfully
+        '404':
+          description: Beer not found
+
+  /api/v1/beers/{id}/comments/{commentId}:
+    delete:
+      summary: Delete a comment from a beer
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: commentId
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Comment deleted successfully
+        '404':
+          description: Comment or beer not found
+
+  /api/v1/beers/{id}/comments/{commentId}/like:
+    post:
+      summary: Like a comment
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: commentId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Comment liked successfully
+        '404':
+          description: Comment or beer not found
+
+  /api/v1/users/register:
+    post:
+      summary: Register a new user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserRegisterInput'
+      responses:
+        '201':
+          description: User registered successfully
+        '400':
+          description: Invalid registration payload
+
+  /api/v1/users/login:
+    post:
+      summary: Login a user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserLoginInput'
+      responses:
+        '200':
+          description: Login successful
+        '401':
+          description: Invalid credentials
+
+  /api/v1/users/{id}:
+    get:
+      summary: Get user profile
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: User profile
+        '401':
+          description: Unauthorized
+    put:
+      summary: Update user profile
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserUpdateInput'
+      responses:
+        '200':
+          description: User profile updated
+    delete:
+      summary: Delete user account
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      security:
+        - bearerAuth: []
+      responses:
+        '204':
+          description: User account deleted
+
+  /api/v1/stats:
+    get:
+      summary: Get monitoring statistics
+      responses:
+        '200':
+          description: Statistics payload
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    Beer:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        style:
+          type: string
+        description:
+          type: string
+        imageUrl:
+          type: string
+        alcohol:
+          type: number
+        taste:
+          type: string
+        aroma:
+          type: string
+        color:
+          type: string
+        body:
+          type: string
+        carbonation:
+          type: string
+        finish:
+          type: string
+        comments:
+          type: array
+          items:
+            $ref: '#/components/schemas/Comment'
+    BeerInput:
+      type: object
+      required:
+        - name
+        - style
+        - taste
+        - aroma
+        - color
+        - body
+        - carbonation
+        - finish
+      properties:
+        name:
+          type: string
+        style:
+          type: string
+        description:
+          type: string
+        imageUrl:
+          type: string
+        alcohol:
+          type: number
+        taste:
+          type: string
+        aroma:
+          type: string
+        color:
+          type: string
+        body:
+          type: string
+        carbonation:
+          type: string
+        finish:
+          type: string
+    Comment:
+      type: object
+      properties:
+        id:
+          type: string
+        text:
+          type: string
+        likes:
+          type: integer
+        likedBy:
+          type: array
+          items:
+            type: string
+        positive:
+          type: boolean
+    CommentInput:
+      type: object
+      required:
+        - text
+      properties:
+        text:
+          type: string
+        positive:
+          type: boolean
+    BeerListResponse:
+      type: object
+      properties:
+        beers:
+          type: array
+          items:
+            $ref: '#/components/schemas/Beer'
+        total:
+          type: integer
+        page:
+          type: integer
+        pageSize:
+          type: integer
+    UserRegisterInput:
+      type: object
+      required:
+        - username
+        - email
+        - password
+      properties:
+        username:
+          type: string
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          format: password
+    UserLoginInput:
+      type: object
+      required:
+        - email
+        - password
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          format: password
+    UserUpdateInput:
+      type: object
+      properties:
+        username:
+          type: string
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          format: password
