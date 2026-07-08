@@ -115,8 +115,7 @@ func InitDB(dbConnString string) (*sql.DB, error) {
 	}
 
 	if err := migrateDB(db); err != nil {
-		db.Close()
-		return nil, err
+		log.Printf("Migração automática ignorada em runtime: %v", err)
 	}
 
 	return db, nil
@@ -185,8 +184,9 @@ func InitializeVercelHandler() http.Handler {
 
 	db, err := InitDBFromEnv()
 	if err != nil {
+		log.Printf("Vercel bootstrap warning: %v", err)
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			http.Error(w, "database is not ready", http.StatusServiceUnavailable)
 		})
 	}
 

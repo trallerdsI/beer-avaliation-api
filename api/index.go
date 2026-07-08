@@ -17,5 +17,10 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 		handler = app.InitializeVercelHandler()
 	})
 
+	if handler == nil {
+		http.Error(w, "server initialization failed", http.StatusInternalServerError)
+		return
+	}
+
 	handler.ServeHTTP(w, r)
 }
