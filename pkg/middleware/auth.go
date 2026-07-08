@@ -9,6 +9,10 @@ import (
 	"beer-review-app/pkg/response"
 )
 
+type contextKey string
+
+const userIDContextKey contextKey = "user_id"
+
 func AuthMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		authHeader := r.Header.Get("Authorization")
@@ -30,7 +34,7 @@ func AuthMiddleware(next http.Handler) http.Handler {
 		}
 
 		// Add user ID to request context
-		ctx := context.WithValue(r.Context(), "user_id", userID)
+		ctx := context.WithValue(r.Context(), userIDContextKey, userID)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }

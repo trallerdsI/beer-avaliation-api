@@ -287,7 +287,7 @@ func (c *BeerController) LikeComment(w http.ResponseWriter, r *http.Request) {
 
 	deviceID := r.Header.Get("X-Device-ID")
 	if deviceID == "" {
-		handleError(w, c.logger, fmt.Errorf("Device ID is required"), "Device ID is required", http.StatusBadRequest)
+		handleError(w, c.logger, fmt.Errorf("device ID is required"), "Device ID is required", http.StatusBadRequest)
 		return
 	}
 
