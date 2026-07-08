@@ -2,6 +2,7 @@ package app
 
 import (
 	"database/sql"
+	"embed"
 	"fmt"
 	"log"
 	"net/http"
@@ -27,6 +28,9 @@ import (
 	appMetrics "beer-review-app/pkg/metrics"
 	middleware "beer-review-app/pkg/middleware"
 )
+
+//go:embed migrations/*.sql
+var embeddedMigrations embed.FS
 
 // BuildRouter creates the main HTTP router for the application.
 func BuildRouter(db *sql.DB, logger *zap.Logger) http.Handler {
@@ -159,18 +163,30 @@ func migrateDB(db *sql.DB) error {
 }
 
 func executeSQLFile(db *sql.DB, filePath string) error {
-	resolvedPath, err := resolveMigrationPath(filePath)
+	sqlBytes, err := readMigrationSQL(filePath)
 	if err != nil {
 		return err
 	}
 
-	sqlBytes, err := os.ReadFile(resolvedPath)
-	if err != nil {
-		return fmt.Errorf("erro ao ler arquivo SQL: %v", err)
-	}
-
 	_, err = db.Exec(string(sqlBytes))
 	return err
+}
+
+func readMigrationSQL(filePath string) ([]byte, error) {
+	if data, err := embeddedMigrations.ReadFile(filepath.ToSlash(filepath.Join("migrations", filepath.Base(filePath)))); err == nil {
+		return data, nil
+	}
+
+	resolvedPath, err := resolveMigrationPath(filePath)
+	if err != nil {
+		return nil, err
+	}
+
+	sqlBytes, err := os.ReadFile(resolvedPath)
+	if err != nil {
+		return nil, fmt.Errorf("erro ao ler arquivo SQL: %v", err)
+	}
+	return sqlBytes, nil
 }
 
 func resolveMigrationPath(filePath string) (string, error) {

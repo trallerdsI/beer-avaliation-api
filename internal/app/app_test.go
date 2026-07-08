@@ -1,6 +1,7 @@
 package app
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"testing"
@@ -48,5 +49,18 @@ func TestResolveMigrationPathUsesRepositoryRoot(t *testing.T) {
 	}
 	if filepath.Base(path) != "create_beers_table.sql" {
 		t.Fatalf("expected beers migration filename, got %s", filepath.Base(path))
+	}
+}
+
+func TestReadMigrationSQLSupportsEmbeddedFiles(t *testing.T) {
+	data, err := readMigrationSQL("migrations/create_beers_table.sql")
+	if err != nil {
+		t.Fatalf("expected embedded migration to be readable, got error: %v", err)
+	}
+	if len(data) == 0 {
+		t.Fatal("expected embedded migration contents to be non-empty")
+	}
+	if !bytes.Contains(data, []byte("CREATE TABLE IF NOT EXISTS beers")) {
+		t.Fatalf("expected embedded migration to contain beers table creation statement")
 	}
 }
