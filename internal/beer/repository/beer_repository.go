@@ -300,12 +300,13 @@ func (r *PostgresBeerRepository) GetPaginated(ctx context.Context, page, pageSiz
 	for rows.Next() {
 		var beer model.Beer
 		var commentsJSON []byte
+		var description, imageURL sql.NullString
 		if err := rows.Scan(
 			&beer.ID,
 			&beer.Name,
 			&beer.Style,
-			&beer.Description,
-			&beer.ImageUrl,
+			&description,
+			&imageURL,
 			&beer.Alcohol,
 			&beer.Taste,
 			&beer.Aroma,
@@ -317,6 +318,8 @@ func (r *PostgresBeerRepository) GetPaginated(ctx context.Context, page, pageSiz
 			slog.Error("error scanning beer", "err", err)
 			return nil, 0, err
 		}
+		beer.Description = description.String
+		beer.ImageUrl = imageURL.String
 		beer.Comments = unmarshalComments(commentsJSON)
 		beers = append(beers, beer)
 	}
@@ -483,7 +486,7 @@ func (r *PostgresBeerRepository) SearchBeers(ctx context.Context, filters model.
 // GetAll retrieves all beers from the PostgreSQL database.
 func (r *PostgresBeerRepository) GetAll(ctx context.Context) ([]model.Beer, error) {
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT id, name, style, description, alcohol, taste, aroma, color, body, carbonation, finish, comments 
+		SELECT id, name, style, description, image_url, alcohol, taste, aroma, color, body, carbonation, finish, comments 
 		FROM beers
 	`)
 	if err != nil {
@@ -495,11 +498,13 @@ func (r *PostgresBeerRepository) GetAll(ctx context.Context) ([]model.Beer, erro
 	for rows.Next() {
 		var beer model.Beer
 		var commentsJSON []byte
+		var description, imageURL sql.NullString
 		err := rows.Scan(
 			&beer.ID,
 			&beer.Name,
 			&beer.Style,
-			&beer.Description,
+			&description,
+			&imageURL,
 			&beer.Alcohol,
 			&beer.Taste,
 			&beer.Aroma,
@@ -512,6 +517,8 @@ func (r *PostgresBeerRepository) GetAll(ctx context.Context) ([]model.Beer, erro
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan beer: %w", err)
 		}
+		beer.Description = description.String
+		beer.ImageUrl = imageURL.String
 		beer.Comments = unmarshalComments(commentsJSON)
 		beers = append(beers, beer)
 	}
