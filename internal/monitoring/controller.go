@@ -1,4 +1,4 @@
-package monitoring
+package controller
 
 import (
 	"context"
@@ -14,19 +14,51 @@ import (
 	"go.uber.org/zap"
 )
 
+// Structs de resposta para tipagem forte e melhor documentação Swagger
+
+type RecentActivity struct {
+	Type      string    `json:"type"`
+	UserID    string    `json:"userId"`
+	BeerID    string    `json:"beerId"`
+	Timestamp time.Time `json:"timestamp"` // O Go serializa automaticamente para RFC3339
+}
+
+type StatsResponse struct {
+	TotalBeers     int64            `json:"totalBeers"`
+	TopBeers       interface{}      `json:"topBeers"` // Substitua interface{} pela sua struct real de Beer se disponível
+	RecentActivity []RecentActivity `json:"recentActivity"`
+}
+
+type MemoryStats struct {
+	Alloc      uint64 `json:"alloc"`
+	TotalAlloc uint64 `json:"totalAlloc"`
+	Sys        uint64 `json:"sys"`
+	NumGC      uint32 `json:"numGC"`
+}
+
+type HealthResponse struct {
+	Status       string            `json:"status"`
+	Version      string            `json:"version"`
+	Uptime       string            `json:"uptime"`
+	Memory       MemoryStats       `json:"memory"`
+	Dependencies map[string]string `json:"dependencies"`
+}
+
 type MonitoringController struct {
-	beerUsecase usecase.BeerUsecase
-	userUsecase userCase.UserUsecase
-	logger      *zap.Logger
-	startTime   time.Time
+	beerUsecase    usecase.BeerUsecase
+	userUsecase    userCase.UserUsecase // Mantido para compatibilidade, mas atualmente sem uso
+	logger         *zap.Logger
+	startTime      time.Time
+	metricsHandler http.Handler // Cache do handler do Prometheus
 }
 
 func NewMonitoringController(bu usecase.BeerUsecase, uu userCase.UserUsecase, logger *zap.Logger) *MonitoringController {
 	return &MonitoringController{
-		beerUsecase: bu,
-		userUsecase: uu,
-		logger:      logger,
-		startTime:   time.Now(),
+		beerUsecase:    bu,
+		userUsecase:    uu,
+		logger:         logger,
+		startTime:      time.Now(),
+		metricsHandler: promhttp.Handler(), // Inicializado uma única vez
 	}
 }
 
@@ -34,20 +66,23 @@ func NewMonitoringController(bu usecase.BeerUsecase, uu userCase.UserUsecase, lo
 // @Description Get statistics about beers, users, and activity
 // @Produce json
 // @Security BearerAuth
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} StatsResponse
 // @Router /stats [get]
 func (c *MonitoringController) GetStats(w http.ResponseWriter, r *http.Request) {
-	beers, _, err := c.beerUsecase.GetPaginated(r.Context(), 1, 5) // Get top 5 beers
+	ctx := r.Context()
+
+	// Obtendo as top 5 cervejas e o total real cadastrado no sistema (totalBeers)
+	beers, totalBeers, err := c.beerUsecase.GetPaginated(ctx, 1, 5) 
 	if err != nil {
 		c.logger.Error("Failed to get beers for stats", zap.Error(err))
 		response.SendError(w, "Failed to get statistics", http.StatusInternalServerError)
 		return
 	}
 
-	stats := map[string]interface{}{
-		"totalBeers":     len(beers),
-		"topBeers":       beers,
-		"recentActivity": c.getRecentActivity(r.Context()),
+	stats := StatsResponse{
+		TotalBeers:     totalBeers, // Corrigido de len(beers) para o total real retornado do usecase
+		TopBeers:       beers,
+		RecentActivity: c.getRecentActivity(ctx),
 	}
 
 	response.SendResponse(w, http.StatusOK, stats)
@@ -56,24 +91,24 @@ func (c *MonitoringController) GetStats(w http.ResponseWriter, r *http.Request) 
 // @Summary Get application health status
 // @Description Check the health of the application and its dependencies
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} HealthResponse
 // @Router /health [get]
 func (c *MonitoringController) HealthCheck(w http.ResponseWriter, r *http.Request) {
 	var m runtime.MemStats
-	runtime.ReadMemStats(&m)
+	runtime.ReadMemStats(&m) // Nota: Esta chamada faz um STW muito curto, ideal para rotas não-críticas de monitoramento
 
-	health := map[string]interface{}{
-		"status":  "healthy",
-		"version": "1.0.0",
-		"uptime":  time.Since(c.startTime).String(),
-		"memory": map[string]interface{}{
-			"alloc":      m.Alloc,
-			"totalAlloc": m.TotalAlloc,
-			"sys":        m.Sys,
-			"numGC":      m.NumGC,
+	health := HealthResponse{
+		Status:  "healthy",
+		Version: "1.0.0",
+		Uptime:  time.Since(c.startTime).Truncate(time.Second).String(), // Uptime limpo sem nanossegundos poluindo o JSON
+		Memory: MemoryStats{
+			Alloc:      m.Alloc,
+			TotalAlloc: m.TotalAlloc,
+			Sys:        m.Sys,
+			NumGC:      m.NumGC,
 		},
-		"dependencies": map[string]string{
-			"database": c.checkDatabaseHealth(),
+		Dependencies: map[string]string{
+			"database": c.checkDatabaseHealth(r.Context()), // Propagação correta de contexto
 		},
 	}
 
@@ -87,29 +122,30 @@ func (c *MonitoringController) HealthCheck(w http.ResponseWriter, r *http.Reques
 // @Success 200 {string} string
 // @Router /metrics [get]
 func (c *MonitoringController) Metrics(w http.ResponseWriter, r *http.Request) {
-	promhttp.Handler().ServeHTTP(w, r)
+	// Reutiliza o handler cacheado na struct, evitando alocações por requisição
+	c.metricsHandler.ServeHTTP(w, r)
 }
 
-func (c *MonitoringController) getRecentActivity(_ context.Context) []map[string]interface{} {
-	// This would typically come from a database query
-	return []map[string]interface{}{
+func (c *MonitoringController) getRecentActivity(_ context.Context) []RecentActivity {
+	// Exemplo de retorno tipado e limpo sem alocação dinâmica de chaves de string de forma genérica
+	return []RecentActivity{
 		{
-			"type":      "comment",
-			"userId":    "user123",
-			"beerId":    "beer456",
-			"timestamp": time.Now().Add(-5 * time.Minute).Format(time.RFC3339),
+			Type:      "comment",
+			UserID:    "user123",
+			BeerID:    "beer456",
+			Timestamp: time.Now().Add(-5 * time.Minute),
 		},
 		{
-			"type":      "like",
-			"userId":    "user789",
-			"beerId":    "beer456",
-			"timestamp": time.Now().Add(-10 * time.Minute).Format(time.RFC3339),
+			Type:      "like",
+			UserID:    "user789",
+			BeerID:    "beer456",
+			Timestamp: time.Now().Add(-10 * time.Minute),
 		},
 	}
 }
 
-func (c *MonitoringController) checkDatabaseHealth() string {
-	// Implement actual database health check
+func (c *MonitoringController) checkDatabaseHealth(ctx context.Context) string {
+	// Na implementação real, use o ctx recebido para respeitar timeouts
+	// Exemplo: err := c.db.PingContext(ctx)
 	return "up"
 }
-
