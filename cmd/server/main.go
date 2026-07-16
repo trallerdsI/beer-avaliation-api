@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -12,7 +13,6 @@ import (
 	"time"
 
 	"github.com/spf13/viper"
-	"go.uber.org/zap"
 
 	"beer-review-app/internal/app"
 )
@@ -27,11 +27,12 @@ func main() {
 		}
 	}
 
-	logger, err := zap.NewProduction()
-	if err != nil {
-		logger = zap.NewNop()
-	}
-	defer logger.Sync()
+	// Go 1.26: log estruturado nativo via log/slog.
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	slog.SetDefault(logger)
+	defer func() {
+		_ = logger.Handler().Flush()
+	}()
 
 	serverPort := viper.GetString("SERVER_PORT")
 	if serverPort == "" {
@@ -39,7 +40,7 @@ func main() {
 	}
 
 	var db *sql.DB
-	db, err = app.InitDBFromEnv()
+	db, err := app.InitDBFromEnv()
 	if err != nil {
 		log.Printf("Inicialização sem banco: %v", err)
 	}
