@@ -75,18 +75,22 @@ type Comment struct {
 }
 
 // Beer represents a beer object.
+// Todas as colunas da tabela `beers` são NOT NULL (incluindo description e
+// image_url, que passaram por ALTER TABLE). Por isso todos os campos de domínio
+// são obrigatórios (required) e sem defaults: o cliente deve enviar o payload
+// completo ou recebe 400.
 type Beer struct {
 	ID          string      `json:"id"`
 	Name        string      `json:"name" validate:"required,min=3,max=100"`
 	Style       string      `json:"style" validate:"required"`
-	Description string      `json:"description" validate:"max=500"`
-	ImageUrl    string      `json:"imageUrl" validate:"omitempty,url"`
-	Alcohol     *float64    `json:"alcohol" validate:"omitempty,min=0,max=100"`
-	Taste       Flavor      `json:"taste" validate:"required"`       // Ensure taste is included
-	Aroma       Aroma       `json:"aroma" validate:"required"`       // Ensure aroma is included
-	Color       Color       `json:"color" validate:"required"`       // Ensure color is included
-	Body        Body        `json:"body" validate:"required"`        // Ensure body is included
-	Carbonation Carbonation `json:"carbonation" validate:"required"` // Ensure carbonation is included
-	Finish      Finish      `json:"finish" validate:"required"`      // Ensure finish is included
-	Comments    []Comment   `json:"comments"`                         // Array of comments with ID and text
+	Description string      `json:"description" validate:"required,max=500"`
+	ImageUrl    string      `json:"imageUrl" validate:"required,url"`
+	Alcohol     *float64    `json:"alcohol" validate:"required,min=0,max=100"`
+	Taste       Flavor      `json:"taste" validate:"required"`
+	Aroma       Aroma       `json:"aroma" validate:"required"`
+	Color       Color       `json:"color" validate:"required"`
+	Body        Body        `json:"body" validate:"required"`
+	Carbonation Carbonation `json:"carbonation" validate:"required"`
+	Finish      Finish      `json:"finish" validate:"required"`
+	Comments    []Comment   `json:"comments"`
 }

@@ -19,7 +19,7 @@ func (m *MockBeerRepository) GetAll(ctx context.Context) ([]model.Beer, error) {
 }
 
 // Create mocks the Create method of BeerRepository
-func (m *MockBeerRepository) Create(ctx context.Context, beer model.Beer) error {
+func (m *MockBeerRepository) Create(ctx context.Context, beer *model.Beer) error {
 	args := m.Called(ctx, beer)
 	return args.Error(0)
 }

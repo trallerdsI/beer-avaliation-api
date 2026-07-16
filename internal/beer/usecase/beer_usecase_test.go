@@ -33,9 +33,9 @@ func TestCreate(t *testing.T) {
 
 	beer := model.Beer{ID: "1", Name: "Beer1"}
 
-	mockRepo.On("Create", mock.Anything, beer).Return(nil)
+	mockRepo.On("Create", mock.Anything, &beer).Return(nil)
 
-	err := usecase.Create(context.Background(), beer)
+	err := usecase.Create(context.Background(), &beer)
 
 	assert.NoError(t, err)
 	mockRepo.AssertExpectations(t)

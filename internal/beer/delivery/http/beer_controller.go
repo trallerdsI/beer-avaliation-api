@@ -70,12 +70,27 @@ func rootCause(err error) string {
 	return err.Error()
 }
 
-func (c *BeerController) validateBeer(beer model.Beer) error {
-	if beer.Name == "" {
-		return fmt.Errorf("beer name cannot be empty")
+// validationMessage traduz os erros do validator numa mensagem legível para o
+// cliente (ex: "name: o valor é menor que 3 caracteres"), em vez de expor o
+// formato cru do go-playground ("Key: 'Beer.Name' Error:...").
+func validationMessage(err error) string {
+	var verrs validator.ValidationErrors
+	if stdErrors.As(err, &verrs) {
+		msgs := make([]string, 0, len(verrs))
+		for _, fe := range verrs {
+			msgs = append(msgs, fmt.Sprintf("%s: valor inválido para a regra '%s'", fe.Field(), fe.Tag()))
+		}
+		return strings.Join(msgs, "; ")
 	}
-	if beer.Style == "" {
-		return fmt.Errorf("beer style cannot be empty")
+	return err.Error()
+}
+
+// validateBeer valida o modelo completo (name, style, alcohol, url, enums)
+// usando o validator já configurado no package scope, garantindo que regras de
+// negócio (ex: ABV 0–100) sejam aplicadas no create/update.
+func (c *BeerController) validateBeer(beer model.Beer) error {
+	if err := validate.Struct(beer); err != nil {
+		return fmt.Errorf("%w: %s", appErrors.NewAppError(400, "invalid beer", nil), validationMessage(err))
 	}
 	return nil
 }
@@ -115,7 +130,6 @@ func (c *BeerController) CreateBeer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	beer.ID = uuid.New().String()
 	beer.Comments = make([]model.Comment, 0)
 	beer.Name = sanitizer.Sanitize(beer.Name)
 	beer.Description = sanitizer.Sanitize(beer.Description)
@@ -125,7 +139,7 @@ func (c *BeerController) CreateBeer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := c.usecase.Create(r.Context(), beer); err != nil {
+	if err := c.usecase.Create(r.Context(), &beer); err != nil {
 		handleError(w, r.Context(), c.logger, err, "Failed to create beer", http.StatusInternalServerError)
 		return
 	}

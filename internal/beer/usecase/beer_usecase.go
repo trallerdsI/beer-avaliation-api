@@ -15,7 +15,7 @@ import (
 
 type BeerUsecase interface {
 	GetAll(ctx context.Context) ([]model.Beer, error)
-	Create(ctx context.Context, beer model.Beer) error
+	Create(ctx context.Context, beer *model.Beer) error
 	GetByID(ctx context.Context, id string) (model.Beer, error)
 	GetPaginated(ctx context.Context, page, pageSize int) ([]model.Beer, int, error)
 	Update(ctx context.Context, id string, beer model.Beer) error
@@ -76,7 +76,7 @@ func (u *beerUsecase) GetAll(ctx context.Context) ([]model.Beer, error) {
 }
 
 // Create adds a new beer.
-func (u *beerUsecase) Create(ctx context.Context, beer model.Beer) error {
+func (u *beerUsecase) Create(ctx context.Context, beer *model.Beer) error {
 	if err := u.repo.Create(ctx, beer); err != nil {
 		return errors.NewAppError(500, "Failed to create beer", err)
 	}

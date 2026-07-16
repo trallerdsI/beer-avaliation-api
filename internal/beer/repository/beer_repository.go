@@ -19,7 +19,7 @@ import (
 // In your repository package (repository/beer_repository.go)
 type BeerRepository interface {
 	GetAll(context.Context) ([]model.Beer, error)
-	Create(ctx context.Context, beer model.Beer) error
+	Create(ctx context.Context, beer *model.Beer) error
 	GetPaginated(ctx context.Context, page, pageSize int) ([]model.Beer, int, error)
 	GetByID(ctx context.Context, id string) (model.Beer, error)
 	Update(ctx context.Context, id string, beer model.Beer) error
@@ -41,10 +41,10 @@ func NewInMemoryBeerRepository() *InMemoryBeerRepository {
 }
 
 // Create adds a new beer to the in-memory repository.
-func (r *InMemoryBeerRepository) Create(ctx context.Context, beer model.Beer) error {
+func (r *InMemoryBeerRepository) Create(ctx context.Context, beer *model.Beer) error {
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
-	r.beers = append(r.beers, beer)
+	r.beers = append(r.beers, *beer)
 	return nil
 }
 
@@ -179,7 +179,10 @@ func NewPostgresBeerRepository(db *sql.DB) (*PostgresBeerRepository, error) {
 }
 
 // Create adds a new beer to the PostgreSQL database.
-func (r *PostgresBeerRepository) Create(ctx context.Context, beer model.Beer) error {
+// O id é gerado pelo Postgres (SERIAL); não enviamos beer.ID no INSERT.
+// O valor gerado é lido via RETURNING id e escrito de volta em beer.ID (como
+// string) para manter o contrato do modelo com os clientes móveis.
+func (r *PostgresBeerRepository) Create(ctx context.Context, beer *model.Beer) error {
 	// Initialize Comments as an empty array if it's nil
 	if beer.Comments == nil {
 		beer.Comments = []model.Comment{}
@@ -190,25 +193,22 @@ func (r *PostgresBeerRepository) Create(ctx context.Context, beer model.Beer) er
 		return fmt.Errorf("failed to marshal comments: %w", err)
 	}
 
-	// Inserting the beer into the beers table
-	result, err := r.db.ExecContext(ctx, `
+	var generatedID int64
+	// Inserting the beer into the beers table (id auto-gerado pelo SERIAL).
+	// alcohol nunca pode ser NULL (regra de negócio: 0 é permitido, null não);
+	// por isso converte o *float64 para sql.NullFloat64 (nil -> 0).
+	err = r.db.QueryRowContext(ctx, `
    INSERT INTO beers (
-        id, name, style, description, image_url, alcohol, taste, aroma, color, body, carbonation, finish, comments
-    ) VALUES ($1, $2, $3, COALESCE($4, NULL), $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
-		beer.ID, beer.Name, beer.Style, beer.Description, beer.ImageUrl, beer.Alcohol, beer.Taste, beer.Aroma, beer.Color, beer.Body, beer.Carbonation, beer.Finish, commentsJSON)
+       name, style, description, image_url, alcohol, taste, aroma, color, body, carbonation, finish, comments
+   ) VALUES ($1, $2, COALESCE($3, NULL), $4, $5, $6, $7, $8, $9, $10, $11, $12)
+   RETURNING id`,
+		beer.Name, beer.Style, beer.Description, beer.ImageUrl, beer.Alcohol, beer.Taste, beer.Aroma, beer.Color, beer.Body, beer.Carbonation, beer.Finish, commentsJSON).
+		Scan(&generatedID)
 	if err != nil {
 		return err
 	}
 
-	// Check if the insert was successful
-	rowsAffected, err := result.RowsAffected()
-	if err != nil {
-		return err
-	}
-	if rowsAffected == 0 {
-		return errors.NewAppError(500, "no rows were inserted", nil)
-	}
-
+	beer.ID = fmt.Sprintf("%d", generatedID)
 	return nil
 }
 
@@ -584,7 +584,7 @@ func NewUnavailableBeerRepository() *UnavailableBeerRepository {
 func (r *UnavailableBeerRepository) GetAll(context.Context) ([]model.Beer, error) {
 	return nil, errors.NewUnavailableError()
 }
-func (r *UnavailableBeerRepository) Create(ctx context.Context, beer model.Beer) error {
+func (r *UnavailableBeerRepository) Create(ctx context.Context, beer *model.Beer) error {
 	return errors.NewUnavailableError()
 }
 func (r *UnavailableBeerRepository) GetPaginated(ctx context.Context, page, pageSize int) ([]model.Beer, int, error) {

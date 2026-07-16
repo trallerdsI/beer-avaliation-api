@@ -35,7 +35,7 @@ func (m *MockBeerUsecase) GetAll(ctx context.Context) ([]model.Beer, error) {
 	return args.Get(0).([]model.Beer), args.Error(1)
 }
 
-func (m *MockBeerUsecase) Create(ctx context.Context, beer model.Beer) error {
+func (m *MockBeerUsecase) Create(ctx context.Context, beer *model.Beer) error {
 	args := m.Called(ctx, beer)
 	return args.Error(0)
 }
@@ -127,7 +127,8 @@ func TestCreateBeer(t *testing.T) {
 
 	// Test for successful beer creation
 	mockBeerUsecase.On("Create", context.Background(), mock.Anything).Return(nil).Once()
-	beer := model.Beer{Name: "Test Beer", Style: "IPA"}
+	var abvTest = 5.5
+	beer := model.Beer{Name: "Test Beer", Style: "IPA", Description: "desc", ImageUrl: "https://x.com/a.jpg", Alcohol: &abvTest, Taste: "Doce", Aroma: "Floral", Color: "Clara", Body: "Leve", Carbonation: "Baixa", Finish: "Seco"}
 	body, _ := json.Marshal(beer)
 	req, err := http.NewRequest("POST", "/beers", bytes.NewBuffer(body))
 	if err != nil {
@@ -161,7 +162,8 @@ func TestUpdateBeer(t *testing.T) {
 
 	// Test for successful update
 	mockBeerUsecase.On("Update", context.Background(), "1", mock.Anything).Return(nil).Once()
-	beer := model.Beer{Name: "Updated Beer", Style: "IPA"}
+	var abvUpd = 5.5
+	beer := model.Beer{Name: "Updated Beer", Style: "IPA", Description: "desc", ImageUrl: "https://x.com/a.jpg", Alcohol: &abvUpd, Taste: "Doce", Aroma: "Floral", Color: "Clara", Body: "Leve", Carbonation: "Baixa", Finish: "Seco"}
 	body, _ := json.Marshal(beer)
 	req, err := http.NewRequest("PUT", "/beers/1", bytes.NewBuffer(body))
 	if err != nil {

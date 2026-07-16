@@ -19,7 +19,7 @@ func TestUnavailableBeerRepository(t *testing.T) {
 	if _, err := repo.GetAll(ctx); err == nil {
 		t.Fatal("GetAll: expected error")
 	}
-	if err := repo.Create(ctx, model.Beer{ID: "1", Name: "x"}); err == nil {
+	if err := repo.Create(ctx, &model.Beer{ID: "1", Name: "x"}); err == nil {
 		t.Fatal("Create: expected error")
 	}
 	if _, _, err := repo.GetPaginated(ctx, 1, 10); err == nil {
