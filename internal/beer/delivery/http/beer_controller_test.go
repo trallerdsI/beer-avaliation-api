@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"beer-review-app/internal/beer/model"
@@ -93,6 +94,7 @@ func TestGetBeer(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		req.SetPathValue("id", strings.TrimPrefix(url, "/beers/"))
 		rr := httptest.NewRecorder()
 		handler := http.HandlerFunc(controller.GetBeerByID)
 		handler.ServeHTTP(rr, req)
@@ -165,6 +167,7 @@ func TestUpdateBeer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	req.SetPathValue("id", "1")
 	rr := httptest.NewRecorder()
 	handler := http.HandlerFunc(controller.UpdateBeer)
 	handler.ServeHTTP(rr, req)
@@ -185,6 +188,7 @@ func TestDeleteBeer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	req.SetPathValue("id", "1")
 	rr := httptest.NewRecorder()
 	handler := http.HandlerFunc(controller.DeleteBeer)
 	handler.ServeHTTP(rr, req)
@@ -205,6 +209,7 @@ func TestAddComment(t *testing.T) {
 		comment := model.Comment{Text: "Great beer!", Positive: true}
 		body, _ := json.Marshal(comment)
 		req := httptest.NewRequest("POST", "/beers/1/comments", bytes.NewBuffer(body))
+		req.SetPathValue("id", "1")
 		rr := httptest.NewRecorder()
 
 		controller.AddComment(rr, req)

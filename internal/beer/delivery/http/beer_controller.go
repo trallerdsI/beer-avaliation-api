@@ -2,6 +2,7 @@ package http
 
 import (
 	stdErrors "errors" // Renomeado para evitar conflito com o pacote de erros customizado
+	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -36,18 +37,12 @@ var (
 		Help:    "Histogram of response durations for API requests",
 		Buckets: prometheus.DefBuckets,
 	}, []string{"method", "endpoint"})
-
-	// CORRIGIDO: Métrica global para evitar vazamento de memória e reinstanciação
-	apiRequestCounter = prometheus.NewCounterVec(prometheus.CounterOpts{
-		Name: "api_request_count",
-		Help: "Total number of API requests",
-	}, []string{"method", "endpoint", "status"})
 )
 
 func init() {
 	validate = validator.New()
 	// Registra todos os coletores no Prometheus global
-	prometheus.MustRegister(beerSubmissionCounter, responseDurationHistogram, apiRequestCounter)
+	prometheus.MustRegister(beerSubmissionCounter, responseDurationHistogram)
 }
 
 // BeerController handles HTTP requests related to beers.
@@ -77,18 +72,13 @@ func getIntParam(query url.Values, key string, defaultValue int) int {
 	return value
 }
 
-func handleError(w http.ResponseWriter, logger *slog.Logger, err error, message string, statusCode int) {
-	logger.Error(message, slog.String("error", err.Error()))
+func handleError(w http.ResponseWriter, ctx context.Context, logger *slog.Logger, err error, message string, statusCode int) {
+	logger.ErrorContext(ctx, message, "err", err)
 	response.SendError(w, message, statusCode)
-	logMetrics("POST", "/beers", strconv.Itoa(statusCode))
 }
 
-// CORRIGIDO: Utiliza a métrica declarada globalmente no init()
-func logMetrics(method, endpoint, status string) {
-	apiRequestCounter.WithLabelValues(method, endpoint, status).Inc()
-}
-
-// getRouteTemplate extrai o padrão da rota (ex: /beers/{id}) para evitar alta cardinalidade no Prometheus
+// getRouteTemplate extrai o padrão da rota (ex: /beers/{id}) para evitar alta cardinalidade no Prometheus.
+// Em Go 1.22+ r.Pattern retorna o template estático; o fallback só existe para rotas fora do enhanced routing.
 func getRouteTemplate(r *http.Request) string {
 	if r.Pattern != "" {
 		return r.Pattern
@@ -106,26 +96,6 @@ func (c *BeerController) validateBeer(beer model.Beer) error {
 	return nil
 }
 
-func requestParam(r *http.Request, key string) string {
-	// Go 1.22+: r.PathValue extrai o valor do wildcard do padrão de rota.
-	if v := r.PathValue(key); v != "" {
-		return v
-	}
-
-	// Fallback manual para rotas aninhadas (ex: commentId dentro de /beers/{id}/comments/{commentId}).
-	segments := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
-	for i := 0; i < len(segments)-1; i++ {
-		if segments[i] == "beers" && key == "id" {
-			return segments[i+1]
-		}
-		if segments[i] == "comments" && key == "commentId" && i+1 < len(segments) {
-			return segments[i+1]
-		}
-	}
-
-	return ""
-}
-
 func (c *BeerController) GetAllBeers(w http.ResponseWriter, r *http.Request) {
 	// REUTILIZADO: Uso consistente do helper 'getIntParam'
 	query := r.URL.Query()
@@ -134,12 +104,12 @@ func (c *BeerController) GetAllBeers(w http.ResponseWriter, r *http.Request) {
 
 	beers, total, err := c.usecase.GetPaginated(r.Context(), page, pageSize)
 	if err != nil {
-		handleError(w, c.logger, err, "Failed to retrieve beers", http.StatusInternalServerError)
+		handleError(w, r.Context(), c.logger, err, "Failed to retrieve beers", http.StatusInternalServerError)
 		return
 	}
 
 	response.SendResponse(w, http.StatusOK, map[string]interface{}{
-		"beers":    beers,
+		"beers":    response.SelectFields(beers, query.Get("fields")),
 		"total":    total,
 		"page":     page,
 		"pageSize": pageSize,
@@ -150,7 +120,7 @@ func (c *BeerController) CreateBeer(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 
 	if r.Body == nil {
-		handleError(w, c.logger, fmt.Errorf("request body is empty"), "Invalid request body", http.StatusBadRequest)
+		handleError(w, r.Context(), c.logger, fmt.Errorf("request body is empty"), "Invalid request body", http.StatusBadRequest)
 		return
 	}
 
@@ -159,7 +129,7 @@ func (c *BeerController) CreateBeer(w http.ResponseWriter, r *http.Request) {
 
 	var beer model.Beer
 	if err := json.NewDecoder(r.Body).Decode(&beer); err != nil {
-		handleError(w, c.logger, err, "Invalid request body", http.StatusBadRequest)
+		handleError(w, r.Context(), c.logger, err, "Invalid request body", http.StatusBadRequest)
 		return
 	}
 
@@ -169,12 +139,12 @@ func (c *BeerController) CreateBeer(w http.ResponseWriter, r *http.Request) {
 	beer.Description = sanitizer.Sanitize(beer.Description)
 
 	if err := c.validateBeer(beer); err != nil {
-		handleError(w, c.logger, err, err.Error(), http.StatusBadRequest)
+		handleError(w, r.Context(), c.logger, err, err.Error(), http.StatusBadRequest)
 		return
 	}
 
 	if err := c.usecase.Create(r.Context(), beer); err != nil {
-		handleError(w, c.logger, err, "Failed to create beer", http.StatusInternalServerError)
+		handleError(w, r.Context(), c.logger, err, "Failed to create beer", http.StatusInternalServerError)
 		return
 	}
 
@@ -189,10 +159,10 @@ func (c *BeerController) CreateBeer(w http.ResponseWriter, r *http.Request) {
 }
 
 func (c *BeerController) UpdateBeer(w http.ResponseWriter, r *http.Request) {
-	id := requestParam(r, "id")
+	id := r.PathValue("id")
 
 	if r.Body == nil {
-		handleError(w, c.logger, fmt.Errorf("request body is empty"), "Invalid request body", http.StatusBadRequest)
+		handleError(w, r.Context(), c.logger, fmt.Errorf("request body is empty"), "Invalid request body", http.StatusBadRequest)
 		return
 	}
 	
@@ -201,7 +171,7 @@ func (c *BeerController) UpdateBeer(w http.ResponseWriter, r *http.Request) {
 
 	var beer model.Beer
 	if err := json.NewDecoder(r.Body).Decode(&beer); err != nil {
-		handleError(w, c.logger, err, "Invalid request body", http.StatusBadRequest)
+		handleError(w, r.Context(), c.logger, err, "Invalid request body", http.StatusBadRequest)
 		return
 	}
 
@@ -210,12 +180,12 @@ func (c *BeerController) UpdateBeer(w http.ResponseWriter, r *http.Request) {
 	beer.Description = sanitizer.Sanitize(beer.Description)
 
 	if err := c.validateBeer(beer); err != nil {
-		handleError(w, c.logger, err, err.Error(), http.StatusBadRequest)
+		handleError(w, r.Context(), c.logger, err, err.Error(), http.StatusBadRequest)
 		return
 	}
 
 	if err := c.usecase.Update(r.Context(), id, beer); err != nil {
-		handleError(w, c.logger, err, "Failed to update beer", http.StatusInternalServerError)
+		handleError(w, r.Context(), c.logger, err, "Failed to update beer", http.StatusInternalServerError)
 		return
 	}
 
@@ -223,10 +193,10 @@ func (c *BeerController) UpdateBeer(w http.ResponseWriter, r *http.Request) {
 }
 
 func (c *BeerController) DeleteBeer(w http.ResponseWriter, r *http.Request) {
-	id := requestParam(r, "id")
+	id := r.PathValue("id")
 
 	if err := c.usecase.Delete(r.Context(), id); err != nil {
-		handleError(w, c.logger, err, "Failed to delete beer", http.StatusInternalServerError)
+		handleError(w, r.Context(), c.logger, err, "Failed to delete beer", http.StatusInternalServerError)
 		return
 	}
 
@@ -234,7 +204,7 @@ func (c *BeerController) DeleteBeer(w http.ResponseWriter, r *http.Request) {
 }
 
 func (c *BeerController) GetBeerByID(w http.ResponseWriter, r *http.Request) {
-	beerID := requestParam(r, "id")
+	beerID := r.PathValue("id")
 
 	beer, err := c.usecase.GetByID(r.Context(), beerID)
 	if err != nil {
@@ -244,7 +214,7 @@ func (c *BeerController) GetBeerByID(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, appErr.Message, http.StatusNotFound)
 			return
 		}
-		handleError(w, c.logger, err, "Failed to retrieve beer", http.StatusInternalServerError)
+		handleError(w, r.Context(), c.logger, err, "Failed to retrieve beer", http.StatusInternalServerError)
 		return
 	}
 
@@ -253,10 +223,10 @@ func (c *BeerController) GetBeerByID(w http.ResponseWriter, r *http.Request) {
 }
 
 func (c *BeerController) AddComment(w http.ResponseWriter, r *http.Request) {
-	id := requestParam(r, "id")
+	id := r.PathValue("id")
 
 	if r.Body == nil {
-		handleError(w, c.logger, fmt.Errorf("request body is empty"), "Invalid request body", http.StatusBadRequest)
+		handleError(w, r.Context(), c.logger, fmt.Errorf("request body is empty"), "Invalid request body", http.StatusBadRequest)
 		return
 	}
 	
@@ -264,12 +234,12 @@ func (c *BeerController) AddComment(w http.ResponseWriter, r *http.Request) {
 
 	var comment model.Comment
 	if err := json.NewDecoder(r.Body).Decode(&comment); err != nil {
-		handleError(w, c.logger, err, "Invalid request body", http.StatusBadRequest)
+		handleError(w, r.Context(), c.logger, err, "Invalid request body", http.StatusBadRequest)
 		return
 	}
 
 	if err := validate.Struct(comment); err != nil {
-		handleError(w, c.logger, err, "Invalid input", http.StatusBadRequest)
+		handleError(w, r.Context(), c.logger, err, "Invalid input", http.StatusBadRequest)
 		return
 	}
 
@@ -277,7 +247,7 @@ func (c *BeerController) AddComment(w http.ResponseWriter, r *http.Request) {
 	comment.Likes = 0
 
 	if err := c.usecase.AddComment(r.Context(), id, comment); err != nil {
-		handleError(w, c.logger, err, "Failed to add comment", http.StatusInternalServerError)
+		handleError(w, r.Context(), c.logger, err, "Failed to add comment", http.StatusInternalServerError)
 		return
 	}
 
@@ -288,8 +258,8 @@ func (c *BeerController) AddComment(w http.ResponseWriter, r *http.Request) {
 }
 
 func (c *BeerController) DeleteComment(w http.ResponseWriter, r *http.Request) {
-	beerID := requestParam(r, "id")
-	commentID := requestParam(r, "commentId")
+	beerID := r.PathValue("id")
+	commentID := r.PathValue("commentId")
 
 	if err := c.usecase.DeleteComment(r.Context(), beerID, commentID); err != nil {
 		var appErr *appErrors.AppError
@@ -298,7 +268,7 @@ func (c *BeerController) DeleteComment(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, appErr.Message, http.StatusNotFound)
 			return
 		}
-		handleError(w, c.logger, err, "Failed to delete comment", http.StatusInternalServerError)
+		handleError(w, r.Context(), c.logger, err, "Failed to delete comment", http.StatusInternalServerError)
 		return
 	}
 
@@ -306,12 +276,12 @@ func (c *BeerController) DeleteComment(w http.ResponseWriter, r *http.Request) {
 }
 
 func (c *BeerController) LikeComment(w http.ResponseWriter, r *http.Request) {
-	beerID := requestParam(r, "id")
-	commentID := requestParam(r, "commentId")
+	beerID := r.PathValue("id")
+	commentID := r.PathValue("commentId")
 
 	deviceID := r.Header.Get("X-Device-ID")
 	if deviceID == "" {
-		handleError(w, c.logger, fmt.Errorf("device ID is required"), "Device ID is required", http.StatusBadRequest)
+		handleError(w, r.Context(), c.logger, fmt.Errorf("device ID is required"), "Device ID is required", http.StatusBadRequest)
 		return
 	}
 
@@ -320,7 +290,7 @@ func (c *BeerController) LikeComment(w http.ResponseWriter, r *http.Request) {
 		// CORRIGIDO: Uso de errors.As
 		if stdErrors.As(err, &appErr) {
 			if appErr.Code == http.StatusBadRequest && strings.Contains(strings.ToLower(appErr.Message), "already liked") {
-				handleError(w, c.logger, err, "Comment already liked by this device", http.StatusBadRequest)
+				handleError(w, r.Context(), c.logger, err, "Comment already liked by this device", http.StatusBadRequest)
 				return
 			}
 			if appErr.Code == http.StatusNotFound || strings.Contains(strings.ToLower(appErr.Message), "not found") {
@@ -328,7 +298,7 @@ func (c *BeerController) LikeComment(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
-		handleError(w, c.logger, err, "Failed to like comment", http.StatusInternalServerError)
+		handleError(w, r.Context(), c.logger, err, "Failed to like comment", http.StatusInternalServerError)
 		return
 	}
 
@@ -348,19 +318,19 @@ func (c *BeerController) SearchBeers(w http.ResponseWriter, r *http.Request) {
 
 	if minAlc := query.Get("minAlcohol"); minAlc != "" {
 		if val, err := strconv.ParseFloat(minAlc, 64); err == nil {
-			filters.MinAlcohol = new(val)
+			filters.MinAlcohol = new(float64(val))
 		}
 	}
 
 	if maxAlc := query.Get("maxAlcohol"); maxAlc != "" {
 		if val, err := strconv.ParseFloat(maxAlc, 64); err == nil {
-			filters.MaxAlcohol = new(val)
+			filters.MaxAlcohol = new(float64(val))
 		}
 	}
 
 	beers, total, err := c.usecase.SearchBeers(r.Context(), filters)
 	if err != nil {
-		handleError(w, c.logger, err, "Failed to search beers", http.StatusInternalServerError)
+		handleError(w, r.Context(), c.logger, err, "Failed to search beers", http.StatusInternalServerError)
 		return
 	}
 

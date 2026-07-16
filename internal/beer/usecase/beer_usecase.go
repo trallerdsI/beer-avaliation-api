@@ -82,10 +82,18 @@ func (u *beerUsecase) GetByID(ctx context.Context, id string) (model.Beer, error
 		return u.repo.GetByID(ctx, id)
 	})
 	if err != nil {
+		// Preserva a causa raiz (ex: AppError 404 do repositório) via erro
+		// embrulhado, mantendo a cadeia inspecionável por errors.As/Is.
 		return model.Beer{}, errors.NewAppError(500, "Failed to retrieve beer by ID", err)
 	}
 
-	return result.(model.Beer), nil
+	// Type assertion segura: o breaker só devolve o valor em sucesso; nunca
+	// fazemos panic se, por qualquer razão, o tipo não bater.
+	beer, ok := result.(model.Beer)
+	if !ok {
+		return model.Beer{}, errors.NewAppError(500, "Failed to retrieve beer by ID", nil)
+	}
+	return beer, nil
 }
 
 func isServerlessRuntime() bool {

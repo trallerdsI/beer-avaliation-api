@@ -1,67 +1,59 @@
 package metrics
 
 import (
-	"log"
+	"context"
+	"log/slog"
 	"os"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
+// Os rótulos usam o PADRÃO ESTÁTICO da rota (ex: "/api/v1/beers/{id}"),
+// NUNCA o path com IDs concretos. Isto é a defesa central contra alta
+// cardinalidade no Prometheus (Pilar 4): um label "route" com IDs dinâmicos
+// explodiria a série temporal e exauriria memória do servidor de monitorização.
 var (
-	// RequestDuration stores the duration of HTTP requests by route, method, and status.
+	// RequestDuration regista a duração das requisições por rota, método e status.
 	RequestDuration = promauto.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Name:    "http_request_duration_seconds",
 			Help:    "Duration of HTTP requests",
 			Buckets: prometheus.DefBuckets,
 		},
-		[]string{"path", "method", "status"},
+		[]string{"route", "method", "status"},
 	)
 
-	// TotalRequests counts HTTP requests by path, method, and status.
+	// TotalRequests conta as requisições por rota, método e status.
 	TotalRequests = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "http_requests_total",
 			Help: "Total number of HTTP requests",
 		},
-		[]string{"path", "method", "status"},
-	)
-
-	ActiveUsers = promauto.NewGauge(
-		prometheus.GaugeOpts{
-			Name: "active_users",
-			Help: "Number of currently active users",
-		},
-	)
-
-	BeerCount = promauto.NewGauge(
-		prometheus.GaugeOpts{
-			Name: "total_beers",
-			Help: "Total number of beers in the system",
-		},
-	)
-
-	CommentCount = promauto.NewGauge(
-		prometheus.GaugeOpts{
-			Name: "total_comments",
-			Help: "Total number of comments in the system",
-		},
+		[]string{"route", "method", "status"},
 	)
 )
 
-// RecordMetrics logs or records request metrics depending on the runtime environment.
-func RecordMetrics(path, method, status string, duration float64) {
+// RecordMetrics regista (ou loga, em serverless) as métricas de requisição.
+// `pattern` DEVE ser o template estático da rota (r.Pattern), não o path com IDs.
+func RecordMetrics(ctx context.Context, pattern, method, status string, duration float64) {
 	if IsServerlessRuntime() {
-		log.Printf(`{"event":"http_request","path":"%s","method":"%s","status":"%s","duration_seconds":%.6f}`, path, method, status, duration)
+		// Log estruturado determinístico (sem alta cardinalidade): usa o padrão
+		// estático da rota, não o path com IDs.
+		slog.InfoContext(ctx, "http_request",
+			"pattern", pattern,
+			"method", method,
+			"status", status,
+			"duration_seconds", duration,
+		)
 		return
 	}
 
-	RequestDuration.WithLabelValues(path, method, status).Observe(duration)
-	TotalRequests.WithLabelValues(path, method, status).Inc()
+	RequestDuration.WithLabelValues(pattern, method, status).Observe(duration)
+	TotalRequests.WithLabelValues(pattern, method, status).Inc()
 }
 
-// IsServerlessRuntime returns true when the application is running in serverless mode.
+// IsServerlessRuntime devolve true quando a aplicação corre em modo serverless.
 func IsServerlessRuntime() bool {
 	return os.Getenv("VERCEL") != "" || os.Getenv("NOW_REGION") != "" || os.Getenv("AWS_LAMBDA_FUNCTION_NAME") != ""
 }

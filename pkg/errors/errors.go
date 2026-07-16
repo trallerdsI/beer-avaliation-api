@@ -15,7 +15,25 @@ type AppError struct {
 }
 
 func (e *AppError) Error() string {
+	if e.Err != nil {
+		return fmt.Sprintf("Error %d: %s: %v", e.Code, e.Message, e.Err)
+	}
 	return fmt.Sprintf("Error %d: %s", e.Code, e.Message)
+}
+
+// Unwrap expõe o erro interno para errors.As/errors.Is (tratamento
+// hierárquico idiomático do Go 1.26).
+func (e *AppError) Unwrap() error {
+	return e.Err
+}
+
+// Is satisfaz errors.Is para AppError com o mesmo Code.
+func (e *AppError) Is(target error) bool {
+	var t *AppError
+	if errors.As(target, &t) {
+		return t.Code == e.Code
+	}
+	return false
 }
 
 func NewAppError(code int, message string, err error) *AppError {

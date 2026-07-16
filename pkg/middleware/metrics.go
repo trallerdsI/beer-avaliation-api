@@ -31,7 +31,7 @@ func MetricsMiddleware(next http.Handler) http.Handler {
 
 		// Record duration and send metrics.
 		duration := time.Since(start).Seconds()
-		metrics.RecordMetrics(pattern, r.Method, http.StatusText(rw.status), duration)
+		metrics.RecordMetrics(r.Context(), pattern, r.Method, http.StatusText(rw.status), duration)
 
 		// Log estruturado via slog com contexto da requisição.
 		slog.InfoContext(r.Context(), "request completed",

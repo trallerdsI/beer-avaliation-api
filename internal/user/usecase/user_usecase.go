@@ -2,7 +2,7 @@ package usecase
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"time"
 
 	"beer-review-app/internal/user/model"
@@ -30,20 +30,26 @@ func NewUserUsecase(repo repository.UserRepository) UserUsecase {
 }
 
 func (u *userUsecase) Register(ctx context.Context, user model.User) error {
-	// Log the user registration attempt
-	log.Printf("Attempting to register user with email: %s, username: %s", user.Email, user.Username)
+	slog.InfoContext(ctx, "register attempt", "username", user.Username)
 
 	// Check if email already exists
 	_, err := u.repo.GetByEmail(ctx, user.Email)
 	if err == nil {
-		log.Printf("Registration failed: email %s already registered", user.Email)
+		slog.WarnContext(ctx, "registration failed: email already registered", "username", user.Username)
 		return errors.NewAppError(400, "email already registered", nil)
+	}
+
+	// Defesa: limita o tamanho da senha antes do bcrypt para evitar DoS de CPU
+	// (custo do bcrypt cresce com o tamanho da entrada). 72 bytes é o teto do bcrypt.
+	if len(user.Password) > 72 {
+		slog.ErrorContext(ctx, "password exceeds bcrypt limit")
+		return errors.NewAppError(400, "password too long", nil)
 	}
 
 	// Hash password
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(user.Password), bcrypt.DefaultCost)
 	if err != nil {
-		log.Printf("Failed to hash password for user %s: %v", user.Email, err)
+		slog.ErrorContext(ctx, "failed to hash password", "err", err)
 		return errors.NewAppError(500, "failed to hash password", err)
 	}
 
@@ -53,79 +59,83 @@ func (u *userUsecase) Register(ctx context.Context, user model.User) error {
 
 	// Create user in the repository (user.ID will be auto-generated)
 	if err := u.repo.Create(ctx, user); err != nil {
-		log.Printf("Failed to create user %s: %v", user.Email, err)
+		slog.ErrorContext(ctx, "failed to create user", "err", err)
 		return errors.NewAppError(500, "failed to create user", err)
 	}
 
-	// Log successful registration
-	log.Printf("User registered successfully with email: %s", user.Email)
+	slog.InfoContext(ctx, "user registered", "username", user.Username)
 	return nil
 }
 
 func (u *userUsecase) Login(ctx context.Context, email, password string) (string, error) {
-	log.Printf("Attempting to login with email: %s", email)
+	slog.InfoContext(ctx, "login attempt")
+
+	// Defesa: limita o tamanho da senha antes do bcrypt.
+	if len(password) > 72 {
+		slog.WarnContext(ctx, "login failed: password too long")
+		return "", errors.NewAppError(401, "invalid credentials", nil)
+	}
 
 	// Get user by email
 	user, err := u.repo.GetByEmail(ctx, email)
 	if err != nil {
-		log.Printf("Login failed: invalid credentials for email %s", email)
+		slog.WarnContext(ctx, "login failed: user not found")
 		return "", errors.NewAppError(401, "invalid credentials", nil)
 	}
 
 	// Compare passwords
 	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password)); err != nil {
-		log.Printf("Login failed: invalid password for email %s", email)
+		slog.WarnContext(ctx, "login failed: invalid password")
 		return "", errors.NewAppError(401, "invalid credentials", nil)
 	}
 
 	// Generate JWT token
 	token, err := auth.GenerateToken(user.ID)
 	if err != nil {
-		log.Printf("Failed to generate token for user %s: %v", email, err)
+		slog.ErrorContext(ctx, "failed to generate token", "err", err)
 		return "", errors.NewAppError(500, "failed to generate token", err)
 	}
 
-	// Log successful login
-	log.Printf("User logged in successfully with email: %s", email)
+	slog.InfoContext(ctx, "user logged in", "user_id", user.ID)
 	return token, nil
 }
 
 func (u *userUsecase) GetProfile(ctx context.Context, id string) (model.User, error) {
-	log.Printf("Fetching profile for user ID: %s", id)
+	slog.InfoContext(ctx, "fetch profile", "user_id", id)
 
 	// Get user by ID
 	user, err := u.repo.GetByID(ctx, id)
 	if err != nil {
-		log.Printf("Failed to find user profile with ID: %s", id)
+		slog.WarnContext(ctx, "profile not found", "user_id", id)
 		return model.User{}, errors.NewAppError(404, "user not found", err)
 	}
 
-	log.Printf("User profile fetched successfully for ID: %s", id)
+	slog.InfoContext(ctx, "profile fetched", "user_id", id)
 	return user, nil
 }
 
 func (u *userUsecase) UpdateProfile(ctx context.Context, id string, user model.User) error {
-	log.Printf("Attempting to update profile for user ID: %s", id)
+	slog.InfoContext(ctx, "update profile attempt", "user_id", id)
 
 	// Update user profile
 	if err := u.repo.Update(ctx, id, user); err != nil {
-		log.Printf("Failed to update profile for user ID: %s: %v", id, err)
+		slog.ErrorContext(ctx, "failed to update profile", "user_id", id, "err", err)
 		return errors.NewAppError(500, "failed to update profile", err)
 	}
 
-	log.Printf("User profile updated successfully for ID: %s", id)
+	slog.InfoContext(ctx, "profile updated", "user_id", id)
 	return nil
 }
 
 func (u *userUsecase) DeleteAccount(ctx context.Context, id string) error {
-	log.Printf("Attempting to delete account for user ID: %s", id)
+	slog.InfoContext(ctx, "delete account attempt", "user_id", id)
 
 	// Delete user account
 	if err := u.repo.Delete(ctx, id); err != nil {
-		log.Printf("Failed to delete account for user ID: %s: %v", id, err)
+		slog.ErrorContext(ctx, "failed to delete account", "user_id", id, "err", err)
 		return errors.NewAppError(500, "failed to delete account", err)
 	}
 
-	log.Printf("User account deleted successfully for ID: %s", id)
+	slog.InfoContext(ctx, "account deleted", "user_id", id)
 	return nil
 }

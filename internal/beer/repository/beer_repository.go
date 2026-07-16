@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"strings"
 	"sync"
 
 	"beer-review-app/internal/beer/model"
@@ -59,12 +60,16 @@ func (r *InMemoryBeerRepository) GetByID(ctx context.Context, id string) (model.
 	return model.Beer{}, errors.NewAppError(404, "beer not found", nil)
 }
 
-// GetAll retrieves all beers from the in-memory repository with pagination.
+// GetAll retrieves all beers from the in-memory repository.
+// Devolve uma CÓPIA defensiva: o caller não pode mutar o slice interno nem
+// causar race concorrente (Pilar 4 / Pilar 3).
 func (r *InMemoryBeerRepository) GetAll(ctx context.Context) ([]model.Beer, error) {
 	r.mutex.RLock()
 	defer r.mutex.RUnlock()
 
-	return r.beers, nil
+	out := make([]model.Beer, len(r.beers))
+	copy(out, r.beers)
+	return out, nil
 }
 
 // GetPaginated retrieves paginated beers from the in-memory repository
@@ -73,18 +78,22 @@ func (r *InMemoryBeerRepository) GetPaginated(ctx context.Context, page, pageSiz
 	defer r.mutex.RUnlock()
 
 	start := (page - 1) * pageSize
-	end := start + pageSize
 	total := len(r.beers)
 
-	if start >= total {
+	if start >= total || pageSize <= 0 {
 		return []model.Beer{}, total, nil
 	}
 
+	end := start + pageSize
 	if end > total {
 		end = total
 	}
 
-	return r.beers[start:end], total, nil
+	// Cópia do segmento: evita expor o slice interno (sub-slice partilhada).
+	seg := r.beers[start:end]
+	out := make([]model.Beer, len(seg))
+	copy(out, seg)
+	return out, total, nil
 }
 
 // Update updates a beer in the in-memory repository.
@@ -369,66 +378,68 @@ func (r *PostgresBeerRepository) Delete(ctx context.Context, id string) error {
 }
 
 func (r *PostgresBeerRepository) SearchBeers(ctx context.Context, filters model.BeerFilters) ([]model.Beer, int, error) {
-	query := `
-        SELECT id, name, style, description, alcohol, taste, aroma, color, body, carbonation, finish, comments
-        FROM beers
-        WHERE 1=1
-    `
-	countQuery := `SELECT COUNT(*) FROM beers WHERE 1=1`
+	// strings.Builder com pré-alocação: evita as múltiplas realocações de
+	// string causadas por concatenação "+=" e fmt.Sprintf no hot path (Pilar 2).
+	var qb, cb strings.Builder
+	qb.Grow(256)
+	cb.Grow(128)
+	qb.WriteString("SELECT id, name, style, description, alcohol, taste, aroma, color, body, carbonation, finish, comments FROM beers WHERE 1=1")
+	cb.WriteString("SELECT COUNT(*) FROM beers WHERE 1=1")
 	args := []interface{}{}
 	argPosition := 1
 
-	// Add filters dynamically to query
+	// Add filters dynamically to query (parâmetros posicionais $N, sem concat
+	// de valores — defesa contra SQL injection, Pilar 4).
 	if filters.Query != "" {
-		query += fmt.Sprintf(" AND (name ILIKE $%d OR description ILIKE $%d)", argPosition, argPosition)
-		countQuery += fmt.Sprintf(" AND (name ILIKE $%d OR description ILIKE $%d)", argPosition, argPosition)
+		qb.WriteString(fmt.Sprintf(" AND (name ILIKE $%d OR description ILIKE $%d)", argPosition, argPosition))
+		cb.WriteString(fmt.Sprintf(" AND (name ILIKE $%d OR description ILIKE $%d)", argPosition, argPosition))
 		args = append(args, "%"+filters.Query+"%")
 		argPosition++
 	}
 
 	if filters.Style != "" {
-		query += fmt.Sprintf(" AND style = $%d", argPosition)
-		countQuery += fmt.Sprintf(" AND style = $%d", argPosition)
+		qb.WriteString(fmt.Sprintf(" AND style = $%d", argPosition))
+		cb.WriteString(fmt.Sprintf(" AND style = $%d", argPosition))
 		args = append(args, filters.Style)
 		argPosition++
 	}
 
 	if filters.MinAlcohol != nil {
-		query += fmt.Sprintf(" AND alcohol >= $%d", argPosition)
-		countQuery += fmt.Sprintf(" AND alcohol >= $%d", argPosition)
+		qb.WriteString(fmt.Sprintf(" AND alcohol >= $%d", argPosition))
+		cb.WriteString(fmt.Sprintf(" AND alcohol >= $%d", argPosition))
 		args = append(args, *filters.MinAlcohol)
 		argPosition++
 	}
 
 	if filters.MaxAlcohol != nil {
-		query += fmt.Sprintf(" AND alcohol <= $%d", argPosition)
-		countQuery += fmt.Sprintf(" AND alcohol <= $%d", argPosition)
+		qb.WriteString(fmt.Sprintf(" AND alcohol <= $%d", argPosition))
+		cb.WriteString(fmt.Sprintf(" AND alcohol <= $%d", argPosition))
 		args = append(args, *filters.MaxAlcohol)
 		argPosition++
 	}
 
 	if filters.Taste != "" {
-		query += fmt.Sprintf(" AND taste = $%d", argPosition)
-		countQuery += fmt.Sprintf(" AND taste = $%d", argPosition)
+		qb.WriteString(fmt.Sprintf(" AND taste = $%d", argPosition))
+		cb.WriteString(fmt.Sprintf(" AND taste = $%d", argPosition))
 		args = append(args, filters.Taste)
 		argPosition++
 	}
 
 	// Get total count of filtered beers
 	var total int
-	err := r.db.QueryRowContext(ctx, countQuery, args...).Scan(&total)
+	err := r.db.QueryRowContext(ctx, cb.String(), args...).Scan(&total)
 	if err != nil {
-		return nil, 0, fmt.Errorf("failed to count beers: %v", err)
+		return nil, 0, fmt.Errorf("failed to count beers: %w", err)
 	}
 
 	// Add pagination
-	query += fmt.Sprintf(" ORDER BY name LIMIT $%d OFFSET $%d", argPosition, argPosition+1)
+	qb.WriteString(fmt.Sprintf(" ORDER BY name LIMIT $%d OFFSET $%d", argPosition, argPosition+1))
 	args = append(args, filters.PageSize, (filters.Page-1)*filters.PageSize)
 
 	// Execute the query
-	rows, err := r.db.QueryContext(ctx, query, args...)
+	rows, err := r.db.QueryContext(ctx, qb.String(), args...)
 	if err != nil {
-		return nil, 0, fmt.Errorf("failed to search beers: %v", err)
+		return nil, 0, fmt.Errorf("failed to search beers: %w", err)
 	}
 	defer rows.Close()
 
@@ -451,14 +462,14 @@ func (r *PostgresBeerRepository) SearchBeers(ctx context.Context, filters model.
 			&commentsJSON,
 		)
 		if err != nil {
-			return nil, 0, fmt.Errorf("failed to scan beer: %v", err)
+			return nil, 0, fmt.Errorf("failed to scan beer: %w", err)
 		}
 		beer.Comments = unmarshalComments(commentsJSON)
 		beers = append(beers, beer)
 	}
 
 	if err = rows.Err(); err != nil {
-		return nil, 0, fmt.Errorf("error iterating over rows: %v", err)
+		return nil, 0, fmt.Errorf("error iterating over rows: %w", err)
 	}
 
 	return beers, total, nil
@@ -471,7 +482,7 @@ func (r *PostgresBeerRepository) GetAll(ctx context.Context) ([]model.Beer, erro
 		FROM beers
 	`)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get beers: %v", err)
+		return nil, fmt.Errorf("failed to get beers: %w", err)
 	}
 	defer rows.Close()
 
@@ -494,14 +505,14 @@ func (r *PostgresBeerRepository) GetAll(ctx context.Context) ([]model.Beer, erro
 			&commentsJSON,
 		)
 		if err != nil {
-			return nil, fmt.Errorf("failed to scan beer: %v", err)
+			return nil, fmt.Errorf("failed to scan beer: %w", err)
 		}
 		beer.Comments = unmarshalComments(commentsJSON)
 		beers = append(beers, beer)
 	}
 
 	if err = rows.Err(); err != nil {
-		return nil, fmt.Errorf("error iterating over rows: %v", err)
+		return nil, fmt.Errorf("error iterating over rows: %w", err)
 	}
 
 	return beers, nil
@@ -512,7 +523,7 @@ func (r *PostgresBeerRepository) AddComment(ctx context.Context, id string, comm
 	// First get the beer to ensure it exists
 	beer, err := r.GetByID(ctx, id)
 	if err != nil {
-		return fmt.Errorf("failed to get beer: %v", err)
+		return fmt.Errorf("failed to get beer: %w", err)
 	}
 
 	// Add comment to the comments array
@@ -527,7 +538,7 @@ func (r *PostgresBeerRepository) DeleteComment(ctx context.Context, id string, c
 	// First get the beer to ensure it exists
 	beer, err := r.GetByID(ctx, id)
 	if err != nil {
-		return fmt.Errorf("failed to get beer: %v", err)
+		return fmt.Errorf("failed to get beer: %w", err)
 	}
 
 	// Find and remove the comment

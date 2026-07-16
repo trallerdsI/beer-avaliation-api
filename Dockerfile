@@ -11,7 +11,7 @@ RUN go mod download
 COPY . .
 
 # Build estático (CGO desabilitado) para rodar em distroless
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o main cmd/server/main.go
+RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o main cmd/server/main.go
 
 # Imagem final mínima e segura (sem shell, sem pacotes extras)
 FROM gcr.io/distroless/static-debian12

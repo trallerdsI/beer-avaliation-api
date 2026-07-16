@@ -90,10 +90,11 @@ func BuildRouter(db *sql.DB, logger *slog.Logger) http.Handler {
 		mux.Handle("GET /metrics", promhttp.Handler())
 	}
 
-	// Encadeamento de middlewares: RequestID -> Metrics -> handler.
+	// Encadeamento de middlewares: Compression -> RequestID -> Metrics -> handler.
 	var handler http.Handler = mux
 	handler = middleware.MetricsMiddleware(handler)
 	handler = middleware.RequestIDMiddleware(handler)
+	handler = middleware.CompressionMiddleware(handler)
 
 	return handler
 }
