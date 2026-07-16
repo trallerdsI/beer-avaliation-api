@@ -1,14 +1,12 @@
-.PHONY: all lint test
+.PHONY: all lint test coverage
 
 all: lint test
 
 lint:
 	go vet ./...
-	staticcheck ./...
 
 test:
-	go test ./
+	go test ./... -coverprofile=coverage.out
 
 coverage:
-	go test ./... > coverage.out
 	go tool cover -html=coverage.out

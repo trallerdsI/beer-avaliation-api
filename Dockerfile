@@ -1,34 +1,29 @@
-# Use a more recent Go version
-FROM golang:1.24-alpine AS builder
+# Build stage com Go 1.26.5
+FROM golang:1.26.5-alpine AS builder
 
-# Set the working directory
 WORKDIR /app
 
-# Copy go.mod and go.sum files first for better caching
+# Copia go.mod e go.sum primeiro para aproveitar o cache de módulos
 COPY go.mod go.sum ./
 RUN go mod download
 
-# Copy the source code
+# Copia o código-fonte
 COPY . .
 
-# Build the application
+# Build estático (CGO desabilitado) para rodar em distroless
 RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o main cmd/server/main.go
 
-# Start a new stage from scratch
-FROM alpine:latest
-
-# Install necessary packages
-RUN apk --no-cache add ca-certificates
+# Imagem final mínima e segura (sem shell, sem pacotes extras)
+FROM gcr.io/distroless/static-debian12
 
 WORKDIR /root/
 
-# Copy the pre-built binary file from the previous stage
 COPY --from=builder /app/main /root/main
+COPY --from=builder /app/migrations/ /root/migrations/
 
-COPY migrations/ /root/migrations/
-
-# Expose port 8082 to the outside world
+# Porta exposta (mantém 8082 para alinhar com SERVER_PORT padrão)
 EXPOSE 8082
 
-# Command to run the executable
-CMD ["./main"]
+USER nonroot:nonroot
+
+CMD ["/root/main"]
