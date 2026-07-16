@@ -13,8 +13,6 @@ import (
 	"beer-review-app/pkg/response"
 
 	"github.com/go-playground/validator/v10"
-	"github.com/google/uuid"
-	"go.uber.org/zap"
 )
 
 // UserController handles HTTP requests related to users.

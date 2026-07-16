@@ -15,7 +15,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/microcosm-cc/bluemonday"
 	"github.com/prometheus/client_golang/prometheus"
-	"go.uber.org/zap"
 
 	"beer-review-app/internal/beer/model"
 	"beer-review-app/internal/beer/usecase"
@@ -349,13 +348,13 @@ func (c *BeerController) SearchBeers(w http.ResponseWriter, r *http.Request) {
 
 	if minAlc := query.Get("minAlcohol"); minAlc != "" {
 		if val, err := strconv.ParseFloat(minAlc, 64); err == nil {
-			filters.MinAlcohol = &val
+			filters.MinAlcohol = new(val)
 		}
 	}
 
 	if maxAlc := query.Get("maxAlcohol"); maxAlc != "" {
 		if val, err := strconv.ParseFloat(maxAlc, 64); err == nil {
-			filters.MaxAlcohol = &val
+			filters.MaxAlcohol = new(val)
 		}
 	}
 

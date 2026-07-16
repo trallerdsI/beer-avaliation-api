@@ -30,9 +30,6 @@ func main() {
 	// Go 1.26: log estruturado nativo via log/slog.
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	slog.SetDefault(logger)
-	defer func() {
-		_ = logger.Handler().Flush()
-	}()
 
 	serverPort := viper.GetString("SERVER_PORT")
 	if serverPort == "" {

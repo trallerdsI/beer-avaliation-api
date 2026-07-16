@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -12,14 +13,12 @@ import (
 	"beer-review-app/internal/beer/usecase"
 	"beer-review-app/pkg/errors"
 
-	"github.com/gorilla/mux"
 	"github.com/stretchr/testify/mock"
-	"go.uber.org/zap"
 )
 
 // Create mock dependencies
 var (
-	mockLogger      = zap.NewNop()
+	mockLogger      = slog.Default()
 	mockBeerUsecase = new(MockBeerUsecase)
 )
 
@@ -256,7 +255,8 @@ func TestLikeComment(t *testing.T) {
 		req.Header.Set("X-Device-ID", "device123")
 		rr := httptest.NewRecorder()
 
-		req = mux.SetURLVars(req, map[string]string{"id": "1", "commentId": "1"})
+		req.SetPathValue("id", "1")
+		req.SetPathValue("commentId", "1")
 		controller.LikeComment(rr, req)
 
 		if status := rr.Code; status != http.StatusOK {
@@ -269,7 +269,8 @@ func TestLikeComment(t *testing.T) {
 		req := httptest.NewRequest("POST", "/beers/1/comments/1/like", nil)
 		rr := httptest.NewRecorder()
 
-		req = mux.SetURLVars(req, map[string]string{"id": "1", "commentId": "1"})
+		req.SetPathValue("id", "1")
+		req.SetPathValue("commentId", "1")
 		controller.LikeComment(rr, req)
 
 		if status := rr.Code; status != http.StatusBadRequest {
@@ -283,7 +284,8 @@ func TestLikeComment(t *testing.T) {
 		req.Header.Set("X-Device-ID", "device-already-liked")
 		rr := httptest.NewRecorder()
 
-		req = mux.SetURLVars(req, map[string]string{"id": "1", "commentId": "1"})
+		req.SetPathValue("id", "1")
+		req.SetPathValue("commentId", "1")
 		mockBeerUsecase.LikeCommentFunc = func(ctx context.Context, beerID, commentID, deviceID string) error {
 			if deviceID == "device-already-liked" {
 				return errors.NewAppError(400, "already liked", nil)
@@ -309,7 +311,8 @@ func TestDeleteComment(t *testing.T) {
 		req := httptest.NewRequest("DELETE", "/beers/1/comments/1", nil)
 		rr := httptest.NewRecorder()
 
-		req = mux.SetURLVars(req, map[string]string{"id": "1", "commentId": "1"})
+		req.SetPathValue("id", "1")
+		req.SetPathValue("commentId", "1")
 		controller.DeleteComment(rr, req)
 
 		if status := rr.Code; status != http.StatusOK {
@@ -323,7 +326,8 @@ func TestDeleteComment(t *testing.T) {
 		req := httptest.NewRequest("DELETE", "/beers/1/comments/999", nil)
 		rr := httptest.NewRecorder()
 
-		req = mux.SetURLVars(req, map[string]string{"id": "1", "commentId": "999"})
+		req.SetPathValue("id", "1")
+		req.SetPathValue("commentId", "999")
 		controller.DeleteComment(rr, req)
 
 		if status := rr.Code; status != http.StatusNotFound {

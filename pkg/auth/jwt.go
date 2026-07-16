@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+
+	"beer-review-app/pkg/errors"
 )
 
 // jwtSecret é carregado de JWT_SECRET (ou JWTSecret). Sem fallback inseguro:
@@ -28,7 +30,7 @@ func loadJWTSecret() []byte {
 
 func GenerateToken(userID string) (string, error) {
 	if jwtSecret == nil {
-		return "", ErrMissingSecret
+		return "", errors.ErrMissingSecret
 	}
 	claims := jwt.MapClaims{
 		"user_id": userID,
@@ -41,7 +43,7 @@ func GenerateToken(userID string) (string, error) {
 
 func ValidateToken(tokenString string) (string, error) {
 	if jwtSecret == nil {
-		return "", ErrMissingSecret
+		return "", errors.ErrMissingSecret
 	}
 	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
 		return jwtSecret, nil
