@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"database/sql"
 	"embed"
 	"fmt"
@@ -142,20 +143,32 @@ func InitDB(dbConnString string) (*sql.DB, error) {
 	db.SetMaxIdleConns(maxIdleConns())
 	db.SetConnMaxLifetime(5 * time.Minute)
 
-	retries := 5
-	for retries > 0 {
-		err = db.Ping()
-		if err == nil {
-			break
+	// Em runtime serverless o orçamento de cold-start é curto: não bloqueamos
+	// com retries de 2s. Fazemos um único Ping com timeout de contexto — falha
+	// rápido para o chamador aplicar o fallback (Pilar 4: defesa contra bloqueio).
+	if isServerlessRuntime() {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		if err = db.PingContext(ctx); err != nil {
+			db.Close()
+			return nil, fmt.Errorf("banco de dados indisponível: %w", err)
 		}
-		retries--
-		slog.Warn("tentando conectar ao banco de dados", "retries_left", retries)
-		time.Sleep(2 * time.Second)
-	}
+	} else {
+		retries := 5
+		for retries > 0 {
+			err = db.Ping()
+			if err == nil {
+				break
+			}
+			retries--
+			slog.Warn("tentando conectar ao banco de dados", "retries_left", retries)
+			time.Sleep(2 * time.Second)
+		}
 
-	if retries == 0 {
-		db.Close()
-		return nil, fmt.Errorf("banco de dados não está disponível após várias tentativas")
+		if retries == 0 {
+			db.Close()
+			return nil, fmt.Errorf("banco de dados não está disponível após várias tentativas")
+		}
 	}
 
 	if err := migrateDB(db); err != nil {
@@ -164,6 +177,13 @@ func InitDB(dbConnString string) (*sql.DB, error) {
 	}
 
 	return db, nil
+}
+
+// isServerlessRuntime devolve true quando a aplicação corre em modo serverless
+// (Vercel/Now/AWS Lambda). Usado para ajustar o orçamento de cold-start (ex:
+// não bloquear com retries de Ping) e desativar /metrics.
+func isServerlessRuntime() bool {
+	return os.Getenv("VERCEL") != "" || os.Getenv("NOW_REGION") != "" || os.Getenv("AWS_LAMBDA_FUNCTION_NAME") != ""
 }
 
 // resolveDBConnString devolve a connection string do PostgreSQL, tolerando
@@ -372,15 +392,16 @@ func openapiSpecHandler() http.HandlerFunc {
 }
 
 // InitializeVercelHandler returns the shared handler the Vercel function uses.
+// Se o banco não estiver disponível no arranque, mantemos o servidor de pé:
+// BuildRouter aplica o fallback UnavailableBeerRepository, então /docs,
+// /health e /metrics continuam operacionais e só as rotas de dados retornam
+// 503 (em vez de um 503 global em tudo). Não bloqueamos com handler de erro.
 func InitializeVercelHandler() http.Handler {
 	logger := slog.Default()
 
 	db, err := InitDBFromEnv()
 	if err != nil {
-		slog.Warn("vercel bootstrap warning", "err", err)
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			http.Error(w, "database is not ready", http.StatusServiceUnavailable)
-		})
+		slog.Warn("vercel bootstrap warning; rotas de dados retornarão 503", "err", err)
 	}
 
 	return BuildRouter(db, logger)
