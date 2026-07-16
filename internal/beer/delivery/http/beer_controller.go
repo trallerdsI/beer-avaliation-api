@@ -1,6 +1,7 @@
 package http
 
 import (
+	stdErrors "errors" // Renomeado para evitar conflito com o pacote de erros customizado
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -18,7 +19,7 @@ import (
 
 	"beer-review-app/internal/beer/model"
 	"beer-review-app/internal/beer/usecase"
-	"beer-review-app/pkg/errors"
+	appErrors "beer-review-app/pkg/errors" // Alias explícito para evitar confusão
 	"beer-review-app/pkg/response"
 )
 
@@ -26,6 +27,7 @@ var (
 	validate  *validator.Validate
 	sanitizer = bluemonday.UGCPolicy()
 
+	// Métricas globais registradas uma única vez
 	beerSubmissionCounter = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "api_submission_count",
 		Help: "Total number of beer submissions",
@@ -35,11 +37,18 @@ var (
 		Help:    "Histogram of response durations for API requests",
 		Buckets: prometheus.DefBuckets,
 	}, []string{"method", "endpoint"})
+
+	// CORRIGIDO: Métrica global para evitar vazamento de memória e reinstanciação
+	apiRequestCounter = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "api_request_count",
+		Help: "Total number of API requests",
+	}, []string{"method", "endpoint", "status"})
 )
 
 func init() {
 	validate = validator.New()
-	prometheus.MustRegister(beerSubmissionCounter, responseDurationHistogram)
+	// Registra todos os coletores no Prometheus global
+	prometheus.MustRegister(beerSubmissionCounter, responseDurationHistogram, apiRequestCounter)
 }
 
 // BeerController handles HTTP requests related to beers.
@@ -48,7 +57,7 @@ type BeerController struct {
 	logger  *zap.Logger
 }
 
-// makes new controller for beer
+// NewBeerController makes a new controller for beer
 func NewBeerController(u usecase.BeerUsecase, logger *zap.Logger) *BeerController {
 	return &BeerController{usecase: u, logger: logger}
 }
@@ -72,12 +81,19 @@ func handleError(w http.ResponseWriter, logger *zap.Logger, err error, message s
 	logMetrics("POST", "/beers", strconv.Itoa(statusCode))
 }
 
+// CORRIGIDO: Utiliza a métrica declarada globalmente no init()
 func logMetrics(method, endpoint, status string) {
-	prometheus.NewCounterVec(prometheus.CounterOpts{
-		Name: "api_request_count",
-		Help: "Total number of API requests",
-	}, []string{"method", "endpoint", "status"}).
-		WithLabelValues(method, endpoint, status).Inc()
+	apiRequestCounter.WithLabelValues(method, endpoint, status).Inc()
+}
+
+// getRouteTemplate extrai o padrão da rota (ex: /beers/{id}) para evitar alta cardinalidade no Prometheus
+func getRouteTemplate(r *http.Request) string {
+	if route := mux.CurrentRoute(r); route != nil {
+		if pathTmpl, err := route.GetPathTemplate(); err == nil && pathTmpl != "" {
+			return pathTmpl
+		}
+	}
+	return r.URL.Path
 }
 
 func (c *BeerController) validateBeer(beer model.Beer) error {
@@ -87,7 +103,6 @@ func (c *BeerController) validateBeer(beer model.Beer) error {
 	if beer.Style == "" {
 		return fmt.Errorf("beer style cannot be empty")
 	}
-
 	return nil
 }
 
@@ -112,14 +127,10 @@ func requestParam(r *http.Request, key string) string {
 }
 
 func (c *BeerController) GetAllBeers(w http.ResponseWriter, r *http.Request) {
-	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
-	pageSize, _ := strconv.Atoi(r.URL.Query().Get("pageSize"))
-	if page == 0 {
-		page = 1
-	}
-	if pageSize == 0 {
-		pageSize = 10
-	}
+	// REUTILIZADO: Uso consistente do helper 'getIntParam'
+	query := r.URL.Query()
+	page := getIntParam(query, "page", 1)
+	pageSize := getIntParam(query, "pageSize", 10)
 
 	beers, total, err := c.usecase.GetPaginated(r.Context(), page, pageSize)
 	if err != nil {
@@ -138,11 +149,15 @@ func (c *BeerController) GetAllBeers(w http.ResponseWriter, r *http.Request) {
 func (c *BeerController) CreateBeer(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 
-	var beer model.Beer
 	if r.Body == nil {
 		handleError(w, c.logger, fmt.Errorf("request body is empty"), "Invalid request body", http.StatusBadRequest)
 		return
 	}
+
+	// SEGURANÇA: Limita o tamanho do JSON para 1MB evitando Denial of Service (DoS) por memória excedida
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+
+	var beer model.Beer
 	if err := json.NewDecoder(r.Body).Decode(&beer); err != nil {
 		handleError(w, c.logger, err, "Invalid request body", http.StatusBadRequest)
 		return
@@ -166,8 +181,9 @@ func (c *BeerController) CreateBeer(w http.ResponseWriter, r *http.Request) {
 	beerSubmissionCounter.Inc()
 	response.SendResponse(w, http.StatusCreated, beer)
 
+	// CORRIGIDO: Usa getRouteTemplate(r) para o Prometheus não explodir com IDs mutáveis
 	responseTime := time.Since(start).Seconds()
-	responseDurationHistogram.WithLabelValues(r.Method, r.URL.Path).Observe(responseTime)
+	responseDurationHistogram.WithLabelValues(r.Method, getRouteTemplate(r)).Observe(responseTime)
 
 	c.logger.Info("Beer created", zap.String("name", beer.Name), zap.String("style", beer.Style))
 }
@@ -175,11 +191,15 @@ func (c *BeerController) CreateBeer(w http.ResponseWriter, r *http.Request) {
 func (c *BeerController) UpdateBeer(w http.ResponseWriter, r *http.Request) {
 	id := requestParam(r, "id")
 
-	var beer model.Beer
 	if r.Body == nil {
 		handleError(w, c.logger, fmt.Errorf("request body is empty"), "Invalid request body", http.StatusBadRequest)
 		return
 	}
+	
+	// SEGURANÇA: Limitação de carga útil
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+
+	var beer model.Beer
 	if err := json.NewDecoder(r.Body).Decode(&beer); err != nil {
 		handleError(w, c.logger, err, "Invalid request body", http.StatusBadRequest)
 		return
@@ -218,7 +238,9 @@ func (c *BeerController) GetBeerByID(w http.ResponseWriter, r *http.Request) {
 
 	beer, err := c.usecase.GetByID(r.Context(), beerID)
 	if err != nil {
-		if appErr, ok := err.(*errors.AppError); ok && (appErr.Code == 404 || strings.Contains(strings.ToLower(appErr.Message), "not found")) {
+		var appErr *appErrors.AppError
+		// CORRIGIDO: Uso moderno de errors.As para segurança e compatibilidade com wrapping
+		if stdErrors.As(err, &appErr) && (appErr.Code == http.StatusNotFound || strings.Contains(strings.ToLower(appErr.Message), "not found")) {
 			http.Error(w, appErr.Message, http.StatusNotFound)
 			return
 		}
@@ -226,21 +248,21 @@ func (c *BeerController) GetBeerByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	if err := json.NewEncoder(w).Encode(beer); err != nil {
-		handleError(w, c.logger, err, "Failed to encode beer", http.StatusInternalServerError)
-	}
+	// PADRONIZADO: Uso do helper global de respostas JSON em vez de encode cru manual
+	response.SendResponse(w, http.StatusOK, beer)
 }
 
 func (c *BeerController) AddComment(w http.ResponseWriter, r *http.Request) {
 	id := requestParam(r, "id")
 
-	var comment model.Comment
 	if r.Body == nil {
 		handleError(w, c.logger, fmt.Errorf("request body is empty"), "Invalid request body", http.StatusBadRequest)
 		return
 	}
+	
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+
+	var comment model.Comment
 	if err := json.NewDecoder(r.Body).Decode(&comment); err != nil {
 		handleError(w, c.logger, err, "Invalid request body", http.StatusBadRequest)
 		return
@@ -270,7 +292,9 @@ func (c *BeerController) DeleteComment(w http.ResponseWriter, r *http.Request) {
 	commentID := requestParam(r, "commentId")
 
 	if err := c.usecase.DeleteComment(r.Context(), beerID, commentID); err != nil {
-		if appErr, ok := err.(*errors.AppError); ok && (appErr.Code == http.StatusNotFound || strings.Contains(strings.ToLower(appErr.Message), "not found")) {
+		var appErr *appErrors.AppError
+		// CORRIGIDO: Uso de errors.As
+		if stdErrors.As(err, &appErr) && (appErr.Code == http.StatusNotFound || strings.Contains(strings.ToLower(appErr.Message), "not found")) {
 			http.Error(w, appErr.Message, http.StatusNotFound)
 			return
 		}
@@ -292,7 +316,9 @@ func (c *BeerController) LikeComment(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := c.usecase.LikeComment(r.Context(), beerID, commentID, deviceID); err != nil {
-		if appErr, ok := err.(*errors.AppError); ok {
+		var appErr *appErrors.AppError
+		// CORRIGIDO: Uso de errors.As
+		if stdErrors.As(err, &appErr) {
 			if appErr.Code == http.StatusBadRequest && strings.Contains(strings.ToLower(appErr.Message), "already liked") {
 				handleError(w, c.logger, err, "Comment already liked by this device", http.StatusBadRequest)
 				return
