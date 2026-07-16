@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -114,8 +115,8 @@ func InitDB(dbConnString string) (*sql.DB, error) {
 		return nil, fmt.Errorf("erro ao conectar com o banco de dados: %w", err)
 	}
 
-	db.SetMaxOpenConns(2)
-	db.SetMaxIdleConns(1)
+	db.SetMaxOpenConns(maxOpenConns())
+	db.SetMaxIdleConns(maxIdleConns())
 	db.SetConnMaxLifetime(5 * time.Minute)
 
 	retries := 5
@@ -158,11 +159,32 @@ func resolveDBConnString() string {
 	return ""
 }
 
+// maxOpenConns lê DB_MAX_OPEN_CONNS (padrão 10) para tuning do pool por ambiente.
+func maxOpenConns() int {
+	if v := os.Getenv("DB_MAX_OPEN_CONNS"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			return n
+		}
+	}
+	return 10
+}
+
+// maxIdleConns lê DB_MAX_IDLE_CONNS (padrão 5) para tuning do pool por ambiente.
+func maxIdleConns() int {
+	if v := os.Getenv("DB_MAX_IDLE_CONNS"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			return n
+		}
+	}
+	return 5
+}
+
 func migrateDB(db *sql.DB) error {
 	sqlFiles := []string{
 		"migrations/create_users_table.sql",
 		"migrations/create_beers_table.sql",
 		"migrations/create_comments_table.sql",
+		"migrations/add_comments_jsonb.sql",
 		"migrations/create_indexes.sql",
 	}
 

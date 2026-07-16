@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"log"
 	"sync"
@@ -170,12 +171,17 @@ func (r *PostgresBeerRepository) Create(ctx context.Context, beer model.Beer) er
 		beer.Comments = []model.Comment{}
 	}
 
+	commentsJSON, err := json.Marshal(beer.Comments)
+	if err != nil {
+		return fmt.Errorf("failed to marshal comments: %w", err)
+	}
+
 	// Inserting the beer into the beers table
 	result, err := r.db.ExecContext(ctx, `
    INSERT INTO beers (
-        id, name, style, description, image_url, alcohol, taste, aroma, color, body, carbonation, finish
-    ) VALUES ($1, $2, $3, COALESCE($4, NULL), $5, $6, $7, $8, $9, $10, $11, $12)`,
-		beer.ID, beer.Name, beer.Style, beer.Description, beer.ImageUrl, beer.Alcohol, beer.Taste, beer.Aroma, beer.Color, beer.Body, beer.Carbonation, beer.Finish)
+        id, name, style, description, image_url, alcohol, taste, aroma, color, body, carbonation, finish, comments
+    ) VALUES ($1, $2, $3, COALESCE($4, NULL), $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+		beer.ID, beer.Name, beer.Style, beer.Description, beer.ImageUrl, beer.Alcohol, beer.Taste, beer.Aroma, beer.Color, beer.Body, beer.Carbonation, beer.Finish, commentsJSON)
 	if err != nil {
 		return err
 	}
@@ -189,22 +195,13 @@ func (r *PostgresBeerRepository) Create(ctx context.Context, beer model.Beer) er
 		return errors.NewAppError(500, "no rows were inserted", nil)
 	}
 
-	// Insert comments if any (empty array here means no comments to insert)
-	for _, comment := range beer.Comments {
-		_, err := r.db.ExecContext(ctx, `
-        INSERT INTO comments (beer_id, text)
-        VALUES ($1, $2)`, beer.ID, comment.Text)
-		if err != nil {
-			return fmt.Errorf("failed to insert comment: %v", err)
-		}
-	}
-
 	return nil
 }
 
 // GetByID retrieves a beer by its ID from the PostgreSQL database.
 func (r *PostgresBeerRepository) GetByID(ctx context.Context, id string) (model.Beer, error) {
 	var beer model.Beer
+	var commentsJSON []byte
 	err := r.db.QueryRowContext(ctx, `
         SELECT 
             id, 
@@ -218,7 +215,8 @@ func (r *PostgresBeerRepository) GetByID(ctx context.Context, id string) (model.
             color, 
             body, 
             carbonation, 
-            finish
+            finish,
+            comments
         FROM beers WHERE id = $1`, id).
 		Scan(
 			&beer.ID,
@@ -232,14 +230,30 @@ func (r *PostgresBeerRepository) GetByID(ctx context.Context, id string) (model.
 			&beer.Color,
 			&beer.Body,
 			&beer.Carbonation,
-			&beer.Finish)
+			&beer.Finish,
+			&commentsJSON)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return model.Beer{}, errors.NewAppError(404, "beer not found", nil)
 		}
 		return model.Beer{}, err
 	}
+
+	beer.Comments = unmarshalComments(commentsJSON)
 	return beer, nil
+}
+
+// unmarshalComments decodifica o JSONB de comentários com fallback seguro.
+func unmarshalComments(data []byte) []model.Comment {
+	if len(data) == 0 {
+		return []model.Comment{}
+	}
+	var comments []model.Comment
+	if err := json.Unmarshal(data, &comments); err != nil {
+		log.Printf("erro ao decodificar comentários: %v", err)
+		return []model.Comment{}
+	}
+	return comments
 }
 
 func (r *PostgresBeerRepository) GetPaginated(ctx context.Context, page, pageSize int) ([]model.Beer, int, error) {
@@ -259,7 +273,8 @@ func (r *PostgresBeerRepository) GetPaginated(ctx context.Context, page, pageSiz
             color, 
             body, 
             carbonation, 
-            finish
+            finish,
+            comments
         FROM beers LIMIT $1 OFFSET $2`, pageSize, offset)
 	if err != nil {
 		log.Printf("Error querying beers: %v", err) // Log de erro
@@ -270,6 +285,7 @@ func (r *PostgresBeerRepository) GetPaginated(ctx context.Context, page, pageSiz
 	var beers []model.Beer
 	for rows.Next() {
 		var beer model.Beer
+		var commentsJSON []byte
 		if err := rows.Scan(
 			&beer.ID,
 			&beer.Name,
@@ -282,10 +298,12 @@ func (r *PostgresBeerRepository) GetPaginated(ctx context.Context, page, pageSiz
 			&beer.Color,
 			&beer.Body,
 			&beer.Carbonation,
-			&beer.Finish); err != nil {
+			&beer.Finish,
+			&commentsJSON); err != nil {
 			log.Printf("Error scanning beer: %v", err) // Log de erro
 			return nil, 0, err
 		}
+		beer.Comments = unmarshalComments(commentsJSON)
 		beers = append(beers, beer)
 	}
 
@@ -308,9 +326,17 @@ func (r *PostgresBeerRepository) GetPaginated(ctx context.Context, page, pageSiz
 
 // Update updates a beer in the PostgreSQL database.
 func (r *PostgresBeerRepository) Update(ctx context.Context, id string, beer model.Beer) error {
+	if beer.Comments == nil {
+		beer.Comments = []model.Comment{}
+	}
+	commentsJSON, err := json.Marshal(beer.Comments)
+	if err != nil {
+		return fmt.Errorf("failed to marshal comments: %w", err)
+	}
+
 	result, err := r.db.ExecContext(ctx,
-		"UPDATE beers SET name=$1, style=$2, taste=$3, aroma=$4, color=$5, body=$6, carbonation=$7, alcohol=$8, finish=$9 WHERE id=$10",
-		beer.Name, beer.Style, beer.Taste, beer.Aroma, beer.Color, beer.Body, beer.Carbonation, beer.Alcohol, beer.Finish, id)
+		"UPDATE beers SET name=$1, style=$2, taste=$3, aroma=$4, color=$5, body=$6, carbonation=$7, alcohol=$8, finish=$9, comments=$10 WHERE id=$11",
+		beer.Name, beer.Style, beer.Taste, beer.Aroma, beer.Color, beer.Body, beer.Carbonation, beer.Alcohol, beer.Finish, commentsJSON, id)
 	if err != nil {
 		return err
 	}
@@ -344,7 +370,7 @@ func (r *PostgresBeerRepository) Delete(ctx context.Context, id string) error {
 
 func (r *PostgresBeerRepository) SearchBeers(ctx context.Context, filters model.BeerFilters) ([]model.Beer, int, error) {
 	query := `
-        SELECT id, name, style, description, alcohol, taste, aroma, color, body, carbonation, finish
+        SELECT id, name, style, description, alcohol, taste, aroma, color, body, carbonation, finish, comments
         FROM beers
         WHERE 1=1
     `
@@ -409,6 +435,7 @@ func (r *PostgresBeerRepository) SearchBeers(ctx context.Context, filters model.
 	var beers []model.Beer
 	for rows.Next() {
 		var beer model.Beer
+		var commentsJSON []byte
 		err := rows.Scan(
 			&beer.ID,
 			&beer.Name,
@@ -421,10 +448,12 @@ func (r *PostgresBeerRepository) SearchBeers(ctx context.Context, filters model.
 			&beer.Body,
 			&beer.Carbonation,
 			&beer.Finish,
+			&commentsJSON,
 		)
 		if err != nil {
 			return nil, 0, fmt.Errorf("failed to scan beer: %v", err)
 		}
+		beer.Comments = unmarshalComments(commentsJSON)
 		beers = append(beers, beer)
 	}
 
@@ -438,7 +467,7 @@ func (r *PostgresBeerRepository) SearchBeers(ctx context.Context, filters model.
 // GetAll retrieves all beers from the PostgreSQL database.
 func (r *PostgresBeerRepository) GetAll(ctx context.Context) ([]model.Beer, error) {
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT id, name, style, description, alcohol, taste, aroma, color, body, carbonation, finish 
+		SELECT id, name, style, description, alcohol, taste, aroma, color, body, carbonation, finish, comments 
 		FROM beers
 	`)
 	if err != nil {
@@ -449,6 +478,7 @@ func (r *PostgresBeerRepository) GetAll(ctx context.Context) ([]model.Beer, erro
 	var beers []model.Beer
 	for rows.Next() {
 		var beer model.Beer
+		var commentsJSON []byte
 		err := rows.Scan(
 			&beer.ID,
 			&beer.Name,
@@ -461,10 +491,12 @@ func (r *PostgresBeerRepository) GetAll(ctx context.Context) ([]model.Beer, erro
 			&beer.Body,
 			&beer.Carbonation,
 			&beer.Finish,
+			&commentsJSON,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan beer: %v", err)
 		}
+		beer.Comments = unmarshalComments(commentsJSON)
 		beers = append(beers, beer)
 	}
 

@@ -5,12 +5,13 @@ A modern, scalable REST API for managing beer reviews and ratings built with Go.
 ## Features
 
 - 🍺 Comprehensive beer catalog management
-- 💬 User comments and ratings
+- 💬 User comments and ratings (persisted as JSONB embedded in the beer)
 - 🔍 Advanced search with filters
 - 📊 Monitoring and metrics
-- 🔐 Authentication and authorization
+- 🔐 Authentication and authorization (JWT, env-configured secret)
 - 🔄 Circuit breaker pattern
 - 📝 Swagger documentation
+- ⚡ Go 1.26 native `net/http` routing (no external router dependency)
 
 ## Architecture
 
@@ -21,22 +22,34 @@ beer-review-app/
 ├── cmd/
 │   └── server/          # Application entry point
 ├── internal/
-│   ├── beer/           # Beer domain
-│   │   ├── delivery/   # HTTP handlers
-│   │   ├── repository/ # Data access layer
-│   │   ├── usecase/    # Business logic
-│   │   └── model/      # Domain models
-│   ├── user/           # User domain
-│   └── monitoring/     # Monitoring components
+│   ├── app/             # Wiring (DI), DB init, migrations, router
+│   ├── beer/            # Beer domain
+│   │   ├── delivery/    # HTTP handlers
+│   │   ├── repository/  # Data access layer
+│   │   ├── usecase/     # Business logic
+│   │   └── model/       # Domain models
+│   ├── user/            # User domain
+│   └── monitoring/      # Monitoring components
 ├── pkg/
-│   ├── middleware/     # HTTP middleware
-│   ├── errors/        # Error handling
-│   └── response/      # HTTP response helpers
+│   ├── middleware/      # HTTP middleware (auth, metrics, request-id)
+│   ├── auth/            # JWT helpers
+│   ├── errors/          # Error handling
+│   └── response/        # HTTP response helpers
 ```
+
+## Tech Stack
+
+- **Go 1.26.5** — `net/http` enhanced routing, `log/slog`, `testing/synctest`
+- **PostgreSQL 17** with `lib/pq`
+- **Prometheus** metrics (`client_golang`)
+- **golang-jwt** + bcrypt for auth
+- **bluemonday** HTML sanitization
+- **sony/gobreaker** circuit breaker
+- **Viper** configuration
 
 ## Prerequisites
 
-- Go 1.24+
+- Go 1.26.5+
 - PostgreSQL 17+
 - Docker (optional)
 
