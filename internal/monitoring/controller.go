@@ -24,8 +24,8 @@ type RecentActivity struct {
 }
 
 type StatsResponse struct {
-	TotalBeers     int64            `json:"totalBeers"`
-	TopBeers       interface{}      `json:"topBeers"` // Substitua interface{} pela sua struct real de Beer se disponível
+	TotalBeers     int              `json:"totalBeers"` // CORRIGIDO: Alterado de int64 para int para evitar erros de compilação
+	TopBeers       interface{}      `json:"topBeers"`   // Substitua interface{} pela sua struct real de Beer se disponível
 	RecentActivity []RecentActivity `json:"recentActivity"`
 }
 
@@ -49,7 +49,7 @@ type MonitoringController struct {
 	userUsecase    userCase.UserUsecase // Mantido para compatibilidade, mas atualmente sem uso
 	logger         *zap.Logger
 	startTime      time.Time
-	metricsHandler http.Handler // Cache do handler do Prometheus
+	metricsHandler http.Handler // Cache do handler do Prometheus para evitar alocações repetidas
 }
 
 func NewMonitoringController(bu usecase.BeerUsecase, uu userCase.UserUsecase, logger *zap.Logger) *MonitoringController {
@@ -58,7 +58,7 @@ func NewMonitoringController(bu usecase.BeerUsecase, uu userCase.UserUsecase, lo
 		userUsecase:    uu,
 		logger:         logger,
 		startTime:      time.Now(),
-		metricsHandler: promhttp.Handler(), // Inicializado uma única vez
+		metricsHandler: promhttp.Handler(), // Inicializado uma única vez para performance
 	}
 }
 
@@ -80,7 +80,7 @@ func (c *MonitoringController) GetStats(w http.ResponseWriter, r *http.Request) 
 	}
 
 	stats := StatsResponse{
-		TotalBeers:     totalBeers, // Corrigido de len(beers) para o total real retornado do usecase
+		TotalBeers:     totalBeers, // Atribuição direta sem necessidade de conversão manual
 		TopBeers:       beers,
 		RecentActivity: c.getRecentActivity(ctx),
 	}
@@ -95,12 +95,12 @@ func (c *MonitoringController) GetStats(w http.ResponseWriter, r *http.Request) 
 // @Router /health [get]
 func (c *MonitoringController) HealthCheck(w http.ResponseWriter, r *http.Request) {
 	var m runtime.MemStats
-	runtime.ReadMemStats(&m) // Nota: Esta chamada faz um STW muito curto, ideal para rotas não-críticas de monitoramento
+	runtime.ReadMemStats(&m) // Chamada leve para coleta de GC e memória em rotas de monitoramento
 
 	health := HealthResponse{
 		Status:  "healthy",
 		Version: "1.0.0",
-		Uptime:  time.Since(c.startTime).Truncate(time.Second).String(), // Uptime limpo sem nanossegundos poluindo o JSON
+		Uptime:  time.Since(c.startTime).Truncate(time.Second).String(), // Exibe uptime limpo sem frações de nanossegundos
 		Memory: MemoryStats{
 			Alloc:      m.Alloc,
 			TotalAlloc: m.TotalAlloc,
@@ -108,7 +108,7 @@ func (c *MonitoringController) HealthCheck(w http.ResponseWriter, r *http.Reques
 			NumGC:      m.NumGC,
 		},
 		Dependencies: map[string]string{
-			"database": c.checkDatabaseHealth(r.Context()), // Propagação correta de contexto
+			"database": c.checkDatabaseHealth(r.Context()), // Propagação correta do contexto para respeitar timeouts
 		},
 	}
 
@@ -122,12 +122,11 @@ func (c *MonitoringController) HealthCheck(w http.ResponseWriter, r *http.Reques
 // @Success 200 {string} string
 // @Router /metrics [get]
 func (c *MonitoringController) Metrics(w http.ResponseWriter, r *http.Request) {
-	// Reutiliza o handler cacheado na struct, evitando alocações por requisição
+	// Reutiliza o handler instanciado no construtor para economizar alocações de memória no Heap
 	c.metricsHandler.ServeHTTP(w, r)
 }
 
 func (c *MonitoringController) getRecentActivity(_ context.Context) []RecentActivity {
-	// Exemplo de retorno tipado e limpo sem alocação dinâmica de chaves de string de forma genérica
 	return []RecentActivity{
 		{
 			Type:      "comment",
@@ -145,7 +144,7 @@ func (c *MonitoringController) getRecentActivity(_ context.Context) []RecentActi
 }
 
 func (c *MonitoringController) checkDatabaseHealth(ctx context.Context) string {
-	// Na implementação real, use o ctx recebido para respeitar timeouts
-	// Exemplo: err := c.db.PingContext(ctx)
+	// Em produção, use o ctx para realizar o ping com timeout:
+	// se err := c.db.PingContext(ctx); err != nil { return "down" }
 	return "up"
 }
