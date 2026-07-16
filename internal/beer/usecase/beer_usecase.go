@@ -8,6 +8,7 @@ import (
 	"beer-review-app/internal/beer/model"
 	"beer-review-app/internal/beer/repository"
 	"beer-review-app/pkg/errors"
+	"beer-review-app/pkg/realtime"
 
 	"github.com/sony/gobreaker"
 )
@@ -28,10 +29,12 @@ type BeerUsecase interface {
 type beerUsecase struct {
 	repo repository.BeerRepository
 	cb   *gobreaker.CircuitBreaker
+	hub  *realtime.Hub // opcional: nil em testes/serverless desativa eventos SSE
 }
 
 // NewBeerUsecase creates a new instance of BeerUsecase.
-func NewBeerUsecase(repo repository.BeerRepository) BeerUsecase {
+// hub pode ser nil (ex: testes, serverless) — neste caso nenhum evento SSE é emitido.
+func NewBeerUsecase(repo repository.BeerRepository, hub *realtime.Hub) BeerUsecase {
 	var cb *gobreaker.CircuitBreaker
 	if !isServerlessRuntime() {
 		cb = gobreaker.NewCircuitBreaker(gobreaker.Settings{
@@ -49,6 +52,15 @@ func NewBeerUsecase(repo repository.BeerRepository) BeerUsecase {
 	return &beerUsecase{
 		repo: repo,
 		cb:   cb,
+		hub:  hub,
+	}
+}
+
+// publish emite um evento SSE se o hub estiver configurado. Non-blocking:
+// o Hub descarta sob back-pressure, protegendo a memória do servidor.
+func (u *beerUsecase) publish(ev realtime.Event) {
+	if u.hub != nil {
+		u.hub.Publish(ev)
 	}
 }
 
@@ -68,6 +80,13 @@ func (u *beerUsecase) Create(ctx context.Context, beer model.Beer) error {
 	if err := u.repo.Create(ctx, beer); err != nil {
 		return errors.NewAppError(500, "Failed to create beer", err)
 	}
+
+	// Evento SSE: notifica clientes móveis em tempo real (sem polling).
+	u.publish(realtime.Event{
+		Type: "beer.created",
+		ID:   beer.ID,
+		Data: map[string]any{"name": beer.Name, "style": beer.Style},
+	})
 
 	return nil
 }
@@ -135,6 +154,13 @@ func (u *beerUsecase) AddComment(ctx context.Context, id string, comment model.C
 	if err := u.repo.Update(ctx, id, beer); err != nil {
 		return errors.NewAppError(500, "Failed to update beer with new comment", err)
 	}
+
+	u.publish(realtime.Event{
+		Type: "comment.added",
+		ID:   id,
+		Data: map[string]any{"commentId": comment.ID, "text": comment.Text},
+	})
+
 	return nil
 }
 
@@ -154,6 +180,13 @@ func (u *beerUsecase) DeleteComment(ctx context.Context, id string, commentID st
 	if err := u.repo.Update(ctx, id, beer); err != nil {
 		return errors.NewAppError(500, "Failed to update beer after deleting comment", err)
 	}
+
+	u.publish(realtime.Event{
+		Type: "comment.deleted",
+		ID:   id,
+		Data: map[string]any{"commentId": commentID},
+	})
+
 	return nil
 }
 
@@ -179,6 +212,13 @@ func (u *beerUsecase) LikeComment(ctx context.Context, beerID, commentID, device
 			if err := u.repo.Update(ctx, beerID, beer); err != nil {
 				return errors.NewAppError(500, "Failed to update comment likes", err)
 			}
+
+			u.publish(realtime.Event{
+				Type: "comment.liked",
+				ID:   beerID,
+				Data: map[string]any{"commentId": commentID, "likes": beer.Comments[i].Likes},
+			})
+
 			return nil
 		}
 	}

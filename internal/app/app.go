@@ -4,9 +4,9 @@ import (
 	"database/sql"
 	"embed"
 	"fmt"
-	"log"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -27,6 +27,7 @@ import (
 	userUsecase "beer-review-app/internal/user/usecase"
 	appMetrics "beer-review-app/pkg/metrics"
 	middleware "beer-review-app/pkg/middleware"
+	"beer-review-app/pkg/realtime"
 )
 
 //go:embed migrations/*.sql
@@ -46,18 +47,33 @@ func BuildRouter(db *sql.DB, logger *slog.Logger) http.Handler {
 		logger = slog.Default()
 	}
 
-	beerRepo, err := beerRepository.NewPostgresBeerRepository(db)
+	// Repositórios Postgres. Se o DB não estiver disponível (db nil ou Ping
+	// falha), mantemos o servidor de pé para /docs, /health e /metrics; as
+	// rotas de dados retornam 503 específico em vez de derrubar o processo.
+	var beerRepo beerRepository.BeerRepository
+	var err error
+	beerRepo, err = beerRepository.NewPostgresBeerRepository(db)
 	if err != nil {
-		log.Fatalf("Erro ao criar repositório de cervejas: %v", err)
+		slog.Error("repositório de cervejas indisponível; rotas de dados retornarão 503", "err", err)
+		beerRepo = beerRepository.NewUnavailableBeerRepository()
 	}
 
-	userRepo := userRepository.NewPostgresUserRepository(db)
-	beerUsecase := beerUsecase.NewBeerUsecase(beerRepo)
+	var userRepo userRepository.UserRepository
+	userRepo, err = userRepository.NewPostgresUserRepository(db)
+	if err != nil {
+		slog.Error("repositório de utilizadores indisponível; rotas de dados retornarão 503", "err", err)
+		userRepo = userRepository.NewUnavailableUserRepository()
+	}
+
+	// Hub SSE único (singleton por processo) para difusão em tempo real.
+	eventHub := realtime.NewHub(64)
+
+	beerUsecase := beerUsecase.NewBeerUsecase(beerRepo, eventHub)
 	userUsecase := userUsecase.NewUserUsecase(userRepo)
 
 	beerController := beerHttp.NewBeerController(beerUsecase, logger)
 	userController := userHttp.NewUserController(userUsecase, logger)
-	monitoringController := monitoring.NewMonitoringController(beerUsecase, userUsecase, logger)
+	monitoringController := monitoring.NewMonitoringController(beerUsecase, userUsecase, logger, db)
 
 	// Go 1.22+ ServeMux: registro declarativo com método + padrão.
 	mux := http.NewServeMux()
@@ -73,6 +89,12 @@ func BuildRouter(db *sql.DB, logger *slog.Logger) http.Handler {
 	mux.HandleFunc("DELETE /api/v1/beers/{id}/comments/{commentId}", beerController.DeleteComment)
 	mux.HandleFunc("POST /api/v1/beers/{id}/comments/{commentId}/like", beerController.LikeComment)
 
+	// BFF: payload único para a home do app móvel (sem N requests sequenciais).
+	mux.HandleFunc("GET /api/v1/feed", beerController.GetHomeFeed)
+
+	// SSE: stream de eventos em tempo real (substitui polling do cliente).
+	mux.HandleFunc("GET /api/v1/stream", realtime.SSEHandler(eventHub))
+
 	mux.HandleFunc("POST /api/v1/users/register", userController.Register)
 	mux.HandleFunc("POST /api/v1/users/login", userController.Login)
 
@@ -82,7 +104,7 @@ func BuildRouter(db *sql.DB, logger *slog.Logger) http.Handler {
 	mux.HandleFunc("DELETE /api/v1/users/{id}", middleware.Auth(userController.DeleteAccount))
 
 	mux.HandleFunc("GET /api/v1/stats", monitoringController.GetStats)
-	mux.HandleFunc("GET /api/v1/health", healthCheckHandler(db))
+	mux.HandleFunc("GET /api/v1/health", monitoringController.HealthCheck)
 
 	mux.HandleFunc("GET /docs", docsHandler())
 	mux.HandleFunc("GET /docs/openapi.yaml", openapiSpecHandler())
@@ -127,7 +149,7 @@ func InitDB(dbConnString string) (*sql.DB, error) {
 			break
 		}
 		retries--
-		log.Printf("Tentando conectar ao banco de dados... Tentativas restantes: %d", retries)
+		slog.Warn("tentando conectar ao banco de dados", "retries_left", retries)
 		time.Sleep(2 * time.Second)
 	}
 
@@ -144,18 +166,45 @@ func InitDB(dbConnString string) (*sql.DB, error) {
 	return db, nil
 }
 
+// resolveDBConnString devolve a connection string do PostgreSQL, tolerando
+// as várias nomenclaturas usadas no projeto (DB_CONN_STRING, DBConnString) e,
+// em último caso, compõe-a a partir das variáveis individuais (DB_USER,
+// DB_PASSWORD, DB_HOST, DB_PORT, DB_NAME, DB_SSLMODE). Isto torna o arranque
+// resiliente a .env ausente no deploy ou a hosts distintos (docker "postgres"
+// vs local "localhost") — Defense-in-Depth (Pilar 4).
 func resolveDBConnString() string {
-	if value := os.Getenv("DB_CONN_STRING"); value != "" {
-		return value
+	for _, key := range []string{"DB_CONN_STRING", "DBConnString"} {
+		if v := os.Getenv(key); v != "" {
+			return v
+		}
+		if v := viper.GetString(key); v != "" {
+			return v
+		}
 	}
-	if value := os.Getenv("DBConnString"); value != "" {
-		return value
+
+	// Sem defaults para user/name: se ausentes, não podemos compor uma
+	// string válida e devolvemos "" (o servidor então usa o fallback offline).
+	user := firstNonEmpty(os.Getenv("DB_USER"), viper.GetString("DB_USER"))
+	pass := firstNonEmpty(os.Getenv("DB_PASSWORD"), viper.GetString("DB_PASSWORD"))
+	host := firstNonEmpty(os.Getenv("DB_HOST"), viper.GetString("DB_HOST"), "localhost")
+	port := firstNonEmpty(os.Getenv("DB_PORT"), viper.GetString("DB_PORT"), "5432")
+	name := firstNonEmpty(os.Getenv("DB_NAME"), viper.GetString("DB_NAME"))
+	sslmode := firstNonEmpty(os.Getenv("DB_SSLMODE"), viper.GetString("DB_SSLMODE"), "disable")
+
+	if user == "" || name == "" {
+		return ""
 	}
-	if value := viper.GetString("DB_CONN_STRING"); value != "" {
-		return value
-	}
-	if value := viper.GetString("DBConnString"); value != "" {
-		return value
+	return fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=%s",
+		url.QueryEscape(user), url.QueryEscape(pass), host, port, name, sslmode)
+}
+
+// firstNonEmpty devolve o primeiro valor não-vazio (helper zero-alloc de
+// curta duração, vive na stack).
+func firstNonEmpty(vals ...string) string {
+	for _, v := range vals {
+		if v != "" {
+			return v
+		}
 	}
 	return ""
 }
@@ -195,7 +244,7 @@ func migrateDB(db *sql.DB) error {
 			return fmt.Errorf("erro ao executar migração no arquivo %s: %w", file, err)
 		}
 	}
-	log.Println("Todas as tabelas e índices foram criados com sucesso!")
+	slog.Info("todas as tabelas e índices foram criados com sucesso")
 	return nil
 }
 
@@ -276,16 +325,6 @@ func resolveMigrationPath(filePath string) (string, error) {
 	return "", fmt.Errorf("migration file not found: %s", cleanPath)
 }
 
-func healthCheckHandler(db *sql.DB) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if err := db.Ping(); err != nil {
-			http.Error(w, "Banco de dados não disponível", http.StatusServiceUnavailable)
-			return
-		}
-		w.WriteHeader(http.StatusOK)
-	}
-}
-
 func docsHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -338,7 +377,7 @@ func InitializeVercelHandler() http.Handler {
 
 	db, err := InitDBFromEnv()
 	if err != nil {
-		log.Printf("Vercel bootstrap warning: %v", err)
+		slog.Warn("vercel bootstrap warning", "err", err)
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "database is not ready", http.StatusServiceUnavailable)
 		})

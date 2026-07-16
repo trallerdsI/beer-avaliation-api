@@ -8,6 +8,16 @@ import (
 // ErrMissingSecret é retornado quando a chave JWT não está configurada.
 var ErrMissingSecret = errors.New("jwt secret is not configured")
 
+// ErrDatabaseUnavailable é retornado quando o repositório não consegue ligar
+// à base de dados (ex: DB ausente no arranque). Permite às rotas responderem
+// 503 de forma determinística em vez de derrubar o processo.
+var ErrDatabaseUnavailable = errors.New("database unavailable")
+
+// NewUnavailableError devolve um AppError 503 para o caso de DB ausente.
+func NewUnavailableError() *AppError {
+	return NewAppError(503, "database is not ready", ErrDatabaseUnavailable)
+}
+
 type AppError struct {
 	Code    int
 	Message string

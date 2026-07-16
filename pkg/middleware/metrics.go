@@ -3,6 +3,7 @@ package middleware
 import (
 	"log/slog"
 	"net/http"
+	"strconv"
 	"time"
 
 	"beer-review-app/pkg/metrics"
@@ -31,7 +32,7 @@ func MetricsMiddleware(next http.Handler) http.Handler {
 
 		// Record duration and send metrics.
 		duration := time.Since(start).Seconds()
-		metrics.RecordMetrics(r.Context(), pattern, r.Method, http.StatusText(rw.status), duration)
+		metrics.RecordMetrics(r.Context(), pattern, r.Method, strconv.Itoa(rw.status), duration)
 
 		// Log estruturado via slog com contexto da requisição.
 		slog.InfoContext(r.Context(), "request completed",

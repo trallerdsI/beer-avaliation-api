@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"beer-review-app/internal/user/model"
+	appErrors "beer-review-app/pkg/errors"
 )
 
 type UserRepository interface {
@@ -21,8 +22,14 @@ type PostgresUserRepository struct {
 	db *sql.DB
 }
 
-func NewPostgresUserRepository(db *sql.DB) UserRepository {
-	return &PostgresUserRepository{db: db}
+func NewPostgresUserRepository(db *sql.DB) (UserRepository, error) {
+	if db == nil {
+		return nil, appErrors.NewUnavailableError()
+	}
+	if err := db.Ping(); err != nil {
+		return nil, appErrors.NewAppError(503, "user database unavailable", err)
+	}
+	return &PostgresUserRepository{db: db}, nil
 }
 
 func (r *PostgresUserRepository) Create(ctx context.Context, user model.User) error {
@@ -162,4 +169,33 @@ func (r *PostgresUserRepository) List(ctx context.Context, page, pageSize int) (
 	}
 
 	return users, total, nil
+}
+
+
+// UnavailableUserRepository é o fallback offline quando a base de dados não
+// está acessível. Todas as operações retornam ErrDatabaseUnavailable (503).
+type UnavailableUserRepository struct{}
+
+// NewUnavailableUserRepository cria o repositório de fallback offline.
+func NewUnavailableUserRepository() *UnavailableUserRepository {
+	return &UnavailableUserRepository{}
+}
+
+func (r *UnavailableUserRepository) Create(ctx context.Context, user model.User) error {
+	return appErrors.NewUnavailableError()
+}
+func (r *UnavailableUserRepository) GetByID(ctx context.Context, id string) (model.User, error) {
+	return model.User{}, appErrors.NewUnavailableError()
+}
+func (r *UnavailableUserRepository) GetByEmail(ctx context.Context, email string) (model.User, error) {
+	return model.User{}, appErrors.NewUnavailableError()
+}
+func (r *UnavailableUserRepository) Update(ctx context.Context, id string, user model.User) error {
+	return appErrors.NewUnavailableError()
+}
+func (r *UnavailableUserRepository) Delete(ctx context.Context, id string) error {
+	return appErrors.NewUnavailableError()
+}
+func (r *UnavailableUserRepository) List(ctx context.Context, page, pageSize int) ([]model.User, int, error) {
+	return nil, 0, appErrors.NewUnavailableError()
 }

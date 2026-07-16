@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"database/sql"
-	"log"
 	"log/slog"
 	"net/http"
 	"os"
@@ -23,7 +22,7 @@ func main() {
 	viper.SetConfigFile(".env")
 	if err := viper.ReadInConfig(); err != nil {
 		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
-			log.Printf("Aviso: não foi possível ler .env: %s", err)
+			slog.Warn("não foi possível ler .env", "err", err)
 		}
 	}
 
@@ -39,17 +38,13 @@ func main() {
 	var db *sql.DB
 	db, err := app.InitDBFromEnv()
 	if err != nil {
-		log.Printf("Inicialização sem banco: %v", err)
+		slog.Error("inicialização sem banco", "err", err)
 	}
 
-	var router http.Handler
-	if db != nil {
-		router = app.BuildRouter(db, logger)
-	} else {
-		router = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			http.Error(w, "database is not ready", http.StatusServiceUnavailable)
-		})
-	}
+	// O router é sempre construído. Se o DB não estiver disponível, as rotas
+	// de dados retornam 503 específico, mas /docs, /health e /metrics continuam
+	// operacionais para diagnóstico (em vez de um 503 global em tudo).
+	var router http.Handler = app.BuildRouter(db, logger)
 
 	server := &http.Server{
 		Addr:         ":" + serverPort,
@@ -60,7 +55,7 @@ func main() {
 
 	go func() {
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Printf("Erro ao iniciar o servidor: %v", err)
+			slog.Error("erro ao iniciar o servidor", "err", err)
 		}
 	}()
 
@@ -71,8 +66,8 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := server.Shutdown(ctx); err != nil {
-		log.Printf("Erro ao desligar o servidor: %v", err)
+		slog.Error("erro ao desligar o servidor", "err", err)
 	}
 
-	log.Println("Servidor finalizado")
+	slog.Info("servidor finalizado")
 }

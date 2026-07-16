@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"strings"
 	"sync"
 
@@ -259,7 +259,7 @@ func unmarshalComments(data []byte) []model.Comment {
 	}
 	var comments []model.Comment
 	if err := json.Unmarshal(data, &comments); err != nil {
-		log.Printf("erro ao decodificar comentários: %v", err)
+		slog.Error("erro ao decodificar comentários", "err", err)
 		return []model.Comment{}
 	}
 	return comments
@@ -286,7 +286,7 @@ func (r *PostgresBeerRepository) GetPaginated(ctx context.Context, page, pageSiz
             comments
         FROM beers LIMIT $1 OFFSET $2`, pageSize, offset)
 	if err != nil {
-		log.Printf("Error querying beers: %v", err) // Log de erro
+		slog.Error("error querying beers", "err", err)
 		return nil, 0, err
 	}
 	defer rows.Close()
@@ -309,7 +309,7 @@ func (r *PostgresBeerRepository) GetPaginated(ctx context.Context, page, pageSiz
 			&beer.Carbonation,
 			&beer.Finish,
 			&commentsJSON); err != nil {
-			log.Printf("Error scanning beer: %v", err) // Log de erro
+			slog.Error("error scanning beer", "err", err)
 			return nil, 0, err
 		}
 		beer.Comments = unmarshalComments(commentsJSON)
@@ -318,7 +318,7 @@ func (r *PostgresBeerRepository) GetPaginated(ctx context.Context, page, pageSiz
 
 	// Verificando erros após iterar sobre as linhas
 	if err = rows.Err(); err != nil {
-		log.Printf("Error iterating over rows: %v", err) // Log de erro
+		slog.Error("error iterating over rows", "err", err)
 		return nil, 0, err
 	}
 
@@ -326,7 +326,7 @@ func (r *PostgresBeerRepository) GetPaginated(ctx context.Context, page, pageSiz
 	var total int
 	err = r.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM beers").Scan(&total)
 	if err != nil {
-		log.Printf("Error getting total beer count: %v", err) // Log de erro
+		slog.Error("error getting total beer count", "err", err)
 		return nil, 0, err
 	}
 
@@ -557,4 +557,43 @@ func (r *PostgresBeerRepository) DeleteComment(ctx context.Context, id string, c
 
 	// Update the beer without the deleted comment
 	return r.Update(ctx, id, beer)
+}
+
+
+// UnavailableBeerRepository é um fallback usado quando a base de dados não está
+// acessível no arranque. Todas as operações retornam ErrDatabaseUnavailable
+// (503), mantendo o servidor de pé para rotas de diagnóstico (/health, /docs).
+type UnavailableBeerRepository struct{}
+
+// NewUnavailableBeerRepository cria o repositório de fallback offline.
+func NewUnavailableBeerRepository() *UnavailableBeerRepository {
+	return &UnavailableBeerRepository{}
+}
+
+func (r *UnavailableBeerRepository) GetAll(context.Context) ([]model.Beer, error) {
+	return nil, errors.NewUnavailableError()
+}
+func (r *UnavailableBeerRepository) Create(ctx context.Context, beer model.Beer) error {
+	return errors.NewUnavailableError()
+}
+func (r *UnavailableBeerRepository) GetPaginated(ctx context.Context, page, pageSize int) ([]model.Beer, int, error) {
+	return nil, 0, errors.NewUnavailableError()
+}
+func (r *UnavailableBeerRepository) GetByID(ctx context.Context, id string) (model.Beer, error) {
+	return model.Beer{}, errors.NewUnavailableError()
+}
+func (r *UnavailableBeerRepository) Update(ctx context.Context, id string, beer model.Beer) error {
+	return errors.NewUnavailableError()
+}
+func (r *UnavailableBeerRepository) Delete(ctx context.Context, id string) error {
+	return errors.NewUnavailableError()
+}
+func (r *UnavailableBeerRepository) AddComment(ctx context.Context, id string, comment model.Comment) error {
+	return errors.NewUnavailableError()
+}
+func (r *UnavailableBeerRepository) DeleteComment(ctx context.Context, id string, commentID string) error {
+	return errors.NewUnavailableError()
+}
+func (r *UnavailableBeerRepository) SearchBeers(ctx context.Context, filters model.BeerFilters) ([]model.Beer, int, error) {
+	return nil, 0, errors.NewUnavailableError()
 }

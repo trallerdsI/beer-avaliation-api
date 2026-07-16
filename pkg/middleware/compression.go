@@ -4,29 +4,41 @@ import (
 	"compress/gzip"
 	"net/http"
 	"strings"
-	"sync"
 )
 
-// gzipWriter pools gzip writers to avoid per-request allocation (Zero-Allocation
-// mindset on the hot path). It implements http.ResponseWriter and io.Writer.
+// gzipWriter aplica compressão gzip mantendo o código de status HTTP correto.
+// O status é capturado em WriteHeader e aplicado no primeiro Write (ou no
+// Close), impedindo que o gzip — que escreve o corpo imediatamente — force
+// um 200 prematuro e silencie os 4xx/5xx dos handlers (Defense-in-Depth).
 type gzipWriter struct {
 	http.ResponseWriter
-	w  *gzip.Writer
-	mu sync.Mutex
-}
-
-func (g *gzipWriter) Write(p []byte) (int, error) {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	return g.w.Write(p)
+	w        *gzip.Writer
+	status   int
+	wroteHdr bool
 }
 
 func (g *gzipWriter) WriteHeader(status int) {
-	g.ResponseWriter.WriteHeader(status)
+	if g.wroteHdr {
+		return
+	}
+	g.status = status
+	// Aplicação adiada: o cabeçalho só vai para o wire no primeiro Write,
+	// quando o handler já decidiu o status real.
+}
+
+func (g *gzipWriter) Write(p []byte) (int, error) {
+	if !g.wroteHdr {
+		if g.status == 0 {
+			g.status = http.StatusOK
+		}
+		g.ResponseWriter.WriteHeader(g.status)
+		g.wroteHdr = true
+	}
+	return g.w.Write(p)
 }
 
 func (g *gzipWriter) Flush() {
-	g.w.Flush()
+	_ = g.w.Flush()
 	if f, ok := g.ResponseWriter.(http.Flusher); ok {
 		f.Flush()
 	}
@@ -35,7 +47,7 @@ func (g *gzipWriter) Flush() {
 // CompressionMiddleware aplica compressão gzip/deflate em respostas quando o
 // cliente anuncia suporte via Accept-Encoding. Reduz drasticamente o tráfego
 // de banda no cliente móvel (payloads JSON de listagens caem ~70-80%).
-// Brotil pode ser plugado futuramente; gzip está no stdlib (Zero-Dependency).
+// gzip está no stdlib (Zero-Dependency).
 func CompressionMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		enc := r.Header.Get("Accept-Encoding")
@@ -45,7 +57,7 @@ func CompressionMiddleware(next http.Handler) http.Handler {
 		}
 
 		w.Header().Set("Content-Encoding", "gzip")
-		// Evita que o middleware de métricas/buffer sobrescreva o status.
+		// Evita que proxies/buffers sobrescrevam o Vary.
 		w.Header().Add("Vary", "Accept-Encoding")
 
 		gz := gzip.NewWriter(w)

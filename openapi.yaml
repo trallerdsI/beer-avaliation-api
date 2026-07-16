@@ -294,6 +294,53 @@ paths:
         '200':
           description: Statistics payload
 
+  /api/v1/feed:
+    get:
+      summary: BFF home feed (single payload for mobile home screen)
+      description: >
+        Consolidates the home screen into a single request, returning a lean
+        projection of beers (no long descriptions or full comments array).
+        Supports field selection via the `fields` query parameter
+        (comma-separated JSON field names).
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: pageSize
+          in: query
+          schema:
+            type: integer
+            default: 20
+        - name: fields
+          in: query
+          description: Comma-separated field projection (e.g. id,name,imageUrl)
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Home feed payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HomeFeed'
+
+  /api/v1/stream:
+    get:
+      summary: Server-Sent Events real-time stream
+      description: >
+        Persistent SSE stream that pushes domain events (beer.created,
+        comment.added, comment.deleted, comment.liked) to mobile clients,
+        replacing polling. Closes automatically when the client disconnects.
+      responses:
+        '200':
+          description: SSE stream (text/event-stream)
+          content:
+            text/event-stream:
+              schema:
+                $ref: '#/components/schemas/SSEEvent'
+
 components:
   securitySchemes:
     bearerAuth:
@@ -403,6 +450,45 @@ components:
           type: integer
         pageSize:
           type: integer
+    HomeFeed:
+      type: object
+      properties:
+        featured:
+          type: array
+          items:
+            $ref: '#/components/schemas/FeedItem'
+        total:
+          type: integer
+        page:
+          type: integer
+        pageSize:
+          type: integer
+    FeedItem:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        style:
+          type: string
+        imageUrl:
+          type: string
+        alcohol:
+          type: number
+        commentCount:
+          type: integer
+    SSEEvent:
+      type: object
+      properties:
+        type:
+          type: string
+          description: Event name (beer.created, comment.added, comment.deleted, comment.liked)
+        id:
+          type: string
+        data:
+          type: object
+          description: Event-specific payload
     UserRegisterInput:
       type: object
       required:

@@ -1,21 +1,19 @@
 package http
 
 import (
-	stdErrors "errors" // Renomeado para evitar conflito com o pacote de erros customizado
 	"context"
 	"encoding/json"
+	stdErrors "errors" // Renomeado para evitar conflito com o pacote de erros customizado
 	"fmt"
 	"log/slog"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/go-playground/validator/v10"
 	"github.com/google/uuid"
 	"github.com/microcosm-cc/bluemonday"
-	"github.com/prometheus/client_golang/prometheus"
 
 	"beer-review-app/internal/beer/model"
 	"beer-review-app/internal/beer/usecase"
@@ -23,27 +21,12 @@ import (
 	"beer-review-app/pkg/response"
 )
 
+// validate é um validador de structs de stack (zero-allocation por request no
+// caminho crítico: o ponteiro vive no package scope, sem new() por requisição).
 var (
-	validate  *validator.Validate
+	validate  = validator.New()
 	sanitizer = bluemonday.UGCPolicy()
-
-	// Métricas globais registradas uma única vez
-	beerSubmissionCounter = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "api_submission_count",
-		Help: "Total number of beer submissions",
-	})
-	responseDurationHistogram = prometheus.NewHistogramVec(prometheus.HistogramOpts{
-		Name:    "api_response_duration_seconds",
-		Help:    "Histogram of response durations for API requests",
-		Buckets: prometheus.DefBuckets,
-	}, []string{"method", "endpoint"})
 )
-
-func init() {
-	validate = validator.New()
-	// Registra todos os coletores no Prometheus global
-	prometheus.MustRegister(beerSubmissionCounter, responseDurationHistogram)
-}
 
 // BeerController handles HTTP requests related to beers.
 type BeerController struct {
@@ -77,15 +60,6 @@ func handleError(w http.ResponseWriter, ctx context.Context, logger *slog.Logger
 	response.SendError(w, message, statusCode)
 }
 
-// getRouteTemplate extrai o padrão da rota (ex: /beers/{id}) para evitar alta cardinalidade no Prometheus.
-// Em Go 1.22+ r.Pattern retorna o template estático; o fallback só existe para rotas fora do enhanced routing.
-func getRouteTemplate(r *http.Request) string {
-	if r.Pattern != "" {
-		return r.Pattern
-	}
-	return r.URL.Path
-}
-
 func (c *BeerController) validateBeer(beer model.Beer) error {
 	if beer.Name == "" {
 		return fmt.Errorf("beer name cannot be empty")
@@ -117,8 +91,6 @@ func (c *BeerController) GetAllBeers(w http.ResponseWriter, r *http.Request) {
 }
 
 func (c *BeerController) CreateBeer(w http.ResponseWriter, r *http.Request) {
-	start := time.Now()
-
 	if r.Body == nil {
 		handleError(w, r.Context(), c.logger, fmt.Errorf("request body is empty"), "Invalid request body", http.StatusBadRequest)
 		return
@@ -148,12 +120,7 @@ func (c *BeerController) CreateBeer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	beerSubmissionCounter.Inc()
 	response.SendResponse(w, http.StatusCreated, beer)
-
-	// CORRIGIDO: Usa getRouteTemplate(r) para o Prometheus não explodir com IDs mutáveis
-	responseTime := time.Since(start).Seconds()
-	responseDurationHistogram.WithLabelValues(r.Method, getRouteTemplate(r)).Observe(responseTime)
 
 	c.logger.Info("Beer created", slog.String("name", beer.Name), slog.String("style", beer.Style))
 }
@@ -165,7 +132,7 @@ func (c *BeerController) UpdateBeer(w http.ResponseWriter, r *http.Request) {
 		handleError(w, r.Context(), c.logger, fmt.Errorf("request body is empty"), "Invalid request body", http.StatusBadRequest)
 		return
 	}
-	
+
 	// SEGURANÇA: Limitação de carga útil
 	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 
@@ -229,7 +196,7 @@ func (c *BeerController) AddComment(w http.ResponseWriter, r *http.Request) {
 		handleError(w, r.Context(), c.logger, fmt.Errorf("request body is empty"), "Invalid request body", http.StatusBadRequest)
 		return
 	}
-	
+
 	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 
 	var comment model.Comment

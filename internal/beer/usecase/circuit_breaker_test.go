@@ -63,7 +63,7 @@ func TestBeerUsecaseConcurrentGetByID(t *testing.T) {
 	repo := new(MockBeerRepository)
 	repo.On("GetByID", mock.Anything, "1").Return(model.Beer{ID: "1", Name: "Beer1"}, nil)
 
-	u := NewBeerUsecase(repo)
+	u := NewBeerUsecase(repo, nil)
 
 	const n = 50
 	var wg sync.WaitGroup

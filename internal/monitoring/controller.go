@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"database/sql"
 	"log/slog"
 	"net/http"
 	"runtime"
@@ -10,8 +11,6 @@ import (
 	"beer-review-app/internal/beer/usecase"
 	userCase "beer-review-app/internal/user/usecase"
 	"beer-review-app/pkg/response"
-
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 // Structs de resposta para tipagem forte e melhor documentação Swagger
@@ -24,8 +23,8 @@ type RecentActivity struct {
 }
 
 type StatsResponse struct {
-	TotalBeers     int               `json:"totalBeers"` // CORRIGIDO: Alterado de int64 para int para evitar erros de compilação
-	TopBeers       interface{}       `json:"topBeers"`   // Substitua interface{} pela sua struct real de Beer se disponível
+	TotalBeers     int              `json:"totalBeers"` // CORRIGIDO: Alterado de int64 para int para evitar erros de compilação
+	TopBeers       interface{}      `json:"topBeers"`   // Substitua interface{} pela sua struct real de Beer se disponível
 	RecentActivity []RecentActivity `json:"recentActivity"`
 }
 
@@ -45,23 +44,23 @@ type HealthResponse struct {
 }
 
 type MonitoringController struct {
-	beerUsecase    usecase.BeerUsecase
-	userUsecase    userCase.UserUsecase // Mantido para compatibilidade, mas atualmente sem uso
-	logger         *slog.Logger
-	startTime      time.Time
-	metricsHandler http.Handler // Cache do handler do Prometheus para evitar alocações repetidas
+	beerUsecase usecase.BeerUsecase
+	userUsecase userCase.UserUsecase // Mantido para compatibilidade, mas atualmente sem uso
+	logger      *slog.Logger
+	startTime   time.Time
+	db          *sql.DB // opcional: nil em runtime offline/serverless desativa o ping de DB
 }
 
-func NewMonitoringController(bu usecase.BeerUsecase, uu userCase.UserUsecase, logger *slog.Logger) *MonitoringController {
+func NewMonitoringController(bu usecase.BeerUsecase, uu userCase.UserUsecase, logger *slog.Logger, db *sql.DB) *MonitoringController {
 	if logger == nil {
 		logger = slog.Default()
 	}
 	return &MonitoringController{
-		beerUsecase:    bu,
-		userUsecase:    uu,
-		logger:         logger,
-		startTime:      time.Now(),
-		metricsHandler: promhttp.Handler(), // Inicializado uma única vez para performance
+		beerUsecase: bu,
+		userUsecase: uu,
+		logger:      logger,
+		startTime:   time.Now(),
+		db:          db,
 	}
 }
 
@@ -100,8 +99,16 @@ func (c *MonitoringController) HealthCheck(w http.ResponseWriter, r *http.Reques
 	var m runtime.MemStats
 	runtime.ReadMemStats(&m) // Chamada leve para coleta de GC e memória em rotas de monitoramento
 
+	dbStatus := c.checkDatabaseHealth(r.Context())
+	status := http.StatusOK
+	overall := "healthy"
+	if dbStatus != "up" {
+		overall = "degraded"
+		status = http.StatusServiceUnavailable
+	}
+
 	health := HealthResponse{
-		Status:  "healthy",
+		Status:  overall,
 		Version: "1.0.0",
 		Uptime:  time.Since(c.startTime).Truncate(time.Second).String(), // Exibe uptime limpo sem frações de nanossegundos
 		Memory: MemoryStats{
@@ -111,22 +118,11 @@ func (c *MonitoringController) HealthCheck(w http.ResponseWriter, r *http.Reques
 			NumGC:      m.NumGC,
 		},
 		Dependencies: map[string]string{
-			"database": c.checkDatabaseHealth(r.Context()), // Propagação correta do contexto para respeitar timeouts
+			"database": dbStatus, // Propagação correta do contexto para respeitar timeouts
 		},
 	}
 
-	response.SendResponse(w, http.StatusOK, health)
-}
-
-// @Summary Get application metrics
-// @Description Get Prometheus metrics
-// @Produce text/plain
-// @Security BearerAuth
-// @Success 200 {string} string
-// @Router /metrics [get]
-func (c *MonitoringController) Metrics(w http.ResponseWriter, r *http.Request) {
-	// Reutiliza o handler instanciado no construtor para economizar alocações de memória no Heap
-	c.metricsHandler.ServeHTTP(w, r)
+	response.SendResponse(w, status, health)
 }
 
 func (c *MonitoringController) getRecentActivity(_ context.Context) []RecentActivity {
@@ -147,7 +143,14 @@ func (c *MonitoringController) getRecentActivity(_ context.Context) []RecentActi
 }
 
 func (c *MonitoringController) checkDatabaseHealth(ctx context.Context) string {
-	// Em produção, use o ctx para realizar o ping com timeout:
-	// se err := c.db.PingContext(ctx); err != nil { return "down" }
+	if c.db == nil {
+		return "unknown"
+	}
+	// Ping com timeout derivado do contexto da requisição: respeita cancelamento
+	// e evita bloqueio indefinido do endpoint de health (Defense-in-Depth).
+	if err := c.db.PingContext(ctx); err != nil {
+		c.logger.WarnContext(ctx, "database health check failed", "err", err)
+		return "down"
+	}
 	return "up"
 }

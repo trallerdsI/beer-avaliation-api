@@ -13,7 +13,7 @@ import (
 // TestGetAll tests the GetAll method
 func TestGetAll(t *testing.T) {
 	mockRepo := new(MockBeerRepository)
-	usecase := NewBeerUsecase(mockRepo)
+	usecase := NewBeerUsecase(mockRepo, nil)
 
 	beers := []model.Beer{{ID: "1", Name: "Beer1"}, {ID: "2", Name: "Beer2"}}
 
@@ -29,7 +29,7 @@ func TestGetAll(t *testing.T) {
 // TestCreate tests the Create method
 func TestCreate(t *testing.T) {
 	mockRepo := new(MockBeerRepository)
-	usecase := NewBeerUsecase(mockRepo)
+	usecase := NewBeerUsecase(mockRepo, nil)
 
 	beer := model.Beer{ID: "1", Name: "Beer1"}
 
@@ -44,7 +44,7 @@ func TestCreate(t *testing.T) {
 // TestGetByID tests the GetByID method
 func TestGetByID(t *testing.T) {
 	mockRepo := new(MockBeerRepository)
-	usecase := NewBeerUsecase(mockRepo)
+	usecase := NewBeerUsecase(mockRepo, nil)
 
 	beer := model.Beer{ID: "1", Name: "Beer1"}
 
@@ -60,7 +60,7 @@ func TestGetByID(t *testing.T) {
 // TestUpdate tests the Update method
 func TestUpdate(t *testing.T) {
 	mockRepo := new(MockBeerRepository)
-	usecase := NewBeerUsecase(mockRepo)
+	usecase := NewBeerUsecase(mockRepo, nil)
 
 	beer := model.Beer{ID: "1", Name: "Updated Beer"}
 
@@ -75,7 +75,7 @@ func TestUpdate(t *testing.T) {
 // TestDelete tests the Delete method
 func TestDelete(t *testing.T) {
 	mockRepo := new(MockBeerRepository)
-	usecase := NewBeerUsecase(mockRepo)
+	usecase := NewBeerUsecase(mockRepo, nil)
 
 	mockRepo.On("Delete", mock.Anything, "1").Return(nil)
 
@@ -88,7 +88,7 @@ func TestDelete(t *testing.T) {
 // TestAddComment tests the AddComment method
 func TestAddComment(t *testing.T) {
 	mockRepo := new(MockBeerRepository)
-	usecase := NewBeerUsecase(mockRepo)
+	usecase := NewBeerUsecase(mockRepo, nil)
 	commentText := "Nice beer!"
 	beer := model.Beer{ID: "1", Name: "Beer1", Comments: []model.Comment{}}
 	comment := model.Comment{ID: "c1", Text: commentText}
@@ -105,7 +105,7 @@ func TestAddComment(t *testing.T) {
 // TestDeleteComment tests the DeleteComment method
 func TestDeleteComment(t *testing.T) {
 	mockRepo := new(MockBeerRepository)
-	usecase := NewBeerUsecase(mockRepo)
+	usecase := NewBeerUsecase(mockRepo, nil)
 
 	beer := model.Beer{ID: "1", Name: "Beer1", Comments: []model.Comment{{ID: "c1"}}}
 
@@ -121,7 +121,7 @@ func TestDeleteComment(t *testing.T) {
 // TestLikeComment tests the LikeComment method
 func TestLikeComment(t *testing.T) {
 	mockRepo := new(MockBeerRepository)
-	usecase := NewBeerUsecase(mockRepo)
+	usecase := NewBeerUsecase(mockRepo, nil)
 
 	beer := model.Beer{ID: "1", Name: "Beer1", Comments: []model.Comment{{ID: "c1", Likes: 0}}}
 	deviceID := "device1"
@@ -138,7 +138,7 @@ func TestLikeComment(t *testing.T) {
 // TestSearchBeers tests the SearchBeers method
 func TestSearchBeers(t *testing.T) {
 	mockRepo := new(MockBeerRepository)
-	usecase := NewBeerUsecase(mockRepo)
+	usecase := NewBeerUsecase(mockRepo, nil)
 
 	filters := model.BeerFilters{Query: "Beer", Page: 1, PageSize: 10}
 	beers := []model.Beer{{ID: "1", Name: "Beer1"}}
