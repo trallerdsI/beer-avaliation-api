@@ -11,7 +11,7 @@ import (
 // codificar a resposta de erro sem alocar um map[string]string por request.
 type errorEnvelope struct {
 	Error  string `json:"error"`
-	Detail string `json:"detail,omitempty"`
+	Detail string `json:"detail"`
 }
 
 // SendResponse escreve payload JSON com Content-Type apropriado.

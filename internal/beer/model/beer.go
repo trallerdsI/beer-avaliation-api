@@ -81,7 +81,7 @@ type Beer struct {
 	Style       string      `json:"style" validate:"required"`
 	Description string      `json:"description" validate:"max=500"`
 	ImageUrl    string      `json:"imageUrl" validate:"omitempty,url"`
-	Alcohol     *float64    `json:"alcohol,omitempty" validate:"omitempty,min=0,max=100"`
+	Alcohol     *float64    `json:"alcohol" validate:"omitempty,min=0,max=100"`
 	Taste       Flavor      `json:"taste" validate:"required"`       // Ensure taste is included
 	Aroma       Aroma       `json:"aroma" validate:"required"`       // Ensure aroma is included
 	Color       Color       `json:"color" validate:"required"`       // Ensure color is included

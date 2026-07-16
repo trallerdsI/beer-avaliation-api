@@ -12,8 +12,8 @@ type HomeFeedItem struct {
 	ID           string   `json:"id"`
 	Name         string   `json:"name"`
 	Style        string   `json:"style"`
-	ImageURL     string   `json:"imageUrl,omitempty"`
-	Alcohol      *float64 `json:"alcohol,omitempty"`
+	ImageURL     string   `json:"imageUrl"`
+	Alcohol      *float64 `json:"alcohol"`
 	CommentCount int      `json:"commentCount"`
 }
 

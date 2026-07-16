@@ -18,7 +18,7 @@ import (
 type Event struct {
 	Type string `json:"type"` // ex: "beer.created", "comment.added"
 	ID   string `json:"id"`
-	Data any    `json:"data,omitempty"`
+	Data any    `json:"data"`
 }
 
 // subscriber agrupa o canal de entrega e o contexto de cancelamento.
