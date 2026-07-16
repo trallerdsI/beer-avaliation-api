@@ -165,9 +165,14 @@ type PostgresBeerRepository struct {
 
 // NewPostgresBeerRepository creates a new PostgreSQL beer repository.
 func NewPostgresBeerRepository(db *sql.DB) (*PostgresBeerRepository, error) {
+	// Defesa (Pilar 4): db nil (init sem banco) devolve erro em vez de panicar
+	// em db.Ping(); o BuildRouter aplica então o fallback UnavailableBeerRepository.
+	if db == nil {
+		return nil, errors.NewUnavailableError()
+	}
 	// Check if the connection is valid
 	if err := db.Ping(); err != nil {
-		return nil, err
+		return nil, errors.NewAppError(503, "beer database unavailable", err)
 	}
 
 	return &PostgresBeerRepository{db: db}, nil
