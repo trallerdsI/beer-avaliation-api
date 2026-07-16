@@ -564,7 +564,6 @@ func (r *PostgresBeerRepository) DeleteComment(ctx context.Context, id string, c
 	return r.Update(ctx, id, beer)
 }
 
-
 // UnavailableBeerRepository é um fallback usado quando a base de dados não está
 // acessível no arranque. Todas as operações retornam ErrDatabaseUnavailable
 // (503), mantendo o servidor de pé para rotas de diagnóstico (/health, /docs).

@@ -171,7 +171,6 @@ func (r *PostgresUserRepository) List(ctx context.Context, page, pageSize int) (
 	return users, total, nil
 }
 
-
 // UnavailableUserRepository é o fallback offline quando a base de dados não
 // está acessível. Todas as operações retornam ErrDatabaseUnavailable (503).
 type UnavailableUserRepository struct{}

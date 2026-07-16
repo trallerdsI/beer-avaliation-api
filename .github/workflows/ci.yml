@@ -1,10 +1,21 @@
 name: CI
 
-on: [push, pull_request]
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
 
 jobs:
   build:
+    name: Build & Test (Go ${{ matrix.go }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        go: ['1.26.5', 'stable']
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -12,19 +23,43 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.26.5'
+          go-version: ${{ matrix.go }}
+          check-latest: true
 
-      - name: Install dependencies
-        run: go mod tidy
+      # go mod tidy valida que go.mod/go.sum estão consistentes com o código.
+      - name: Verify modules
+        run: go mod tidy && git diff --exit-code -- go.mod go.sum
 
-      - name: Run linter
+      - name: Check formatting
+        run: |
+          unformatted=$(gofmt -l $(go list -f '{{.Dir}}' ./...))
+          if [ -n "$unformatted" ]; then
+            echo "The following files are not gofmt-compliant:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      # go vet: análise estática nativa (Pilar 1 — Zero-Dependency).
+      - name: Vet
         run: go vet ./...
 
-      - name: Run tests with coverage
-        run: go test ./... -coverprofile=coverage.out
+      - name: Build
+        run: go build ./...
+
+      # -race garante a Pilar 3 (concorrência sem race conditions); a suíte
+      # usa testing/synctest para temporalidade determinística (sem flaky).
+      - name: Test (race + coverage)
+        run: go test -race -coverprofile=coverage.out -covermode=atomic ./...
 
       - name: Upload coverage
+        if: matrix.go == '1.26.5'
         uses: actions/upload-artifact@v4
         with:
           name: coverage
           path: coverage.out
+
+      # Defense-in-Depth (Pilar 4): varre vulnerabilidades conhecidas nas
+      # dependências diretas e transitivas sem instalar binários externos.
+      - name: Govulncheck
+        if: matrix.go == '1.26.5'
+        run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
