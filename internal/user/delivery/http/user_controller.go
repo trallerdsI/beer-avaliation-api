@@ -3,6 +3,7 @@ package http
 import (
 	stdErrors "errors" // Renomeado para evitar conflito com o pacote de erros do projeto
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"strings"
 
@@ -12,19 +13,22 @@ import (
 	"beer-review-app/pkg/response"
 
 	"github.com/go-playground/validator/v10"
-	"github.com/gorilla/mux"
+	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
 
 // UserController handles HTTP requests related to users.
 type UserController struct {
 	usecase   usecase.UserUsecase
-	logger    *zap.Logger
+	logger    *slog.Logger
 	validator *validator.Validate // CORRIGIDO: Validator encapsulado na struct para evitar colisão de pacotes
 }
 
 // NewUserController makes a new controller for user
-func NewUserController(u usecase.UserUsecase, logger *zap.Logger) *UserController {
+func NewUserController(u usecase.UserUsecase, logger *slog.Logger) *UserController {
+	if logger == nil {
+		logger = slog.Default()
+	}
 	return &UserController{
 		usecase:   u,
 		logger:    logger,
@@ -53,19 +57,19 @@ func (c *UserController) Register(w http.ResponseWriter, r *http.Request) {
 
 	var user model.User
 	if err := json.NewDecoder(r.Body).Decode(&user); err != nil {
-		c.logger.Warn("Invalid request body", zap.Error(err))
+		c.logger.Warn("Invalid request body", slog.String("error", err.Error()))
 		response.SendError(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
 
 	if err := c.validator.Struct(&user); err != nil {
-		c.logger.Warn("Invalid input for registration", zap.Error(err))
+		c.logger.Warn("Invalid input for registration", slog.String("error", err.Error()))
 		response.SendError(w, "Invalid input", http.StatusBadRequest)
 		return
 	}
 
 	if err := c.usecase.Register(r.Context(), user); err != nil {
-		c.logger.Error("Failed to register user", zap.Error(err))
+		c.logger.Error("Failed to register user", slog.String("error", err.Error()))
 		response.SendError(w, "Failed to register user", http.StatusInternalServerError)
 		return
 	}
@@ -99,21 +103,21 @@ func (c *UserController) Login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&credentials); err != nil {
-		c.logger.Warn("Invalid request body", zap.Error(err))
+		c.logger.Warn("Invalid request body", slog.String("error", err.Error()))
 		response.SendError(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
 
 	// CORRIGIDO: A validação de login agora é de fato executada antes de ir para o usecase
 	if err := c.validator.Struct(&credentials); err != nil {
-		c.logger.Warn("Invalid login credentials format", zap.Error(err))
+		c.logger.Warn("Invalid login credentials format", slog.String("error", err.Error()))
 		response.SendError(w, "Invalid email or password format", http.StatusBadRequest)
 		return
 	}
 
 	token, err := c.usecase.Login(r.Context(), credentials.Email, credentials.Password)
 	if err != nil {
-		c.logger.Error("Failed to login", zap.Error(err))
+		c.logger.Error("Failed to login", slog.String("error", err.Error()))
 		response.SendError(w, "Invalid credentials", http.StatusUnauthorized)
 		return
 	}
@@ -133,8 +137,7 @@ func (c *UserController) Login(w http.ResponseWriter, r *http.Request) {
 // @Failure 500 {object} map[string]string
 // @Router /users/{id} [get]
 func (c *UserController) GetProfile(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	id := vars["id"]
+	id := r.PathValue("id")
 	if id == "" {
 		response.SendError(w, "User ID is required", http.StatusBadRequest)
 		return
@@ -148,7 +151,7 @@ func (c *UserController) GetProfile(w http.ResponseWriter, r *http.Request) {
 			response.SendError(w, appErr.Message, http.StatusNotFound)
 			return
 		}
-		c.logger.Error("Failed to get profile", zap.Error(err))
+		c.logger.Error("Failed to get profile", slog.String("error", err.Error()))
 		response.SendError(w, "Failed to get profile", http.StatusInternalServerError)
 		return
 	}
@@ -167,8 +170,7 @@ func (c *UserController) GetProfile(w http.ResponseWriter, r *http.Request) {
 // @Failure 500 {object} map[string]string
 // @Router /users/{id} [put]
 func (c *UserController) UpdateProfile(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	id := vars["id"]
+	id := r.PathValue("id")
 	if id == "" {
 		response.SendError(w, "User ID is required", http.StatusBadRequest)
 		return
@@ -183,20 +185,20 @@ func (c *UserController) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 
 	var user model.User
 	if err := json.NewDecoder(r.Body).Decode(&user); err != nil {
-		c.logger.Warn("Invalid request body", zap.Error(err))
+		c.logger.Warn("Invalid request body", slog.String("error", err.Error()))
 		response.SendError(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
 
 	// CORRIGIDO: Valida os novos dados do perfil antes de submetê-los para persistência
 	if err := c.validator.Struct(&user); err != nil {
-		c.logger.Warn("Invalid profile update input", zap.Error(err))
+		c.logger.Warn("Invalid profile update input", slog.String("error", err.Error()))
 		response.SendError(w, "Invalid input", http.StatusBadRequest)
 		return
 	}
 
 	if err := c.usecase.UpdateProfile(r.Context(), id, user); err != nil {
-		c.logger.Error("Failed to update profile", zap.Error(err))
+		c.logger.Error("Failed to update profile", slog.String("error", err.Error()))
 		response.SendError(w, "Failed to update profile", http.StatusInternalServerError)
 		return
 	}
@@ -215,15 +217,14 @@ func (c *UserController) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 // @Failure 500 {object} map[string]string
 // @Router /users/{id} [delete]
 func (c *UserController) DeleteAccount(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	id := vars["id"]
+	id := r.PathValue("id")
 	if id == "" {
 		response.SendError(w, "User ID is required", http.StatusBadRequest)
 		return
 	}
 
 	if err := c.usecase.DeleteAccount(r.Context(), id); err != nil {
-		c.logger.Error("Failed to delete account", zap.Error(err))
+		c.logger.Error("Failed to delete account", slog.String("error", err.Error()))
 		response.SendError(w, "Failed to delete account", http.StatusInternalServerError)
 		return
 	}

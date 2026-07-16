@@ -4,6 +4,7 @@ import (
 	stdErrors "errors" // Renomeado para evitar conflito com o pacote de erros customizado
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -12,7 +13,6 @@ import (
 
 	"github.com/go-playground/validator/v10"
 	"github.com/google/uuid"
-	"github.com/gorilla/mux"
 	"github.com/microcosm-cc/bluemonday"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/zap"
@@ -54,11 +54,14 @@ func init() {
 // BeerController handles HTTP requests related to beers.
 type BeerController struct {
 	usecase usecase.BeerUsecase
-	logger  *zap.Logger
+	logger  *slog.Logger
 }
 
 // NewBeerController makes a new controller for beer
-func NewBeerController(u usecase.BeerUsecase, logger *zap.Logger) *BeerController {
+func NewBeerController(u usecase.BeerUsecase, logger *slog.Logger) *BeerController {
+	if logger == nil {
+		logger = slog.Default()
+	}
 	return &BeerController{usecase: u, logger: logger}
 }
 
@@ -75,8 +78,8 @@ func getIntParam(query url.Values, key string, defaultValue int) int {
 	return value
 }
 
-func handleError(w http.ResponseWriter, logger *zap.Logger, err error, message string, statusCode int) {
-	logger.Error(message, zap.Error(err))
+func handleError(w http.ResponseWriter, logger *slog.Logger, err error, message string, statusCode int) {
+	logger.Error(message, slog.String("error", err.Error()))
 	response.SendError(w, message, statusCode)
 	logMetrics("POST", "/beers", strconv.Itoa(statusCode))
 }
@@ -88,10 +91,8 @@ func logMetrics(method, endpoint, status string) {
 
 // getRouteTemplate extrai o padrão da rota (ex: /beers/{id}) para evitar alta cardinalidade no Prometheus
 func getRouteTemplate(r *http.Request) string {
-	if route := mux.CurrentRoute(r); route != nil {
-		if pathTmpl, err := route.GetPathTemplate(); err == nil && pathTmpl != "" {
-			return pathTmpl
-		}
+	if r.Pattern != "" {
+		return r.Pattern
 	}
 	return r.URL.Path
 }
@@ -107,12 +108,12 @@ func (c *BeerController) validateBeer(beer model.Beer) error {
 }
 
 func requestParam(r *http.Request, key string) string {
-	if vars := mux.Vars(r); len(vars) > 0 {
-		if value, ok := vars[key]; ok && value != "" {
-			return value
-		}
+	// Go 1.22+: r.PathValue extrai o valor do wildcard do padrão de rota.
+	if v := r.PathValue(key); v != "" {
+		return v
 	}
 
+	// Fallback manual para rotas aninhadas (ex: commentId dentro de /beers/{id}/comments/{commentId}).
 	segments := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
 	for i := 0; i < len(segments)-1; i++ {
 		if segments[i] == "beers" && key == "id" {
@@ -185,7 +186,7 @@ func (c *BeerController) CreateBeer(w http.ResponseWriter, r *http.Request) {
 	responseTime := time.Since(start).Seconds()
 	responseDurationHistogram.WithLabelValues(r.Method, getRouteTemplate(r)).Observe(responseTime)
 
-	c.logger.Info("Beer created", zap.String("name", beer.Name), zap.String("style", beer.Style))
+	c.logger.Info("Beer created", slog.String("name", beer.Name), slog.String("style", beer.Style))
 }
 
 func (c *BeerController) UpdateBeer(w http.ResponseWriter, r *http.Request) {

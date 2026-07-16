@@ -5,6 +5,7 @@ import (
 	"embed"
 	"fmt"
 	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -12,11 +13,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gorilla/mux"
 	_ "github.com/lib/pq" // Register the PostgreSQL driver.
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/spf13/viper"
-	"go.uber.org/zap"
 
 	beerHttp "beer-review-app/internal/beer/delivery/http"
 	beerRepository "beer-review-app/internal/beer/repository"
@@ -36,9 +35,14 @@ var embeddedMigrations embed.FS
 var embeddedOpenAPI embed.FS
 
 // BuildRouter creates the main HTTP router for the application.
-func BuildRouter(db *sql.DB, logger *zap.Logger) http.Handler {
+//
+// Go 1.22+ Enhanced Routing: net/http.ServeMux nativo suporta método + padrão
+// de caminho (ex: "GET /api/v1/beers/{id}"). O roteador expõe r.Pattern com o
+// template estático da rota, eliminando cardinalidade no Prometheus e removendo
+// a dependência externa gorilla/mux.
+func BuildRouter(db *sql.DB, logger *slog.Logger) http.Handler {
 	if logger == nil {
-		logger = zap.NewNop()
+		logger = slog.Default()
 	}
 
 	beerRepo, err := beerRepository.NewPostgresBeerRepository(db)
@@ -54,39 +58,43 @@ func BuildRouter(db *sql.DB, logger *zap.Logger) http.Handler {
 	userController := userHttp.NewUserController(userUsecase, logger)
 	monitoringController := monitoring.NewMonitoringController(beerUsecase, userUsecase, logger)
 
-	router := mux.NewRouter()
-	router.Use(middleware.MetricsMiddleware)
-	router.Use(middleware.RequestIDMiddleware)
+	// Go 1.22+ ServeMux: registro declarativo com método + padrão.
+	mux := http.NewServeMux()
 
-	apiRouter := router.PathPrefix("/api/v1").Subrouter()
-	apiRouter.HandleFunc("/beers", beerController.GetAllBeers).Methods("GET")
-	apiRouter.HandleFunc("/beers", beerController.CreateBeer).Methods("POST")
-	apiRouter.HandleFunc("/beers/{id}", beerController.GetBeerByID).Methods("GET")
-	apiRouter.HandleFunc("/beers/{id}", beerController.UpdateBeer).Methods("PUT")
-	apiRouter.HandleFunc("/beers/{id}", beerController.DeleteBeer).Methods("DELETE")
-	apiRouter.HandleFunc("/beers/search", beerController.SearchBeers).Methods("GET")
-	apiRouter.HandleFunc("/beers/{id}/comments", beerController.AddComment).Methods("POST")
-	apiRouter.HandleFunc("/beers/{id}/comments/{commentId}", beerController.DeleteComment).Methods("DELETE")
-	apiRouter.HandleFunc("/beers/{id}/comments/{commentId}/like", beerController.LikeComment).Methods("POST")
-	apiRouter.HandleFunc("/users/register", userController.Register).Methods("POST")
-	apiRouter.HandleFunc("/users/login", userController.Login).Methods("POST")
+	// Middleware global aplicado via wrapping (RequestID + Metrics + Auth contextual).
+	mux.HandleFunc("GET /api/v1/beers", beerController.GetAllBeers)
+	mux.HandleFunc("POST /api/v1/beers", beerController.CreateBeer)
+	mux.HandleFunc("GET /api/v1/beers/{id}", beerController.GetBeerByID)
+	mux.HandleFunc("PUT /api/v1/beers/{id}", beerController.UpdateBeer)
+	mux.HandleFunc("DELETE /api/v1/beers/{id}", beerController.DeleteBeer)
+	mux.HandleFunc("GET /api/v1/beers/search", beerController.SearchBeers)
+	mux.HandleFunc("POST /api/v1/beers/{id}/comments", beerController.AddComment)
+	mux.HandleFunc("DELETE /api/v1/beers/{id}/comments/{commentId}", beerController.DeleteComment)
+	mux.HandleFunc("POST /api/v1/beers/{id}/comments/{commentId}/like", beerController.LikeComment)
 
-	protected := apiRouter.PathPrefix("/users").Subrouter()
-	protected.Use(middleware.AuthMiddleware)
-	protected.HandleFunc("/{id}", userController.GetProfile).Methods("GET")
-	protected.HandleFunc("/{id}", userController.UpdateProfile).Methods("PUT")
-	protected.HandleFunc("/{id}", userController.DeleteAccount).Methods("DELETE")
+	mux.HandleFunc("POST /api/v1/users/register", userController.Register)
+	mux.HandleFunc("POST /api/v1/users/login", userController.Login)
 
-	apiRouter.HandleFunc("/stats", monitoringController.GetStats).Methods("GET")
-	apiRouter.HandleFunc("/health", healthCheckHandler(db)).Methods("GET")
+	// Rotas protegidas por JWT.
+	mux.HandleFunc("GET /api/v1/users/{id}", middleware.Auth(userController.GetProfile))
+	mux.HandleFunc("PUT /api/v1/users/{id}", middleware.Auth(userController.UpdateProfile))
+	mux.HandleFunc("DELETE /api/v1/users/{id}", middleware.Auth(userController.DeleteAccount))
 
-	router.HandleFunc("/docs", docsHandler()).Methods("GET")
-	router.HandleFunc("/docs/openapi.yaml", openapiSpecHandler()).Methods("GET")
+	mux.HandleFunc("GET /api/v1/stats", monitoringController.GetStats)
+	mux.HandleFunc("GET /api/v1/health", healthCheckHandler(db))
+
+	mux.HandleFunc("GET /docs", docsHandler())
+	mux.HandleFunc("GET /docs/openapi.yaml", openapiSpecHandler())
 	if !appMetrics.IsServerlessRuntime() {
-		router.Handle("/metrics", promhttp.Handler())
+		mux.Handle("GET /metrics", promhttp.Handler())
 	}
 
-	return router
+	// Encadeamento de middlewares: RequestID -> Metrics -> handler.
+	var handler http.Handler = mux
+	handler = middleware.MetricsMiddleware(handler)
+	handler = middleware.RequestIDMiddleware(handler)
+
+	return handler
 }
 
 // InitDBFromEnv initializes the database connection using environment variables.
@@ -303,10 +311,7 @@ func openapiSpecHandler() http.HandlerFunc {
 
 // InitializeVercelHandler returns the shared handler the Vercel function uses.
 func InitializeVercelHandler() http.Handler {
-	logger, err := zap.NewProduction()
-	if err != nil {
-		logger = zap.NewNop()
-	}
+	logger := slog.Default()
 
 	db, err := InitDBFromEnv()
 	if err != nil {

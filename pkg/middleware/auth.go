@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"context"
+	"log/slog"
 	"net/http"
 	"strings"
 
@@ -13,8 +14,10 @@ type contextKey string
 
 const userIDContextKey contextKey = "user_id"
 
-func AuthMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+// Auth é um middleware de autenticação JWT que envolve um http.HandlerFunc.
+// Uso: mux.HandleFunc("GET /api/v1/users/{id}", middleware.Auth(handler))
+func Auth(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
 		authHeader := r.Header.Get("Authorization")
 		if authHeader == "" {
 			response.SendError(w, "Authorization header required", http.StatusUnauthorized)
@@ -33,8 +36,10 @@ func AuthMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
-		// Add user ID to request context
+		// Add user ID to request context.
 		ctx := context.WithValue(r.Context(), userIDContextKey, userID)
+		slog.InfoContext(ctx, "authenticated request", "user_id", userID)
+
 		next.ServeHTTP(w, r.WithContext(ctx))
-	})
+	}
 }

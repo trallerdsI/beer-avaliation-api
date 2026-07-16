@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -8,20 +9,37 @@ import (
 )
 
 // MetricsMiddleware wraps an HTTP handler to collect metrics about each request,
-// such as the path, method, status code, and response duration.
+// such as the route pattern, method, status code, and response duration.
+//
+// Go 1.22+: usa r.Pattern que retorna o template estático da rota
+// (ex: "/api/v1/beers/{id}"), evitando alta cardinalidade no Prometheus.
 func MetricsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 
-		// Wrap the ResponseWriter to capture the status code
+		// Wrap the ResponseWriter to capture the status code.
 		rw := &responseWriter{ResponseWriter: w, status: http.StatusOK}
 
-		// Call the next handler in the chain
+		// Call the next handler in the chain.
 		next.ServeHTTP(rw, r)
 
-		// Record duration and send metrics
+		// Route pattern estático (sem IDs) para métricas de baixa cardinalidade.
+		pattern := r.Pattern
+		if pattern == "" {
+			pattern = r.URL.Path
+		}
+
+		// Record duration and send metrics.
 		duration := time.Since(start).Seconds()
-		metrics.RecordMetrics(r.URL.Path, r.Method, http.StatusText(rw.status), duration)
+		metrics.RecordMetrics(pattern, r.Method, http.StatusText(rw.status), duration)
+
+		// Log estruturado via slog com contexto da requisição.
+		slog.InfoContext(r.Context(), "request completed",
+			"pattern", pattern,
+			"method", r.Method,
+			"status", rw.status,
+			"duration_ms", duration*1000,
+		)
 	})
 }
 

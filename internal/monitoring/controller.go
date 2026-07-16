@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"log/slog"
 	"net/http"
 	"runtime"
 	"time"
@@ -11,7 +12,6 @@ import (
 	"beer-review-app/pkg/response"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"go.uber.org/zap"
 )
 
 // Structs de resposta para tipagem forte e melhor documentação Swagger
@@ -24,8 +24,8 @@ type RecentActivity struct {
 }
 
 type StatsResponse struct {
-	TotalBeers     int              `json:"totalBeers"` // CORRIGIDO: Alterado de int64 para int para evitar erros de compilação
-	TopBeers       interface{}      `json:"topBeers"`   // Substitua interface{} pela sua struct real de Beer se disponível
+	TotalBeers     int               `json:"totalBeers"` // CORRIGIDO: Alterado de int64 para int para evitar erros de compilação
+	TopBeers       interface{}       `json:"topBeers"`   // Substitua interface{} pela sua struct real de Beer se disponível
 	RecentActivity []RecentActivity `json:"recentActivity"`
 }
 
@@ -47,12 +47,15 @@ type HealthResponse struct {
 type MonitoringController struct {
 	beerUsecase    usecase.BeerUsecase
 	userUsecase    userCase.UserUsecase // Mantido para compatibilidade, mas atualmente sem uso
-	logger         *zap.Logger
+	logger         *slog.Logger
 	startTime      time.Time
 	metricsHandler http.Handler // Cache do handler do Prometheus para evitar alocações repetidas
 }
 
-func NewMonitoringController(bu usecase.BeerUsecase, uu userCase.UserUsecase, logger *zap.Logger) *MonitoringController {
+func NewMonitoringController(bu usecase.BeerUsecase, uu userCase.UserUsecase, logger *slog.Logger) *MonitoringController {
+	if logger == nil {
+		logger = slog.Default()
+	}
 	return &MonitoringController{
 		beerUsecase:    bu,
 		userUsecase:    uu,
@@ -72,9 +75,9 @@ func (c *MonitoringController) GetStats(w http.ResponseWriter, r *http.Request) 
 	ctx := r.Context()
 
 	// Obtendo as top 5 cervejas e o total real cadastrado no sistema (totalBeers)
-	beers, totalBeers, err := c.beerUsecase.GetPaginated(ctx, 1, 5) 
+	beers, totalBeers, err := c.beerUsecase.GetPaginated(ctx, 1, 5)
 	if err != nil {
-		c.logger.Error("Failed to get beers for stats", zap.Error(err))
+		c.logger.Error("Failed to get beers for stats", slog.String("error", err.Error()))
 		response.SendError(w, "Failed to get statistics", http.StatusInternalServerError)
 		return
 	}
