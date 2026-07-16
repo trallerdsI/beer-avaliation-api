@@ -57,7 +57,17 @@ func getIntParam(query url.Values, key string, defaultValue int) int {
 
 func handleError(w http.ResponseWriter, ctx context.Context, logger *slog.Logger, err error, message string, statusCode int) {
 	logger.ErrorContext(ctx, message, "err", err)
-	response.SendError(w, message, statusCode)
+	// Expõe a causa raiz (ex: erro de DB) no campo "detail" para diagnóstico,
+	// preservando a mensagem genérica no cliente.
+	response.SendError(w, message, statusCode, rootCause(err))
+}
+
+// rootCause devolve a mensagem da causa mais interna do erro, ou "" se ausente.
+func rootCause(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
 }
 
 func (c *BeerController) validateBeer(beer model.Beer) error {

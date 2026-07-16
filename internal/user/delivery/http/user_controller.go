@@ -37,7 +37,15 @@ func NewUserController(u usecase.UserUsecase, logger *slog.Logger) *UserControll
 // requisição (traceability). Centraliza o tratamento para reduzir boilerplate.
 func (c *UserController) respondError(w http.ResponseWriter, r *http.Request, err error, message string, statusCode int) {
 	c.logger.ErrorContext(r.Context(), message, "err", err)
-	response.SendError(w, message, statusCode)
+	response.SendError(w, message, statusCode, rootCause(err))
+}
+
+// rootCause devolve a mensagem da causa mais interna do erro, ou "" se ausente.
+func rootCause(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
 }
 
 func (c *UserController) Register(w http.ResponseWriter, r *http.Request) {

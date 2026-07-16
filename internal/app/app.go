@@ -43,9 +43,26 @@ var embeddedOpenAPI embed.FS
 // de caminho (ex: "GET /api/v1/beers/{id}"). O roteador expõe r.Pattern com o
 // template estático da rota, eliminando cardinalidade no Prometheus e removendo
 // a dependência externa gorilla/mux.
+// BuildRouter creates the main HTTP router for the application.
+//
+// Go 1.22+ Enhanced Routing: net/http.ServeMux nativo suporta método + padrão
+// de caminho (ex: "GET /api/v1/beers/{id}"). O roteador expõe r.Pattern com o
+// template estático da rota, eliminando cardinalidade no Prometheus e removendo
+// a dependência externa gorilla/mux.
 func BuildRouter(db *sql.DB, logger *slog.Logger) http.Handler {
+	return BuildRouterWithDBErr(db, nil, logger)
+}
+
+// BuildRouterWithDBErr é idêntico a BuildRouter, mas propaga o erro de
+// inicialização da base de dados (se houver) para o controller de saúde, que o
+// expõe em /health — essencial para diagnosticar falhas de ligação/SSL em
+// ambientes serverless (ex: Vercel) sem acesso aos logs do processo.
+func BuildRouterWithDBErr(db *sql.DB, dbErr error, logger *slog.Logger) http.Handler {
 	if logger == nil {
 		logger = slog.Default()
+	}
+	if dbErr != nil && db == nil {
+		slog.Warn("base de dados indisponível no arranque; rotas de dados retornarão 503", "err", dbErr)
 	}
 
 	// Repositórios Postgres. Se o DB não estiver disponível (db nil ou Ping
@@ -74,7 +91,7 @@ func BuildRouter(db *sql.DB, logger *slog.Logger) http.Handler {
 
 	beerController := beerHttp.NewBeerController(beerUsecase, logger)
 	userController := userHttp.NewUserController(userUsecase, logger)
-	monitoringController := monitoring.NewMonitoringController(beerUsecase, userUsecase, logger, db)
+	monitoringController := monitoring.NewMonitoringController(beerUsecase, userUsecase, logger, db, dbErr)
 
 	// Go 1.22+ ServeMux: registro declarativo com método + padrão.
 	mux := http.NewServeMux()
@@ -404,5 +421,5 @@ func InitializeVercelHandler() http.Handler {
 		slog.Warn("vercel bootstrap warning; rotas de dados retornarão 503", "err", err)
 	}
 
-	return BuildRouter(db, logger)
+	return BuildRouterWithDBErr(db, err, logger)
 }

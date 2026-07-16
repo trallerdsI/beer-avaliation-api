@@ -125,3 +125,9 @@ func signHMAC(signingInput string) string {
 	mac.Write([]byte(signingInput))
 	return base64url(mac.Sum(nil))
 }
+
+// JWTSecretForTest recarrega o segredo a partir do ambiente. Exposto apenas
+// para testes (que definem JWT_SECRET via t.Setenv depois do init do package).
+func JWTSecretForTest() {
+	jwtSecret = loadJWTSecret()
+}

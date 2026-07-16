@@ -49,9 +49,10 @@ type MonitoringController struct {
 	logger      *slog.Logger
 	startTime   time.Time
 	db          *sql.DB // opcional: nil em runtime offline/serverless desativa o ping de DB
+	dbErr       error   // erro de inicialização da BD (ex: sem DB_CONN_STRING); exposto em /health
 }
 
-func NewMonitoringController(bu usecase.BeerUsecase, uu userCase.UserUsecase, logger *slog.Logger, db *sql.DB) *MonitoringController {
+func NewMonitoringController(bu usecase.BeerUsecase, uu userCase.UserUsecase, logger *slog.Logger, db *sql.DB, dbErr error) *MonitoringController {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -61,6 +62,7 @@ func NewMonitoringController(bu usecase.BeerUsecase, uu userCase.UserUsecase, lo
 		logger:      logger,
 		startTime:   time.Now(),
 		db:          db,
+		dbErr:       dbErr,
 	}
 }
 
@@ -102,9 +104,17 @@ func (c *MonitoringController) HealthCheck(w http.ResponseWriter, r *http.Reques
 	dbStatus := c.checkDatabaseHealth(r.Context())
 	status := http.StatusOK
 	overall := "healthy"
+	dbDetail := ""
 	if dbStatus != "up" {
 		overall = "degraded"
 		status = http.StatusServiceUnavailable
+		if c.dbErr != nil {
+			dbDetail = c.dbErr.Error()
+		} else if c.db == nil {
+			dbDetail = "database not configured"
+		} else {
+			dbDetail = "connection failed"
+		}
 	}
 
 	health := HealthResponse{
@@ -120,6 +130,9 @@ func (c *MonitoringController) HealthCheck(w http.ResponseWriter, r *http.Reques
 		Dependencies: map[string]string{
 			"database": dbStatus, // Propagação correta do contexto para respeitar timeouts
 		},
+	}
+	if dbDetail != "" {
+		health.Dependencies["database_detail"] = dbDetail
 	}
 
 	response.SendResponse(w, status, health)
@@ -144,7 +157,9 @@ func (c *MonitoringController) getRecentActivity(_ context.Context) []RecentActi
 
 func (c *MonitoringController) checkDatabaseHealth(ctx context.Context) string {
 	if c.db == nil {
-		return "unknown"
+		// Sem ligação à BD (ex: falhou no arranque). O motivo real é exposto
+		// em dependencies.database_detail via c.dbErr.
+		return "down"
 	}
 	// Ping com timeout derivado do contexto da requisição: respeita cancelamento
 	// e evita bloqueio indefinido do endpoint de health (Defense-in-Depth).

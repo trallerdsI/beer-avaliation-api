@@ -10,7 +10,8 @@ import (
 // errorEnvelope é uma struct de stack (não escapa para a Heap) usada para
 // codificar a resposta de erro sem alocar um map[string]string por request.
 type errorEnvelope struct {
-	Error string `json:"error"`
+	Error  string `json:"error"`
+	Detail string `json:"detail,omitempty"`
 }
 
 // SendResponse escreve payload JSON com Content-Type apropriado.
@@ -23,11 +24,16 @@ func SendResponse(w http.ResponseWriter, statusCode int, payload any) {
 
 // SendError escreve um erro JSON enxuto. Usa uma struct de stack em vez de
 // map[string]string, evitando 1 alocação de mapa no heap por resposta de erro
-// (hot path de todos os 4xx/5xx).
-func SendError(w http.ResponseWriter, message string, statusCode int) {
+// (hot path de todos os 4xx/5xx). O detalhe opcional expõe a causa raiz
+// (ex: erro de DB) para facilitar o diagnóstico sem esconder a mensagem.
+func SendError(w http.ResponseWriter, message string, statusCode int, detail ...string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
-	_ = json.NewEncoder(w).Encode(errorEnvelope{Error: message})
+	env := errorEnvelope{Error: message}
+	if len(detail) > 0 && detail[0] != "" {
+		env.Detail = detail[0]
+	}
+	_ = json.NewEncoder(w).Encode(env)
 }
 
 // SelectFields projeta apenas os campos solicitados de cada elemento de uma
