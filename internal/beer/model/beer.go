@@ -88,5 +88,5 @@ type Beer struct {
 	Body        Body        `json:"body" validate:"required"`        // Ensure body is included
 	Carbonation Carbonation `json:"carbonation" validate:"required"` // Ensure carbonation is included
 	Finish      Finish      `json:"finish" validate:"required"`      // Ensure finish is included
-	Comments    []Comment   `json:"comments,omitempty"`              // Array of comments with ID and text
+	Comments    []Comment   `json:"comments"`                         // Array of comments with ID and text
 }
