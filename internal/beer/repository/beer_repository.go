@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"math"
 	"strings"
 	"sync"
 
@@ -258,6 +259,8 @@ func (r *PostgresBeerRepository) GetByID(ctx context.Context, id string) (model.
 	}
 
 	beer.Comments = unmarshalComments(commentsJSON)
+	setRatingAggregates(&beer)
+	setRatingAggregates(&beer)
 	return beer, nil
 }
 
@@ -272,6 +275,24 @@ func unmarshalComments(data []byte) []model.Comment {
 		return []model.Comment{}
 	}
 	return comments
+}
+
+// setRatingAggregates calcula averageRating e totalReviews a partir dos
+// ratings dos comentários (Decisão B). Nota média com 1 casa decimal; 0 se
+// não houver comentários com rating.
+func setRatingAggregates(b *model.Beer) {
+	var sum int
+	var count int
+	for _, c := range b.Comments {
+		if c.Rating >= 1 && c.Rating <= 5 {
+			sum += c.Rating
+			count++
+		}
+	}
+	b.TotalReviews = count
+	if count > 0 {
+		b.AverageRating = math.Round(float64(sum)/float64(count)*10) / 10
+	}
 }
 
 func (r *PostgresBeerRepository) GetPaginated(ctx context.Context, page, pageSize int) ([]model.Beer, int, error) {
@@ -331,6 +352,7 @@ func (r *PostgresBeerRepository) GetPaginated(ctx context.Context, page, pageSiz
 		beer.CreatedBy = createdBy.String
 		beer.CreatedAt = createdAt.String
 		beer.Comments = unmarshalComments(commentsJSON)
+		setRatingAggregates(&beer)
 		beers = append(beers, beer)
 	}
 
@@ -488,6 +510,7 @@ func (r *PostgresBeerRepository) SearchBeers(ctx context.Context, filters model.
 		beer.CreatedBy = createdBy.String
 		beer.CreatedAt = createdAt.String
 		beer.Comments = unmarshalComments(commentsJSON)
+		setRatingAggregates(&beer)
 		beers = append(beers, beer)
 	}
 
@@ -539,6 +562,7 @@ func (r *PostgresBeerRepository) GetAll(ctx context.Context) ([]model.Beer, erro
 		beer.CreatedBy = createdBy.String
 		beer.CreatedAt = createdAt.String
 		beer.Comments = unmarshalComments(commentsJSON)
+		setRatingAggregates(&beer)
 		beers = append(beers, beer)
 	}
 

@@ -65,13 +65,15 @@ const (
 	FinishLingering Finish = "Persistente"
 )
 
-// Comment represents a comment with an ID, text, and metadata
+// Comment represents a comment with an ID, text, rating, and metadata.
+// rating (1-5) é a nota individual do utilizador; a cerveja expõe
+// average_rating/total_reviews agregados a partir dos ratings dos comentários.
 type Comment struct {
 	ID        string   `json:"id"`
 	Text      string   `json:"text" validate:"required,max=2000"`
+	Rating    int      `json:"rating" validate:"required,min=1,max=5"`
 	Likes     int      `json:"likes"`
-	LikedBy   []string `json:"likedBy"` // Store device/user IDs that liked this comment
-	Positive  bool     `json:"positive" validate:"required"`
+	LikedBy   []string `json:"likedBy"`   // user IDs que deram like (AuthZ obrigatória)
 	CreatedBy string   `json:"createdBy"` // user_id do autor do comentário (AuthZ)
 	CreatedAt string   `json:"createdAt"` // timestamp ISO8601 para ordenação cronológica do feed
 }
@@ -97,6 +99,10 @@ type Beer struct {
 	Comments    []Comment   `json:"comments"`
 	CreatedBy   string      `json:"createdBy"` // user_id do criador (AuthZ: só criador ou admin editam)
 	CreatedAt   string      `json:"createdAt"` // timestamp ISO8601 de criação da cerveja
+
+	// Campos agregados (calculados no repositório, não persistidos).
+	AverageRating float64 `json:"averageRating,omitempty"` // média dos ratings dos comentários
+	TotalReviews  int     `json:"totalReviews,omitempty"`  // nº de comentários com rating
 }
 
 // Allowlists de valores válidos para cada enum do domínio. O backend é a

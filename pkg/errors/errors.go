@@ -19,9 +19,11 @@ func NewUnavailableError() *AppError {
 }
 
 type AppError struct {
-	Code    int
-	Message string
-	Err     error
+	Code      int
+	Message   string
+	Err       error
+	ErrorCode string // código de erro estável para o cliente (ex: "DUPLICATE_BEER")
+	Detail    any    // payload extra seguro para o cliente (ex: sugestões)
 }
 
 func (e *AppError) Error() string {
@@ -51,5 +53,16 @@ func NewAppError(code int, message string, err error) *AppError {
 		Code:    code,
 		Message: message,
 		Err:     err,
+	}
+}
+
+// NewAppErrorWithDetail cria um AppError com código de erro estável e um
+// payload extra seguro (não expõe causa interna) para o cliente.
+func NewAppErrorWithDetail(code int, message, errorCode string, detail any) *AppError {
+	return &AppError{
+		Code:      code,
+		Message:   message,
+		ErrorCode: errorCode,
+		Detail:    detail,
 	}
 }

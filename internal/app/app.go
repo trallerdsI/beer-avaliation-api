@@ -112,7 +112,7 @@ func BuildRouterWithDBErr(db *sql.DB, dbErr error, logger *slog.Logger) http.Han
 	mux.HandleFunc("GET /api/v1/beers/search", beerController.SearchBeers)
 	mux.HandleFunc("POST /api/v1/beers/{id}/comments", middleware.Auth(beerController.AddComment))
 	mux.HandleFunc("DELETE /api/v1/beers/{id}/comments/{commentId}", middleware.Auth(beerController.DeleteComment))
-	mux.HandleFunc("POST /api/v1/beers/{id}/comments/{commentId}/like", beerController.LikeComment)
+	mux.HandleFunc("POST /api/v1/beers/{id}/comments/{commentId}/like", middleware.Auth(beerController.LikeComment))
 
 	// BFF: payload único para a home do app móvel (sem N requests sequenciais).
 	mux.HandleFunc("GET /api/v1/feed", beerController.GetHomeFeed)

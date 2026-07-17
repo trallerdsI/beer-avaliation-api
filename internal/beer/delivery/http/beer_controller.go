@@ -119,6 +119,20 @@ func handleError(w http.ResponseWriter, ctx context.Context, logger *slog.Logger
 	response.SendError(w, message, statusCode)
 }
 
+// sendAppError responde com o status/mensagem do AppError e, se presentes,
+// propaga o código de erro estável e o detail seguro (ex: sugestões de
+// duplicado) para o cliente — sem expor a causa interna.
+func sendAppError(w http.ResponseWriter, appErr *appErrors.AppError) {
+	opts := []response.ErrorOption{}
+	if appErr.ErrorCode != "" {
+		opts = append(opts, response.WithErrorCode(appErr.ErrorCode))
+	}
+	if appErr.Detail != nil {
+		opts = append(opts, response.WithDetail(appErr.Detail))
+	}
+	response.SendError(w, appErr.Message, appErr.Code, opts...)
+}
+
 // validationMessage traduz os erros do validator numa mensagem legível para o
 // cliente (ex: "name: o valor é menor que 3 caracteres"), em vez de expor o
 // formato cru do go-playground ("Key: 'Beer.Name' Error:...").
@@ -189,6 +203,11 @@ func (c *BeerController) CreateBeer(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := c.usecase.Create(r.Context(), &beer); err != nil {
+		var appErr *appErrors.AppError
+		if stdErrors.As(err, &appErr) {
+			sendAppError(w, appErr)
+			return
+		}
 		handleError(w, r.Context(), c.logger, err, "Failed to create beer", http.StatusInternalServerError)
 		return
 	}
@@ -227,7 +246,7 @@ func (c *BeerController) UpdateBeer(w http.ResponseWriter, r *http.Request) {
 	if err := c.usecase.Update(r.Context(), id, beer); err != nil {
 		var appErr *appErrors.AppError
 		if stdErrors.As(err, &appErr) {
-			response.SendError(w, appErr.Message, appErr.Code)
+			sendAppError(w, appErr)
 			return
 		}
 		handleError(w, r.Context(), c.logger, err, "Failed to update beer", http.StatusInternalServerError)
@@ -243,7 +262,7 @@ func (c *BeerController) DeleteBeer(w http.ResponseWriter, r *http.Request) {
 	if err := c.usecase.Delete(r.Context(), id); err != nil {
 		var appErr *appErrors.AppError
 		if stdErrors.As(err, &appErr) {
-			response.SendError(w, appErr.Message, appErr.Code)
+			sendAppError(w, appErr)
 			return
 		}
 		handleError(w, r.Context(), c.logger, err, "Failed to delete beer", http.StatusInternalServerError)
@@ -326,7 +345,7 @@ func (c *BeerController) DeleteComment(w http.ResponseWriter, r *http.Request) {
 		var appErr *appErrors.AppError
 		// respeita o status do AppError (ex: 403 em AuthZ, 404 not found).
 		if stdErrors.As(err, &appErr) {
-			response.SendError(w, appErr.Message, appErr.Code)
+			sendAppError(w, appErr)
 			return
 		}
 		handleError(w, r.Context(), c.logger, err, "Failed to delete comment", http.StatusInternalServerError)
@@ -340,28 +359,14 @@ func (c *BeerController) LikeComment(w http.ResponseWriter, r *http.Request) {
 	beerID := r.PathValue("id")
 	commentID := r.PathValue("commentId")
 
-	// Like por user autenticado (precedência) com device como fallback
-	// anónimo. X-Device-ID é opcional: só obrigatório se não houver token.
-	deviceID := r.Header.Get("X-Device-ID")
+	// Like exige login (middleware.Auth garante userID). Sem fallback anónimo
+	// (Decisão A): evita spam/bots em interações sociais.
 	userID, _ := middleware.UserIDFromContext(r.Context())
-	if userID == "" && deviceID == "" {
-		handleError(w, r.Context(), c.logger, fmt.Errorf("device ID is required"), "Device ID is required", http.StatusBadRequest)
-		return
-	}
 
-	if err := c.usecase.LikeComment(r.Context(), beerID, commentID, userID, deviceID); err != nil {
+	if err := c.usecase.LikeComment(r.Context(), beerID, commentID, userID, ""); err != nil {
 		var appErr *appErrors.AppError
-		// respeita o status do AppError (ex: 400 already liked, 404 not found).
 		if stdErrors.As(err, &appErr) {
-			if appErr.Code == http.StatusBadRequest && strings.Contains(strings.ToLower(appErr.Message), "already liked") {
-				response.SendError(w, "Comment already liked", http.StatusBadRequest)
-				return
-			}
-			if appErr.Code == http.StatusNotFound || strings.Contains(strings.ToLower(appErr.Message), "not found") {
-				response.SendError(w, appErr.Message, http.StatusNotFound)
-				return
-			}
-			response.SendError(w, appErr.Message, appErr.Code)
+			sendAppError(w, appErr)
 			return
 		}
 		handleError(w, r.Context(), c.logger, err, "Failed to like comment", http.StatusInternalServerError)

@@ -85,6 +85,21 @@ func (u *beerUsecase) Create(ctx context.Context, beer *model.Beer) error {
 	// Timestamp de criação para ordenação cronológica do feed social.
 	beer.CreatedAt = time.Now().UTC().Format(time.RFC3339)
 
+	// Decisão C: evita poluição do catálogo. Se já existe cerveja com nome
+	// semelhante, bloqueia com 409 e devolve sugestões para o utilizador
+	// comentar na existente em vez de duplicar.
+	if existing, _, err := u.repo.SearchBeers(ctx, model.BeerFilters{
+		Query:    beer.Name,
+		Page:     1,
+		PageSize: 5,
+	}); err == nil && len(existing) > 0 {
+		suggestions := make([]map[string]any, 0, len(existing))
+		for _, b := range existing {
+			suggestions = append(suggestions, map[string]any{"id": b.ID, "name": b.Name})
+		}
+		return errors.NewAppErrorWithDetail(409, "Uma cerveja com nome semelhante já existe", "DUPLICATE_BEER", suggestions)
+	}
+
 	if err := u.repo.Create(ctx, beer); err != nil {
 		return errors.NewAppError(500, "Failed to create beer", err)
 	}

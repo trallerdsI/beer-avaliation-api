@@ -13,6 +13,7 @@ import (
 	"beer-review-app/internal/beer/model"
 	"beer-review-app/internal/beer/usecase"
 	"beer-review-app/pkg/errors"
+	"beer-review-app/pkg/middleware"
 
 	"github.com/stretchr/testify/mock"
 )
@@ -208,7 +209,7 @@ func TestAddComment(t *testing.T) {
 	// Test case 1: Valid comment
 	t.Run("Valid Comment", func(t *testing.T) {
 		mockBeerUsecase.On("AddComment", context.Background(), "1", mock.Anything).Return(nil).Once()
-		comment := model.Comment{Text: "Great beer!", Positive: true}
+		comment := model.Comment{Text: "Great beer!", Rating: 5}
 		body, _ := json.Marshal(comment)
 		req := httptest.NewRequest("POST", "/beers/1/comments", bytes.NewBuffer(body))
 		req.SetPathValue("id", "1")
@@ -223,7 +224,7 @@ func TestAddComment(t *testing.T) {
 
 	// Test case 2: Missing text
 	t.Run("Missing Text", func(t *testing.T) {
-		comment := model.Comment{Positive: true}
+		comment := model.Comment{Rating: 5}
 		body, _ := json.Marshal(comment)
 		req := httptest.NewRequest("POST", "/beers/1/comments", bytes.NewBuffer(body))
 		rr := httptest.NewRecorder()
@@ -235,8 +236,8 @@ func TestAddComment(t *testing.T) {
 		}
 	})
 
-	// Test case 3: Missing positive/negative status
-	t.Run("Missing Positive Status", func(t *testing.T) {
+	// Test case 3: Missing rating
+	t.Run("Missing Rating", func(t *testing.T) {
 		comment := model.Comment{Text: "Great beer!"}
 		body, _ := json.Marshal(comment)
 		req := httptest.NewRequest("POST", "/beers/1/comments", bytes.NewBuffer(body))
@@ -255,11 +256,15 @@ func TestLikeComment(t *testing.T) {
 	mockBeerUsecase = new(MockBeerUsecase)
 	controller := NewBeerController(mockBeerUsecase, mockLogger)
 
+	// Like exige login (middleware.Auth). Injeta user_id no contexto.
+	withUser := func(r *http.Request) *http.Request {
+		return r.WithContext(middleware.WithUserID(r.Context(), "usr_1", ""))
+	}
+
 	// Test case 1: Successfully like a comment
 	t.Run("Successful Like", func(t *testing.T) {
-		mockBeerUsecase.On("LikeComment", mock.Anything, "1", "1", "", "device123").Return(nil).Once()
-		req := httptest.NewRequest("POST", "/beers/1/comments/1/like", nil)
-		req.Header.Set("X-Device-ID", "device123")
+		mockBeerUsecase.On("LikeComment", mock.Anything, "1", "1", "usr_1", "").Return(nil).Once()
+		req := withUser(httptest.NewRequest("POST", "/beers/1/comments/1/like", nil))
 		rr := httptest.NewRecorder()
 
 		req.SetPathValue("id", "1")
@@ -271,30 +276,15 @@ func TestLikeComment(t *testing.T) {
 		}
 	})
 
-	// Test case 2: Missing device ID
-	t.Run("Missing Device ID", func(t *testing.T) {
-		req := httptest.NewRequest("POST", "/beers/1/comments/1/like", nil)
-		rr := httptest.NewRecorder()
-
-		req.SetPathValue("id", "1")
-		req.SetPathValue("commentId", "1")
-		controller.LikeComment(rr, req)
-
-		if status := rr.Code; status != http.StatusBadRequest {
-			t.Errorf("handler returned wrong status code: got %v want %v", status, http.StatusBadRequest)
-		}
-	})
-
-	// Test case 3: Already liked by device
+	// Test case 3: Already liked
 	t.Run("Already Liked", func(t *testing.T) {
-		req := httptest.NewRequest("POST", "/beers/1/comments/1/like", nil)
-		req.Header.Set("X-Device-ID", "device-already-liked")
+		req := withUser(httptest.NewRequest("POST", "/beers/1/comments/1/like", nil))
 		rr := httptest.NewRecorder()
 
 		req.SetPathValue("id", "1")
 		req.SetPathValue("commentId", "1")
 		mockBeerUsecase.LikeCommentFunc = func(ctx context.Context, beerID, commentID, userID, deviceID string) error {
-			if deviceID == "device-already-liked" {
+			if userID == "usr_1" {
 				return errors.NewAppError(400, "already liked", nil)
 			}
 			return nil

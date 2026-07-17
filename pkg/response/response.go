@@ -11,7 +11,8 @@ import (
 // codificar a resposta de erro sem alocar um map[string]string por request.
 type errorEnvelope struct {
 	Error  string `json:"error"`
-	Detail string `json:"detail"`
+	Code   string `json:"code,omitempty"`   // código de erro estável para o cliente
+	Detail any    `json:"detail,omitempty"` // payload extra seguro (ex: sugestões)
 }
 
 // SendResponse escreve payload JSON com Content-Type apropriado.
@@ -24,16 +25,31 @@ func SendResponse(w http.ResponseWriter, statusCode int, payload any) {
 
 // SendError escreve um erro JSON enxuto. Usa uma struct de stack em vez de
 // map[string]string, evitando 1 alocação de mapa no heap por resposta de erro
-// (hot path de todos os 4xx/5xx). O detalhe opcional expõe a causa raiz
-// (ex: erro de DB) para facilitar o diagnóstico sem esconder a mensagem.
-func SendError(w http.ResponseWriter, message string, statusCode int, detail ...string) {
+// (hot path de todos os 4xx/5xx). Opcionalmente inclui um código de erro
+// estável (Code) e um detail seguro para o cliente — nunca a causa raiz do
+// erro interno (segurança: OWASP A05).
+func SendError(w http.ResponseWriter, message string, statusCode int, opts ...ErrorOption) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
 	env := errorEnvelope{Error: message}
-	if len(detail) > 0 && detail[0] != "" {
-		env.Detail = detail[0]
+	for _, o := range opts {
+		o(&env)
 	}
 	_ = json.NewEncoder(w).Encode(env)
+}
+
+// ErrorOption configura campos do errorEnvelope (padrão functional options,
+// zero-alocação quando não há opções).
+type ErrorOption func(*errorEnvelope)
+
+// WithErrorCode adiciona um código de erro estável (ex: "DUPLICATE_BEER").
+func WithErrorCode(code string) ErrorOption {
+	return func(e *errorEnvelope) { e.Code = code }
+}
+
+// WithDetail adiciona um payload extra seguro (ex: sugestões de duplicado).
+func WithDetail(detail any) ErrorOption {
+	return func(e *errorEnvelope) { e.Detail = detail }
 }
 
 // SelectFields projeta apenas os campos solicitados de cada elemento de uma

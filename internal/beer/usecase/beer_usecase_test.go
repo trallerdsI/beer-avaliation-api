@@ -29,12 +29,34 @@ func TestGetAll(t *testing.T) {
 }
 
 // TestCreate tests the Create method
+// TestCreateDuplicate verifica o bloqueio 409 quando já existe cerveja com
+// nome semelhante (Decisão C), com sugestões no detail.
+func TestCreateDuplicate(t *testing.T) {
+	mockRepo := new(MockBeerRepository)
+	usecase := NewBeerUsecase(mockRepo, nil)
+
+	beer := model.Beer{ID: "1", Name: "Heineken"}
+	existing := []model.Beer{{ID: "12", Name: "Heineken Long Neck"}}
+
+	mockRepo.On("SearchBeers", mock.Anything, mock.Anything).Return(existing, 1, nil)
+
+	err := usecase.Create(context.Background(), &beer)
+
+	var appErr *errors.AppError
+	assert.Error(t, err)
+	assert.ErrorAs(t, err, &appErr)
+	assert.Equal(t, 409, appErr.Code)
+	assert.Equal(t, "DUPLICATE_BEER", appErr.ErrorCode)
+}
+
 func TestCreate(t *testing.T) {
 	mockRepo := new(MockBeerRepository)
 	usecase := NewBeerUsecase(mockRepo, nil)
 
 	beer := model.Beer{ID: "1", Name: "Beer1"}
 
+	// Sem duplicados: Create faz search antes de inserir.
+	mockRepo.On("SearchBeers", mock.Anything, mock.Anything).Return([]model.Beer{}, 0, nil)
 	mockRepo.On("Create", mock.Anything, &beer).Return(nil)
 
 	err := usecase.Create(context.Background(), &beer)
