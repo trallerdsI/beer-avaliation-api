@@ -5,6 +5,8 @@ import (
 	"testing"
 
 	"beer-review-app/internal/beer/model"
+	"beer-review-app/pkg/errors"
+	"beer-review-app/pkg/middleware"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -63,10 +65,12 @@ func TestUpdate(t *testing.T) {
 	usecase := NewBeerUsecase(mockRepo, nil)
 
 	beer := model.Beer{ID: "1", Name: "Updated Beer"}
+	existing := model.Beer{ID: "1", Name: "Old Beer", CreatedBy: "user-1"}
 
+	mockRepo.On("GetByID", mock.Anything, "1").Return(existing, nil)
 	mockRepo.On("Update", mock.Anything, "1", beer).Return(nil)
 
-	err := usecase.Update(context.Background(), "1", beer)
+	err := usecase.Update(middleware.WithUserID(context.Background(), "user-1", ""), "1", beer)
 
 	assert.NoError(t, err)
 	mockRepo.AssertExpectations(t)
@@ -77,9 +81,12 @@ func TestDelete(t *testing.T) {
 	mockRepo := new(MockBeerRepository)
 	usecase := NewBeerUsecase(mockRepo, nil)
 
+	existing := model.Beer{ID: "1", Name: "Beer1", CreatedBy: "user-1"}
+
+	mockRepo.On("GetByID", mock.Anything, "1").Return(existing, nil)
 	mockRepo.On("Delete", mock.Anything, "1").Return(nil)
 
-	err := usecase.Delete(context.Background(), "1")
+	err := usecase.Delete(middleware.WithUserID(context.Background(), "user-1", ""), "1")
 
 	assert.NoError(t, err)
 	mockRepo.AssertExpectations(t)
@@ -102,19 +109,37 @@ func TestAddComment(t *testing.T) {
 	mockRepo.AssertExpectations(t)
 }
 
-// TestDeleteComment tests the DeleteComment method
+// TestDeleteComment tests the DeleteComment method (owner can delete)
 func TestDeleteComment(t *testing.T) {
 	mockRepo := new(MockBeerRepository)
 	usecase := NewBeerUsecase(mockRepo, nil)
 
-	beer := model.Beer{ID: "1", Name: "Beer1", Comments: []model.Comment{{ID: "c1"}}}
+	beer := model.Beer{ID: "1", Name: "Beer1", Comments: []model.Comment{{ID: "c1", CreatedBy: "user-1"}}}
 
 	mockRepo.On("GetByID", mock.Anything, "1").Return(beer, nil)
 	mockRepo.On("Update", mock.Anything, "1", mock.Anything).Return(nil)
 
-	err := usecase.DeleteComment(context.Background(), "1", "c1")
+	err := usecase.DeleteComment(middleware.WithUserID(context.Background(), "user-1", ""), "1", "c1")
 
 	assert.NoError(t, err)
+	mockRepo.AssertExpectations(t)
+}
+
+// TestDeleteCommentForbidden tests that a non-owner (non-admin) gets 403
+func TestDeleteCommentForbidden(t *testing.T) {
+	mockRepo := new(MockBeerRepository)
+	usecase := NewBeerUsecase(mockRepo, nil)
+
+	beer := model.Beer{ID: "1", Name: "Beer1", Comments: []model.Comment{{ID: "c1", CreatedBy: "user-1"}}}
+
+	mockRepo.On("GetByID", mock.Anything, "1").Return(beer, nil)
+
+	err := usecase.DeleteComment(middleware.WithUserID(context.Background(), "user-2", ""), "1", "c1")
+
+	assert.Error(t, err)
+	var appErr *errors.AppError
+	assert.ErrorAs(t, err, &appErr)
+	assert.Equal(t, 403, appErr.Code)
 	mockRepo.AssertExpectations(t)
 }
 

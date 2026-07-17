@@ -8,6 +8,7 @@ import (
 	"beer-review-app/internal/beer/model"
 	"beer-review-app/internal/beer/repository"
 	"beer-review-app/pkg/errors"
+	"beer-review-app/pkg/middleware"
 	"beer-review-app/pkg/realtime"
 
 	"github.com/sony/gobreaker"
@@ -77,6 +78,11 @@ func (u *beerUsecase) GetAll(ctx context.Context) ([]model.Beer, error) {
 
 // Create adds a new beer.
 func (u *beerUsecase) Create(ctx context.Context, beer *model.Beer) error {
+	// AuthZ: regista o criador (qualquer user logado pode criar cerveja global).
+	if uid, ok := middleware.UserIDFromContext(ctx); ok {
+		beer.CreatedBy = uid
+	}
+
 	if err := u.repo.Create(ctx, beer); err != nil {
 		return errors.NewAppError(500, "Failed to create beer", err)
 	}
@@ -128,20 +134,51 @@ func (u *beerUsecase) GetPaginated(ctx context.Context, page, pageSize int) ([]m
 	return beers, total, nil
 }
 
-// Update updates an existing beer
+// Update updates an existing beer. AuthZ: só o criador ou um admin podem
+// editar. created_by NULL (cervejas seedadas por scrap) só pode ser editado por admin.
 func (u *beerUsecase) Update(ctx context.Context, id string, beer model.Beer) error {
+	existing, err := u.repo.GetByID(ctx, id)
+	if err != nil {
+		return err
+	}
+	if !canModify(ctx, existing.CreatedBy) {
+		return errors.NewAppError(403, "you are not allowed to update this beer", nil)
+	}
+
 	if err := u.repo.Update(ctx, id, beer); err != nil {
 		return errors.NewAppError(500, "Failed to update beer", err)
 	}
 	return nil
 }
 
-// Delete removes a beer
+// Delete removes a beer. AuthZ: só o criador ou um admin podem apagar.
 func (u *beerUsecase) Delete(ctx context.Context, id string) error {
+	existing, err := u.repo.GetByID(ctx, id)
+	if err != nil {
+		return err
+	}
+	if !canModify(ctx, existing.CreatedBy) {
+		return errors.NewAppError(403, "you are not allowed to delete this beer", nil)
+	}
+
 	if err := u.repo.Delete(ctx, id); err != nil {
 		return errors.NewAppError(500, "Failed to delete beer", err)
 	}
 	return nil
+}
+
+// canModify devolve true se o chamador (do contexto) pode editar/apagar o
+// recurso cujo dono é ownerID. Regra: admin sempre pode; caso contrário o
+// user deve ser o dono. created_by vazio (seed por scrap) => só admin.
+func canModify(ctx context.Context, ownerID string) bool {
+	if middleware.IsAdmin(ctx) {
+		return true
+	}
+	if ownerID == "" {
+		return false
+	}
+	uid, ok := middleware.UserIDFromContext(ctx)
+	return ok && uid == ownerID
 }
 
 func (u *beerUsecase) AddComment(ctx context.Context, id string, comment model.Comment) error {
@@ -170,11 +207,18 @@ func (u *beerUsecase) DeleteComment(ctx context.Context, id string, commentID st
 		return errors.NewAppError(404, "Beer not found", err)
 	}
 
+	var owner string
 	for i, c := range beer.Comments {
 		if c.ID == commentID {
+			owner = c.CreatedBy
 			beer.Comments = append(beer.Comments[:i], beer.Comments[i+1:]...)
 			break
 		}
+	}
+
+	// AuthZ: só o autor do comentário ou um admin podem apagar.
+	if !canModify(ctx, owner) {
+		return errors.NewAppError(403, "you are not allowed to delete this comment", nil)
 	}
 
 	if err := u.repo.Update(ctx, id, beer); err != nil {

@@ -30,6 +30,15 @@ func RoleFromContext(ctx context.Context) (string, bool) {
 	return v, ok
 }
 
+// WithUserID injeta o user_id (e role opcional) no contexto. Útil em testes.
+func WithUserID(ctx context.Context, userID, role string) context.Context {
+	ctx = context.WithValue(ctx, userIDContextKey, userID)
+	if role != "" {
+		ctx = context.WithValue(ctx, roleContextKey, role)
+	}
+	return ctx
+}
+
 // IsAdmin devolve true se o contexto tiver role de administrador.
 func IsAdmin(ctx context.Context) bool {
 	role, ok := RoleFromContext(ctx)

@@ -34,11 +34,10 @@ func NewPostgresUserRepository(db *sql.DB) (UserRepository, error) {
 
 func (r *PostgresUserRepository) Create(ctx context.Context, user model.User) error {
 	query := `
-		INSERT INTO beerUsers (id, username, email, password, role, created)
-		VALUES ($1, $2, $3, $4, $5, $6)`
+		INSERT INTO beerUsers (username, email, password, role, created)
+		VALUES ($1, $2, $3, $4, $5)`
 
 	_, err := r.db.ExecContext(ctx, query,
-		user.ID,
 		user.Username,
 		user.Email,
 		user.Password,

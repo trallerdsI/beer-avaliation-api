@@ -2,8 +2,12 @@ package usecase
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
+	"os"
 	"time"
+
+	"github.com/google/uuid"
 
 	"beer-review-app/internal/user/model"
 	"beer-review-app/internal/user/repository"
@@ -19,6 +23,7 @@ type UserUsecase interface {
 	GetProfile(ctx context.Context, id string) (model.User, error)
 	UpdateProfile(ctx context.Context, id string, user model.User) error
 	DeleteAccount(ctx context.Context, id string) error
+	SeedAdmin(ctx context.Context) error
 }
 
 type userUsecase struct {
@@ -141,5 +146,51 @@ func (u *userUsecase) DeleteAccount(ctx context.Context, id string) error {
 	}
 
 	slog.InfoContext(ctx, "account deleted", "user_id", id)
+	return nil
+}
+
+// SeedAdmin cria um utilizador administrador global no arranque quando
+// ADMIN_EMAIL e ADMIN_PASSWORD estão definidos no ambiente. Se o email já
+// existir, promove o utilizador existente a admin (idempotente). O seed é
+// opcional: em ausência das env vars, nenhum admin é criado automaticamente.
+func (u *userUsecase) SeedAdmin(ctx context.Context) error {
+	email := os.Getenv("ADMIN_EMAIL")
+	password := os.Getenv("ADMIN_PASSWORD")
+	if email == "" || password == "" {
+		slog.InfoContext(ctx, "seed admin ignorado: ADMIN_EMAIL/ADMIN_PASSWORD não definidos")
+		return nil
+	}
+
+	existing, err := u.repo.GetByEmail(ctx, email)
+	if err == nil {
+		// Já existe: garante que é admin.
+		if existing.Role == model.RoleAdmin {
+			return nil
+		}
+		existing.Role = model.RoleAdmin
+		if err := u.repo.Update(ctx, existing.ID, existing); err != nil {
+			return fmt.Errorf("failed to promote admin: %w", err)
+		}
+		slog.InfoContext(ctx, "utilizador promovido a admin", "email", email)
+		return nil
+	}
+
+	// Não existe: cria.
+	hashed, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		return fmt.Errorf("failed to hash admin password: %w", err)
+	}
+	admin := model.User{
+		ID:       uuid.New().String(),
+		Username: "admin",
+		Email:    email,
+		Password: string(hashed),
+		Role:     model.RoleAdmin,
+		Created:  time.Now().UTC().Format(time.RFC3339),
+	}
+	if err := u.repo.Create(ctx, admin); err != nil {
+		return fmt.Errorf("failed to create admin: %w", err)
+	}
+	slog.InfoContext(ctx, "admin global criado", "email", email)
 	return nil
 }

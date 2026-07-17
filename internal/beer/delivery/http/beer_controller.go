@@ -18,6 +18,7 @@ import (
 	"beer-review-app/internal/beer/model"
 	"beer-review-app/internal/beer/usecase"
 	appErrors "beer-review-app/pkg/errors" // Alias explícito para evitar confusão
+	"beer-review-app/pkg/middleware"
 	"beer-review-app/pkg/response"
 )
 
@@ -230,6 +231,11 @@ func (c *BeerController) UpdateBeer(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := c.usecase.Update(r.Context(), id, beer); err != nil {
+		var appErr *appErrors.AppError
+		if stdErrors.As(err, &appErr) {
+			response.SendError(w, appErr.Message, appErr.Code)
+			return
+		}
 		handleError(w, r.Context(), c.logger, err, "Failed to update beer", http.StatusInternalServerError)
 		return
 	}
@@ -241,6 +247,11 @@ func (c *BeerController) DeleteBeer(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 
 	if err := c.usecase.Delete(r.Context(), id); err != nil {
+		var appErr *appErrors.AppError
+		if stdErrors.As(err, &appErr) {
+			response.SendError(w, appErr.Message, appErr.Code)
+			return
+		}
 		handleError(w, r.Context(), c.logger, err, "Failed to delete beer", http.StatusInternalServerError)
 		return
 	}
@@ -295,6 +306,10 @@ func (c *BeerController) AddComment(w http.ResponseWriter, r *http.Request) {
 
 	comment.ID = uuid.New().String()
 	comment.Likes = 0
+	// AuthZ: regista o autor do comentário (qualquer user logado pode comentar).
+	if uid, ok := middleware.UserIDFromContext(r.Context()); ok {
+		comment.CreatedBy = uid
+	}
 
 	if err := c.usecase.AddComment(r.Context(), id, comment); err != nil {
 		handleError(w, r.Context(), c.logger, err, "Failed to add comment", http.StatusInternalServerError)
@@ -313,9 +328,9 @@ func (c *BeerController) DeleteComment(w http.ResponseWriter, r *http.Request) {
 
 	if err := c.usecase.DeleteComment(r.Context(), beerID, commentID); err != nil {
 		var appErr *appErrors.AppError
-		// CORRIGIDO: Uso de errors.As
-		if stdErrors.As(err, &appErr) && (appErr.Code == http.StatusNotFound || strings.Contains(strings.ToLower(appErr.Message), "not found")) {
-			http.Error(w, appErr.Message, http.StatusNotFound)
+		// respeita o status do AppError (ex: 403 em AuthZ, 404 not found).
+		if stdErrors.As(err, &appErr) {
+			response.SendError(w, appErr.Message, appErr.Code)
 			return
 		}
 		handleError(w, r.Context(), c.logger, err, "Failed to delete comment", http.StatusInternalServerError)

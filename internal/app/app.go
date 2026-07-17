@@ -89,6 +89,12 @@ func BuildRouterWithDBErr(db *sql.DB, dbErr error, logger *slog.Logger) http.Han
 	beerUsecase := beerUsecase.NewBeerUsecase(beerRepo, eventHub)
 	userUsecase := userUsecase.NewUserUsecase(userRepo)
 
+	// Seed de admin global (idempotente): cria/promove admin se ADMIN_EMAIL e
+	// ADMIN_PASSWORD estiverem definidos. Não bloqueia o arranque se faltarem.
+	if err := userUsecase.SeedAdmin(context.Background()); err != nil {
+		slog.Error("falha no seed de admin", "err", err)
+	}
+
 	beerController := beerHttp.NewBeerController(beerUsecase, logger)
 	userController := userHttp.NewUserController(userUsecase, logger)
 	monitoringController := monitoring.NewMonitoringController(beerUsecase, userUsecase, logger, db, dbErr)
@@ -99,13 +105,13 @@ func BuildRouterWithDBErr(db *sql.DB, dbErr error, logger *slog.Logger) http.Han
 	// Middleware global aplicado via wrapping (RequestID + Metrics + Auth contextual).
 	mux.HandleFunc("GET /api/v1/beers/enums", beerController.GetEnums)
 	mux.HandleFunc("GET /api/v1/beers", beerController.GetAllBeers)
-	mux.HandleFunc("POST /api/v1/beers", beerController.CreateBeer)
+	mux.HandleFunc("POST /api/v1/beers", middleware.Auth(beerController.CreateBeer))
 	mux.HandleFunc("GET /api/v1/beers/{id}", beerController.GetBeerByID)
-	mux.HandleFunc("PUT /api/v1/beers/{id}", beerController.UpdateBeer)
-	mux.HandleFunc("DELETE /api/v1/beers/{id}", beerController.DeleteBeer)
+	mux.HandleFunc("PUT /api/v1/beers/{id}", middleware.Auth(beerController.UpdateBeer))
+	mux.HandleFunc("DELETE /api/v1/beers/{id}", middleware.Auth(beerController.DeleteBeer))
 	mux.HandleFunc("GET /api/v1/beers/search", beerController.SearchBeers)
-	mux.HandleFunc("POST /api/v1/beers/{id}/comments", beerController.AddComment)
-	mux.HandleFunc("DELETE /api/v1/beers/{id}/comments/{commentId}", beerController.DeleteComment)
+	mux.HandleFunc("POST /api/v1/beers/{id}/comments", middleware.Auth(beerController.AddComment))
+	mux.HandleFunc("DELETE /api/v1/beers/{id}/comments/{commentId}", middleware.Auth(beerController.DeleteComment))
 	mux.HandleFunc("POST /api/v1/beers/{id}/comments/{commentId}/like", beerController.LikeComment)
 
 	// BFF: payload único para a home do app móvel (sem N requests sequenciais).
@@ -270,7 +276,9 @@ func maxIdleConns() int {
 func migrateDB(db *sql.DB) error {
 	sqlFiles := []string{
 		"migrations/create_users_table.sql",
+		"migrations/add_role_to_users.sql",
 		"migrations/create_beers_table.sql",
+		"migrations/add_created_by_to_beers.sql",
 		"migrations/create_comments_table.sql",
 		"migrations/add_comments_jsonb.sql",
 		"migrations/create_indexes.sql",
