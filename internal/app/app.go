@@ -97,6 +97,7 @@ func BuildRouterWithDBErr(db *sql.DB, dbErr error, logger *slog.Logger) http.Han
 	mux := http.NewServeMux()
 
 	// Middleware global aplicado via wrapping (RequestID + Metrics + Auth contextual).
+	mux.HandleFunc("GET /api/v1/beers/enums", beerController.GetEnums)
 	mux.HandleFunc("GET /api/v1/beers", beerController.GetAllBeers)
 	mux.HandleFunc("POST /api/v1/beers", beerController.CreateBeer)
 	mux.HandleFunc("GET /api/v1/beers/{id}", beerController.GetBeerByID)

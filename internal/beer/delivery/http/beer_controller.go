@@ -24,9 +24,48 @@ import (
 // validate é um validador de structs de stack (zero-allocation por request no
 // caminho crítico: o ponteiro vive no package scope, sem new() por requisição).
 var (
-	validate  = validator.New()
+	validate  = newValidator()
 	sanitizer = bluemonday.UGCPolicy()
 )
+
+// newValidator cria o validador e regista a regra customizada https_url, que
+// garante que o imageUrl (quando presente) use exclusivamente o esquema https
+// — bloqueando http, javascript:, data: e outros, mitigando XSS/SSRF.
+func newValidator() *validator.Validate {
+	v := validator.New()
+	v.RegisterValidation("https_url", func(fl validator.FieldLevel) bool {
+		val := fl.Field().String()
+		if val == "" {
+			return true // vazio é permitido (campo opcional)
+		}
+		u, err := url.Parse(val)
+		if err != nil {
+			return false
+		}
+		return u.Scheme == "https"
+	})
+	// Enums do domínio: o backend é a fonte da verdade. O app consome os
+	// valores via GET /api/v1/enums e não envia entrada livre.
+	v.RegisterValidation("flavor", func(fl validator.FieldLevel) bool {
+		return model.IsFlavor(model.Flavor(fl.Field().String()))
+	})
+	v.RegisterValidation("aroma", func(fl validator.FieldLevel) bool {
+		return model.IsAroma(model.Aroma(fl.Field().String()))
+	})
+	v.RegisterValidation("color", func(fl validator.FieldLevel) bool {
+		return model.IsColor(model.Color(fl.Field().String()))
+	})
+	v.RegisterValidation("body", func(fl validator.FieldLevel) bool {
+		return model.IsBody(model.Body(fl.Field().String()))
+	})
+	v.RegisterValidation("carbonation", func(fl validator.FieldLevel) bool {
+		return model.IsCarbonation(model.Carbonation(fl.Field().String()))
+	})
+	v.RegisterValidation("finish", func(fl validator.FieldLevel) bool {
+		return model.IsFinish(model.Finish(fl.Field().String()))
+	})
+	return v
+}
 
 // BeerController handles HTTP requests related to beers.
 type BeerController struct {
@@ -40,6 +79,21 @@ func NewBeerController(u usecase.BeerUsecase, logger *slog.Logger) *BeerControll
 		logger = slog.Default()
 	}
 	return &BeerController{usecase: u, logger: logger}
+}
+
+// maxPageSize limita o tamanho de página para proteger o servidor contra
+// pedidos com pageSize enorme (ex: 100000) que devolveriam a tabela toda.
+const maxPageSize = 50
+
+// clampPageSize garante que o pageSize esteja em [1, maxPageSize].
+func clampPageSize(n int) int {
+	if n < 1 {
+		return 1
+	}
+	if n > maxPageSize {
+		return maxPageSize
+	}
+	return n
 }
 
 func getIntParam(query url.Values, key string, defaultValue int) int {
@@ -99,7 +153,7 @@ func (c *BeerController) GetAllBeers(w http.ResponseWriter, r *http.Request) {
 	// REUTILIZADO: Uso consistente do helper 'getIntParam'
 	query := r.URL.Query()
 	page := getIntParam(query, "page", 1)
-	pageSize := getIntParam(query, "pageSize", 10)
+	pageSize := clampPageSize(getIntParam(query, "pageSize", 10))
 
 	beers, total, err := c.usecase.GetPaginated(r.Context(), page, pageSize)
 	if err != nil {
@@ -229,6 +283,11 @@ func (c *BeerController) AddComment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// SEGURANÇA: sanitiza o texto contra XSS ANTES de validar, para que a
+	// regra "required" confira o conteúdo já limpo (um texto puramente
+	// <script> vira "" e é rejeitado com 400, não gravado vazio).
+	comment.Text = sanitizer.Sanitize(comment.Text)
+
 	if err := validate.Struct(comment); err != nil {
 		handleError(w, r.Context(), c.logger, err, "Invalid input", http.StatusBadRequest)
 		return
@@ -304,7 +363,7 @@ func (c *BeerController) SearchBeers(w http.ResponseWriter, r *http.Request) {
 		Style:    query.Get("style"),
 		Taste:    query.Get("taste"),
 		Page:     getIntParam(query, "page", 1),
-		PageSize: getIntParam(query, "pageSize", 10),
+		PageSize: clampPageSize(getIntParam(query, "pageSize", 10)),
 	}
 
 	if minAlc := query.Get("minAlcohol"); minAlc != "" {
@@ -331,4 +390,11 @@ func (c *BeerController) SearchBeers(w http.ResponseWriter, r *http.Request) {
 		"page":     filters.Page,
 		"pageSize": filters.PageSize,
 	})
+}
+
+// GetEnums devolve os valores aceites para os enums do domínio (style, taste,
+// aroma, color, body, carbonation, finish). O backend é a fonte da verdade:
+// o app Flutter consome esta lista e não aceita entrada livre do utilizador.
+func (c *BeerController) GetEnums(w http.ResponseWriter, r *http.Request) {
+	response.SendResponse(w, http.StatusOK, model.EnumValues())
 }
