@@ -1,10 +1,16 @@
 openapi: 3.0.3
 info:
   title: Beer Avaliation API
-  version: 1.0.0
-  description: Complete API for managing beers, beer comments, users, and basic statistics.
+  version: 1.1.0
+  description: >
+    API de rede social de cerveja. A cerveja é o "post" do feed; o feed é a
+    listagem de cervejas e as interações (comentários com nota, likes) orbitam
+    à volta dela. Visualização é pública; criar cerveja, comentar e dar like
+    exigem login (Bearer JWT).
+  x-sync: Fiel ao código (internal/app/app.go + modelos). Manter alinhado a cada mudança de contrato.
 servers:
   - url: https://beer-avaliation-api.vercel.app
+  - url: http://localhost:8082
 paths:
   /api/v1/health:
     get:
@@ -17,7 +23,7 @@ paths:
 
   /api/v1/beers:
     get:
-      summary: List beers with pagination
+      summary: List beers (feed global / catálogo) with pagination
       parameters:
         - in: query
           name: page
@@ -30,16 +36,24 @@ paths:
           schema:
             type: integer
             minimum: 1
+            maximum: 50
             default: 10
+        - in: query
+          name: fields
+          schema:
+            type: string
+          description: "Projeção de campos separados por vírgula (ex id,name,imageUrl,averageRating)"
       responses:
         '200':
-          description: Paginated list of beers
+          description: Paginated list of beers (with aggregates)
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/BeerListResponse'
     post:
-      summary: Create a beer
+      summary: Create a beer (requires auth)
+      security:
+        - bearerAuth: []
       requestBody:
         required: true
         content:
@@ -54,11 +68,27 @@ paths:
               schema:
                 $ref: '#/components/schemas/Beer'
         '400':
-          description: Invalid request payload
+          description: Invalid request payload (validation error)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Missing or invalid token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Duplicate beer detected (name collision)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DuplicateBeerError'
 
   /api/v1/beers/search:
     get:
-      summary: Search beers by filters
+      summary: Search beers by filters (used to suggest existing beers before creating)
       parameters:
         - in: query
           name: query
@@ -77,6 +107,14 @@ paths:
           schema:
             type: string
         - in: query
+          name: minAlcohol
+          schema:
+            type: number
+        - in: query
+          name: maxAlcohol
+          schema:
+            type: number
+        - in: query
           name: page
           schema:
             type: integer
@@ -87,6 +125,7 @@ paths:
           schema:
             type: integer
             minimum: 1
+            maximum: 50
             default: 10
       responses:
         '200':
@@ -107,15 +146,21 @@ paths:
             type: string
       responses:
         '200':
-          description: Beer details
+          description: Beer details (includes comments + aggregates)
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Beer'
         '404':
           description: Beer not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
     put:
-      summary: Update a beer
+      summary: Update a beer (requires auth; owner or admin)
+      security:
+        - bearerAuth: []
       parameters:
         - in: path
           name: id
@@ -131,10 +176,24 @@ paths:
       responses:
         '200':
           description: Beer updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Beer'
+        '401':
+          description: Unauthorized
+        '403':
+          description: Not allowed to update this beer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '404':
           description: Beer not found
     delete:
-      summary: Delete a beer
+      summary: Delete a beer (requires auth; owner or admin)
+      security:
+        - bearerAuth: []
       parameters:
         - in: path
           name: id
@@ -144,12 +203,18 @@ paths:
       responses:
         '204':
           description: Beer deleted successfully
+        '401':
+          description: Unauthorized
+        '403':
+          description: Not allowed to delete this beer
         '404':
           description: Beer not found
 
   /api/v1/beers/{id}/comments:
     post:
-      summary: Add a comment to a beer
+      summary: Add a comment + rating to a beer (requires auth)
+      security:
+        - bearerAuth: []
       parameters:
         - in: path
           name: id
@@ -163,34 +228,28 @@ paths:
             schema:
               $ref: '#/components/schemas/CommentInput'
       responses:
-        '201':
+        '200':
           description: Comment added successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommentCreated'
+        '400':
+          description: Invalid input (text empty or rating out of 1-5)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
         '404':
           description: Beer not found
 
   /api/v1/beers/{id}/comments/{commentId}:
     delete:
-      summary: Delete a comment from a beer
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: string
-        - in: path
-          name: commentId
-          required: true
-          schema:
-            type: string
-      responses:
-        '204':
-          description: Comment deleted successfully
-        '404':
-          description: Comment or beer not found
-
-  /api/v1/beers/{id}/comments/{commentId}/like:
-    post:
-      summary: Like a comment
+      summary: Delete a comment (requires auth; author or beer owner)
+      security:
+        - bearerAuth: []
       parameters:
         - in: path
           name: id
@@ -204,7 +263,45 @@ paths:
             type: string
       responses:
         '200':
-          description: Comment liked successfully
+          description: Comment deleted successfully
+        '401':
+          description: Unauthorized
+        '403':
+          description: Not allowed to delete this comment
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Comment or beer not found
+
+  /api/v1/beers/{id}/comments/{commentId}/like:
+    post:
+      summary: Toggle like on a comment (requires auth)
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: commentId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Comment liked (idempotent by user; second call removes)
+        '401':
+          description: Unauthorized
+        '400':
+          description: Already liked (should not normally happen with toggle)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '404':
           description: Comment or beer not found
 
@@ -220,6 +317,10 @@ paths:
       responses:
         '201':
           description: User registered successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserRegistered'
         '400':
           description: Invalid registration payload
 
@@ -234,21 +335,25 @@ paths:
               $ref: '#/components/schemas/UserLoginInput'
       responses:
         '200':
-          description: Login successful
+          description: Login successful (returns JWT token)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserRegistered'
         '401':
           description: Invalid credentials
 
   /api/v1/users/{id}:
     get:
       summary: Get user profile
+      security:
+        - bearerAuth: []
       parameters:
         - in: path
           name: id
           required: true
           schema:
             type: string
-      security:
-        - bearerAuth: []
       responses:
         '200':
           description: User profile
@@ -256,14 +361,14 @@ paths:
           description: Unauthorized
     put:
       summary: Update user profile
+      security:
+        - bearerAuth: []
       parameters:
         - in: path
           name: id
           required: true
           schema:
             type: string
-      security:
-        - bearerAuth: []
       requestBody:
         required: true
         content:
@@ -275,14 +380,14 @@ paths:
           description: User profile updated
     delete:
       summary: Delete user account
+      security:
+        - bearerAuth: []
       parameters:
         - in: path
           name: id
           required: true
           schema:
             type: string
-      security:
-        - bearerAuth: []
       responses:
         '204':
           description: User account deleted
@@ -310,14 +415,19 @@ components:
           type: string
         style:
           type: string
+          description: Opcional (iniciante pode omitir)
         description:
           type: string
         imageUrl:
           type: string
+          description: Apenas HTTPS (validado no backend)
         alcohol:
           type: number
+          minimum: 0
+          maximum: 100
         taste:
           type: string
+          description: Opcional (enum de sabor)
         aroma:
           type: string
         color:
@@ -332,30 +442,45 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/Comment'
+        createdBy:
+          type: string
+          description: user_id do criador (AuthZ)
+        createdAt:
+          type: string
+          format: date-time
+          description: Timestamp ISO8601 de criação (ordenação do feed)
+        averageRating:
+          type: number
+          format: float
+          description: Média dos ratings dos comentários (calculado)
+        totalReviews:
+          type: integer
+          description: Nº de comentários com rating (calculado)
     BeerInput:
       type: object
       required:
         - name
-        - style
-        - taste
-        - aroma
-        - color
-        - body
-        - carbonation
-        - finish
       properties:
         name:
           type: string
+          minLength: 3
+          maxLength: 100
         style:
           type: string
+          description: Opcional
         description:
           type: string
+          maxLength: 500
         imageUrl:
           type: string
+          description: Opcional, apenas HTTPS
         alcohol:
           type: number
+          minimum: 0
+          maximum: 100
         taste:
           type: string
+          description: Opcional
         aroma:
           type: string
         color:
@@ -373,23 +498,47 @@ components:
           type: string
         text:
           type: string
+          maxLength: 2000
+        rating:
+          type: integer
+          minimum: 1
+          maximum: 5
+          description: Nota individual do utilizador (1-5)
         likes:
           type: integer
         likedBy:
           type: array
           items:
             type: string
-        positive:
-          type: boolean
+          description: user_ids que deram like
+        createdBy:
+          type: string
+          description: user_id do autor (AuthZ)
+        createdAt:
+          type: string
+          format: date-time
     CommentInput:
       type: object
       required:
         - text
+        - rating
       properties:
         text:
           type: string
-        positive:
-          type: boolean
+          minLength: 1
+          maxLength: 2000
+        rating:
+          type: integer
+          minimum: 1
+          maximum: 5
+          description: Obrigatório (1-5)
+    CommentCreated:
+      type: object
+      properties:
+        message:
+          type: string
+        commentId:
+          type: string
     BeerListResponse:
       type: object
       properties:
@@ -403,6 +552,37 @@ components:
           type: integer
         pageSize:
           type: integer
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+        code:
+          type: string
+          description: "Código de erro estável para o cliente (ex: DUPLICATE_BEER)"
+        detail:
+          type: string
+          description: Payload extra seguro (nunca expõe causa interna/DB)
+    DuplicateBeerError:
+      type: object
+      properties:
+        error:
+          type: string
+          example: Uma cerveja com nome semelhante já existe
+        code:
+          type: string
+          example: DUPLICATE_BEER
+        suggestions:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+                example: "12"
+              name:
+                type: string
+                example: Heineken Long Neck
     UserRegisterInput:
       type: object
       required:
@@ -412,12 +592,17 @@ components:
       properties:
         username:
           type: string
+          minLength: 3
+          maxLength: 50
         email:
           type: string
           format: email
         password:
           type: string
           format: password
+          minLength: 6
+        name:
+          type: string
     UserLoginInput:
       type: object
       required:
@@ -430,6 +615,25 @@ components:
         password:
           type: string
           format: password
+    UserRegistered:
+      type: object
+      properties:
+        message:
+          type: string
+        token:
+          type: string
+          description: JWT Bearer token
+        user:
+          type: object
+          properties:
+            id:
+              type: string
+            username:
+              type: string
+            email:
+              type: string
+            role:
+              type: string
     UserUpdateInput:
       type: object
       properties:
