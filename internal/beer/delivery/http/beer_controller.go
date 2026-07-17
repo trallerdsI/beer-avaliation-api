@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-playground/validator/v10"
 	"github.com/google/uuid"
@@ -112,17 +113,10 @@ func getIntParam(query url.Values, key string, defaultValue int) int {
 
 func handleError(w http.ResponseWriter, ctx context.Context, logger *slog.Logger, err error, message string, statusCode int) {
 	logger.ErrorContext(ctx, message, "err", err)
-	// Expõe a causa raiz (ex: erro de DB) no campo "detail" para diagnóstico,
-	// preservando a mensagem genérica no cliente.
-	response.SendError(w, message, statusCode, rootCause(err))
-}
-
-// rootCause devolve a mensagem da causa mais interna do erro, ou "" se ausente.
-func rootCause(err error) string {
-	if err == nil {
-		return ""
-	}
-	return err.Error()
+	// Segurança (OWASP A05): nunca expõe a causa raiz (ex: erro de DB) ao
+	// cliente — apenas regista no log do servidor. O cliente recebe a
+	// mensagem genérica.
+	response.SendError(w, message, statusCode)
 }
 
 // validationMessage traduz os erros do validator numa mensagem legível para o
@@ -310,6 +304,8 @@ func (c *BeerController) AddComment(w http.ResponseWriter, r *http.Request) {
 	if uid, ok := middleware.UserIDFromContext(r.Context()); ok {
 		comment.CreatedBy = uid
 	}
+	// Timestamp para ordenação cronológica do feed social.
+	comment.CreatedAt = time.Now().UTC().Format(time.RFC3339)
 
 	if err := c.usecase.AddComment(r.Context(), id, comment); err != nil {
 		handleError(w, r.Context(), c.logger, err, "Failed to add comment", http.StatusInternalServerError)
@@ -344,24 +340,29 @@ func (c *BeerController) LikeComment(w http.ResponseWriter, r *http.Request) {
 	beerID := r.PathValue("id")
 	commentID := r.PathValue("commentId")
 
+	// Like por user autenticado (precedência) com device como fallback
+	// anónimo. X-Device-ID é opcional: só obrigatório se não houver token.
 	deviceID := r.Header.Get("X-Device-ID")
-	if deviceID == "" {
+	userID, _ := middleware.UserIDFromContext(r.Context())
+	if userID == "" && deviceID == "" {
 		handleError(w, r.Context(), c.logger, fmt.Errorf("device ID is required"), "Device ID is required", http.StatusBadRequest)
 		return
 	}
 
-	if err := c.usecase.LikeComment(r.Context(), beerID, commentID, deviceID); err != nil {
+	if err := c.usecase.LikeComment(r.Context(), beerID, commentID, userID, deviceID); err != nil {
 		var appErr *appErrors.AppError
-		// CORRIGIDO: Uso de errors.As
+		// respeita o status do AppError (ex: 400 already liked, 404 not found).
 		if stdErrors.As(err, &appErr) {
 			if appErr.Code == http.StatusBadRequest && strings.Contains(strings.ToLower(appErr.Message), "already liked") {
-				handleError(w, r.Context(), c.logger, err, "Comment already liked by this device", http.StatusBadRequest)
+				response.SendError(w, "Comment already liked", http.StatusBadRequest)
 				return
 			}
 			if appErr.Code == http.StatusNotFound || strings.Contains(strings.ToLower(appErr.Message), "not found") {
-				http.Error(w, appErr.Message, http.StatusNotFound)
+				response.SendError(w, appErr.Message, http.StatusNotFound)
 				return
 			}
+			response.SendError(w, appErr.Message, appErr.Code)
+			return
 		}
 		handleError(w, r.Context(), c.logger, err, "Failed to like comment", http.StatusInternalServerError)
 		return

@@ -23,7 +23,7 @@ type BeerUsecase interface {
 	Delete(ctx context.Context, id string) error
 	AddComment(ctx context.Context, id string, comment model.Comment) error
 	DeleteComment(ctx context.Context, id string, commentID string) error
-	LikeComment(ctx context.Context, beerID, commentID, deviceID string) error
+	LikeComment(ctx context.Context, beerID, commentID, userID, deviceID string) error
 	SearchBeers(ctx context.Context, filters model.BeerFilters) ([]model.Beer, int, error)
 }
 
@@ -82,6 +82,8 @@ func (u *beerUsecase) Create(ctx context.Context, beer *model.Beer) error {
 	if uid, ok := middleware.UserIDFromContext(ctx); ok {
 		beer.CreatedBy = uid
 	}
+	// Timestamp de criação para ordenação cronológica do feed social.
+	beer.CreatedAt = time.Now().UTC().Format(time.RFC3339)
 
 	if err := u.repo.Create(ctx, beer); err != nil {
 		return errors.NewAppError(500, "Failed to create beer", err)
@@ -234,24 +236,34 @@ func (u *beerUsecase) DeleteComment(ctx context.Context, id string, commentID st
 	return nil
 }
 
-func (u *beerUsecase) LikeComment(ctx context.Context, beerID, commentID, deviceID string) error {
+// LikeComment regista um like num comentário. Num app social com login, o like
+// é identificado pelo user_id autenticado (previne múltiplos likes por
+// dispositivo e permite toggling consistente). Para utilizadores anónimos (sem
+// login), usa o deviceID como fallback, mantendo o comportamento anterior.
+func (u *beerUsecase) LikeComment(ctx context.Context, beerID, commentID, userID, deviceID string) error {
 	beer, err := u.repo.GetByID(ctx, beerID)
 	if err != nil {
 		return errors.NewAppError(404, "Beer not found", err)
 	}
 
+	// Identidade do like: user autenticado tem precedência; senão device.
+	liker := deviceID
+	if userID != "" {
+		liker = "u:" + userID
+	}
+
 	for i, comment := range beer.Comments {
 		if comment.ID == commentID {
-			// Check if already liked by this device
+			// Check if already liked by this liker
 			for _, id := range comment.LikedBy {
-				if id == deviceID {
+				if id == liker {
 					return errors.NewAppError(400, "already liked", nil)
 				}
 			}
 
 			// Add like
 			beer.Comments[i].Likes++
-			beer.Comments[i].LikedBy = append(beer.Comments[i].LikedBy, deviceID)
+			beer.Comments[i].LikedBy = append(beer.Comments[i].LikedBy, liker)
 
 			if err := u.repo.Update(ctx, beerID, beer); err != nil {
 				return errors.NewAppError(500, "Failed to update comment likes", err)

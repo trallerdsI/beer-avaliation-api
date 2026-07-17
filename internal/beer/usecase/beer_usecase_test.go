@@ -154,7 +154,7 @@ func TestLikeComment(t *testing.T) {
 	mockRepo.On("GetByID", mock.Anything, "1").Return(beer, nil)
 	mockRepo.On("Update", mock.Anything, "1", mock.Anything).Return(nil)
 
-	err := usecase.LikeComment(context.Background(), "1", "c1", deviceID)
+	err := usecase.LikeComment(context.Background(), "1", "c1", "", deviceID)
 
 	assert.NoError(t, err)
 	mockRepo.AssertExpectations(t)

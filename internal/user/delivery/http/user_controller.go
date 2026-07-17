@@ -35,17 +35,10 @@ func NewUserController(u usecase.UserUsecase, logger *slog.Logger) *UserControll
 
 // respondError escreve um erro JSON e registra o evento com contexto da
 // requisição (traceability). Centraliza o tratamento para reduzir boilerplate.
+// Segurança (OWASP A05): não expõe a causa raiz ao cliente.
 func (c *UserController) respondError(w http.ResponseWriter, r *http.Request, err error, message string, statusCode int) {
 	c.logger.ErrorContext(r.Context(), message, "err", err)
-	response.SendError(w, message, statusCode, rootCause(err))
-}
-
-// rootCause devolve a mensagem da causa mais interna do erro, ou "" se ausente.
-func rootCause(err error) string {
-	if err == nil {
-		return ""
-	}
-	return err.Error()
+	response.SendError(w, message, statusCode)
 }
 
 func (c *UserController) Register(w http.ResponseWriter, r *http.Request) {

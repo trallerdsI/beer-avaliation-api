@@ -279,6 +279,7 @@ func migrateDB(db *sql.DB) error {
 		"migrations/add_role_to_users.sql",
 		"migrations/create_beers_table.sql",
 		"migrations/add_created_by_to_beers.sql",
+		"migrations/add_created_at_to_beers.sql",
 		"migrations/create_comments_table.sql",
 		"migrations/add_comments_jsonb.sql",
 		"migrations/create_indexes.sql",

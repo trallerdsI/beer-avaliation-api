@@ -26,7 +26,7 @@ var (
 // MockBeerUsecase is a mock implementation of BeerUsecase
 type MockBeerUsecase struct {
 	usecase.BeerUsecase
-	LikeCommentFunc func(ctx context.Context, beerID, commentID, deviceID string) error
+	LikeCommentFunc func(ctx context.Context, beerID, commentID, userID, deviceID string) error
 	mock.Mock
 }
 
@@ -65,11 +65,11 @@ func (m *MockBeerUsecase) DeleteComment(ctx context.Context, beerID, commentID s
 	return args.Error(0)
 }
 
-func (m *MockBeerUsecase) LikeComment(ctx context.Context, beerID, commentID, deviceID string) error {
+func (m *MockBeerUsecase) LikeComment(ctx context.Context, beerID, commentID, userID, deviceID string) error {
 	if m.LikeCommentFunc != nil {
-		return m.LikeCommentFunc(ctx, beerID, commentID, deviceID)
+		return m.LikeCommentFunc(ctx, beerID, commentID, userID, deviceID)
 	}
-	args := m.Called(ctx, beerID, commentID, deviceID)
+	args := m.Called(ctx, beerID, commentID, userID, deviceID)
 	return args.Error(0)
 }
 
@@ -257,7 +257,7 @@ func TestLikeComment(t *testing.T) {
 
 	// Test case 1: Successfully like a comment
 	t.Run("Successful Like", func(t *testing.T) {
-		mockBeerUsecase.On("LikeComment", mock.Anything, "1", "1", "device123").Return(nil).Once()
+		mockBeerUsecase.On("LikeComment", mock.Anything, "1", "1", "", "device123").Return(nil).Once()
 		req := httptest.NewRequest("POST", "/beers/1/comments/1/like", nil)
 		req.Header.Set("X-Device-ID", "device123")
 		rr := httptest.NewRecorder()
@@ -293,7 +293,7 @@ func TestLikeComment(t *testing.T) {
 
 		req.SetPathValue("id", "1")
 		req.SetPathValue("commentId", "1")
-		mockBeerUsecase.LikeCommentFunc = func(ctx context.Context, beerID, commentID, deviceID string) error {
+		mockBeerUsecase.LikeCommentFunc = func(ctx context.Context, beerID, commentID, userID, deviceID string) error {
 			if deviceID == "device-already-liked" {
 				return errors.NewAppError(400, "already liked", nil)
 			}

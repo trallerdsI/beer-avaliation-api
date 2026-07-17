@@ -68,11 +68,12 @@ const (
 // Comment represents a comment with an ID, text, and metadata
 type Comment struct {
 	ID        string   `json:"id"`
-	Text      string   `json:"text" validate:"required"`
+	Text      string   `json:"text" validate:"required,max=2000"`
 	Likes     int      `json:"likes"`
 	LikedBy   []string `json:"likedBy"` // Store device/user IDs that liked this comment
 	Positive  bool     `json:"positive" validate:"required"`
 	CreatedBy string   `json:"createdBy"` // user_id do autor do comentário (AuthZ)
+	CreatedAt string   `json:"createdAt"` // timestamp ISO8601 para ordenação cronológica do feed
 }
 
 // Beer represents a beer object.
@@ -83,11 +84,11 @@ type Comment struct {
 type Beer struct {
 	ID          string      `json:"id"`
 	Name        string      `json:"name" validate:"required,min=3,max=100"`
-	Style       string      `json:"style" validate:"required"`
+	Style       string      `json:"style" validate:"omitempty"`
 	Description string      `json:"description" validate:"max=500"`
 	ImageUrl    string      `json:"imageUrl" validate:"omitempty,https_url"`
 	Alcohol     *float64    `json:"alcohol" validate:"omitempty,min=0,max=100"`
-	Taste       Flavor      `json:"taste" validate:"required,flavor"`
+	Taste       Flavor      `json:"taste" validate:"omitempty,flavor"`
 	Aroma       Aroma       `json:"aroma" validate:"omitempty,aroma"`
 	Color       Color       `json:"color" validate:"omitempty,color"`
 	Body        Body        `json:"body" validate:"omitempty,body"`
@@ -95,6 +96,7 @@ type Beer struct {
 	Finish      Finish      `json:"finish" validate:"omitempty,finish"`
 	Comments    []Comment   `json:"comments"`
 	CreatedBy   string      `json:"createdBy"` // user_id do criador (AuthZ: só criador ou admin editam)
+	CreatedAt   string      `json:"createdAt"` // timestamp ISO8601 de criação da cerveja
 }
 
 // Allowlists de valores válidos para cada enum do domínio. O backend é a
