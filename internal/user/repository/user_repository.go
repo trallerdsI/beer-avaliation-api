@@ -34,14 +34,15 @@ func NewPostgresUserRepository(db *sql.DB) (UserRepository, error) {
 
 func (r *PostgresUserRepository) Create(ctx context.Context, user model.User) error {
 	query := `
-		INSERT INTO beerUsers (id, username, email, password, created)
-		VALUES ($1, $2, $3, $4, $5)`
+		INSERT INTO beerUsers (id, username, email, password, role, created)
+		VALUES ($1, $2, $3, $4, $5, $6)`
 
 	_, err := r.db.ExecContext(ctx, query,
 		user.ID,
 		user.Username,
 		user.Email,
 		user.Password,
+		user.Role,
 		user.Created)
 
 	if err != nil {
@@ -52,12 +53,13 @@ func (r *PostgresUserRepository) Create(ctx context.Context, user model.User) er
 
 func (r *PostgresUserRepository) GetByID(ctx context.Context, id string) (model.User, error) {
 	var user model.User
-	query := `SELECT id, username, email, created FROM beerUsers WHERE id = $1`
+	query := `SELECT id, username, email, role, created FROM beerUsers WHERE id = $1`
 
 	err := r.db.QueryRowContext(ctx, query, id).Scan(
 		&user.ID,
 		&user.Username,
 		&user.Email,
+		&user.Role,
 		&user.Created)
 
 	if err == sql.ErrNoRows {
@@ -71,13 +73,14 @@ func (r *PostgresUserRepository) GetByID(ctx context.Context, id string) (model.
 
 func (r *PostgresUserRepository) GetByEmail(ctx context.Context, email string) (model.User, error) {
 	var user model.User
-	query := `SELECT id, username, email, password, created FROM beerUsers WHERE email = $1`
+	query := `SELECT id, username, email, password, role, created FROM beerUsers WHERE email = $1`
 
 	err := r.db.QueryRowContext(ctx, query, email).Scan(
 		&user.ID,
 		&user.Username,
 		&user.Email,
 		&user.Password,
+		&user.Role,
 		&user.Created)
 
 	if err == sql.ErrNoRows {
@@ -144,7 +147,7 @@ func (r *PostgresUserRepository) List(ctx context.Context, page, pageSize int) (
 
 	// Get paginated users
 	query := `
-		SELECT id, username, email, created 
+		SELECT id, username, email, role, created 
 		FROM beerUsers 
 		ORDER BY created DESC 
 		LIMIT $1 OFFSET $2`
@@ -162,6 +165,7 @@ func (r *PostgresUserRepository) List(ctx context.Context, page, pageSize int) (
 			&user.ID,
 			&user.Username,
 			&user.Email,
+			&user.Role,
 			&user.Created); err != nil {
 			return nil, 0, fmt.Errorf("failed to scan user: %w", err)
 		}

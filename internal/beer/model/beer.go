@@ -67,11 +67,12 @@ const (
 
 // Comment represents a comment with an ID, text, and metadata
 type Comment struct {
-	ID       string   `json:"id"`
-	Text     string   `json:"text" validate:"required"`
-	Likes    int      `json:"likes"`
-	LikedBy  []string `json:"likedBy"` // Store device/user IDs that liked this comment
-	Positive bool     `json:"positive" validate:"required"`
+	ID        string   `json:"id"`
+	Text      string   `json:"text" validate:"required"`
+	Likes     int      `json:"likes"`
+	LikedBy   []string `json:"likedBy"` // Store device/user IDs that liked this comment
+	Positive  bool     `json:"positive" validate:"required"`
+	CreatedBy string   `json:"createdBy"` // user_id do autor do comentário (AuthZ)
 }
 
 // Beer represents a beer object.
@@ -93,6 +94,7 @@ type Beer struct {
 	Carbonation Carbonation `json:"carbonation" validate:"omitempty,carbonation"`
 	Finish      Finish      `json:"finish" validate:"omitempty,finish"`
 	Comments    []Comment   `json:"comments"`
+	CreatedBy   string      `json:"createdBy"` // user_id do criador (AuthZ: só criador ou admin editam)
 }
 
 // Allowlists de valores válidos para cada enum do domínio. O backend é a

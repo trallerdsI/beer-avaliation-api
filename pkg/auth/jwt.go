@@ -46,6 +46,7 @@ func loadJWTSecret() []byte {
 // o padrão esperado pelos clients; iss reforça a procedência.
 type claims struct {
 	UserID string `json:"user_id"`
+	Role   string `json:"role"`
 	Exp    int64  `json:"exp"`
 	Iss    string `json:"iss"`
 }
@@ -59,13 +60,14 @@ func base64urlDecode(s string) ([]byte, error) {
 }
 
 // GenerateToken cria um JWT HS256 assinado com o segredo configurado.
-func GenerateToken(userID string) (string, error) {
+func GenerateToken(userID, role string) (string, error) {
 	if jwtSecret == nil {
 		return "", errors.ErrMissingSecret
 	}
 
 	payload, err := json.Marshal(claims{
 		UserID: userID,
+		Role:   role,
 		Exp:    time.Now().Add(tokenTTL).Unix(),
 		Iss:    issuerClaim,
 	})
@@ -83,39 +85,39 @@ func GenerateToken(userID string) (string, error) {
 
 // ValidateToken verifica a assinatura HMAC-SHA256 e a expiração, devolvendo o
 // user_id em caso de sucesso.
-func ValidateToken(tokenString string) (string, error) {
+func ValidateToken(tokenString string) (string, string, error) {
 	if jwtSecret == nil {
-		return "", errors.ErrMissingSecret
+		return "", "", errors.ErrMissingSecret
 	}
 
 	parts := strings.Split(tokenString, ".")
 	if len(parts) != 3 {
-		return "", errors.NewAppError(401, "invalid token format", nil)
+		return "", "", errors.NewAppError(401, "invalid token format", nil)
 	}
 
 	signingInput := parts[0] + "." + parts[1]
 	if want := signHMAC(signingInput); !hmac.Equal([]byte(want), []byte(parts[2])) {
-		return "", errors.NewAppError(401, "invalid token signature", nil)
+		return "", "", errors.NewAppError(401, "invalid token signature", nil)
 	}
 
 	payload, err := base64urlDecode(parts[1])
 	if err != nil {
-		return "", errors.NewAppError(401, "invalid token payload", err)
+		return "", "", errors.NewAppError(401, "invalid token payload", err)
 	}
 
 	var c claims
 	if err := json.Unmarshal(payload, &c); err != nil {
-		return "", errors.NewAppError(401, "invalid token claims", err)
+		return "", "", errors.NewAppError(401, "invalid token claims", err)
 	}
 
 	if c.Iss != issuerClaim {
-		return "", errors.NewAppError(401, "invalid token issuer", nil)
+		return "", "", errors.NewAppError(401, "invalid token issuer", nil)
 	}
 	if time.Now().Unix() > c.Exp {
-		return "", errors.NewAppError(401, "token expired", nil)
+		return "", "", errors.NewAppError(401, "token expired", nil)
 	}
 
-	return c.UserID, nil
+	return c.UserID, c.Role, nil
 }
 
 // signHMAC calcula a assinatura base64url(HMAC-SHA256) do input. O slice de

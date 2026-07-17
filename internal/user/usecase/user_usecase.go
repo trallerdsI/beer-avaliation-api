@@ -53,9 +53,13 @@ func (u *userUsecase) Register(ctx context.Context, user model.User) error {
 		return errors.NewAppError(500, "failed to hash password", err)
 	}
 
-	// Prepare user data
+	// Prepare user data. Registos normais são always role "user"; o papel de
+	// admin é atribuído apenas via seed de arranque (ADMIN_EMAIL/ADMIN_PASSWORD).
 	user.Password = string(hashedPassword)
 	user.Created = time.Now().UTC().Format(time.RFC3339)
+	if user.Role == "" {
+		user.Role = model.RoleUser
+	}
 
 	// Create user in the repository (user.ID will be auto-generated)
 	if err := u.repo.Create(ctx, user); err != nil {
@@ -90,7 +94,7 @@ func (u *userUsecase) Login(ctx context.Context, email, password string) (string
 	}
 
 	// Generate JWT token
-	token, err := auth.GenerateToken(user.ID)
+	token, err := auth.GenerateToken(user.ID, user.Role)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to generate token", "err", err)
 		return "", errors.NewAppError(500, "failed to generate token", err)
