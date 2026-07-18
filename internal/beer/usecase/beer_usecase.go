@@ -25,6 +25,7 @@ type BeerUsecase interface {
 	AddComment(ctx context.Context, id string, comment model.Comment) error
 	DeleteComment(ctx context.Context, id string, commentID string) error
 	LikeComment(ctx context.Context, beerID, commentID, userID, deviceID string) error
+	AddMedia(ctx context.Context, id string, item model.MediaItem) ([]model.MediaItem, error)
 	SearchBeers(ctx context.Context, filters model.BeerFilters) ([]model.Beer, int, error)
 }
 
@@ -303,6 +304,37 @@ func (u *beerUsecase) LikeComment(ctx context.Context, beerID, commentID, userID
 	}
 
 	return errors.NewAppError(404, "Comment not found", nil)
+}
+
+// AddMedia anexa um item de mídia (imagem já carregada no storage) à cerveja.
+// AuthZ: só o criador ou um admin podem anexar (mesma regra de edição).
+// Devolve a lista atualizada de mídias para o controller responder.
+func (u *beerUsecase) AddMedia(ctx context.Context, id string, item model.MediaItem) ([]model.MediaItem, error) {
+	beer, err := u.repo.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if !canModify(ctx, beer.CreatedBy) {
+		return nil, errors.NewAppError(403, "you are not allowed to modify this beer", nil)
+	}
+
+	beer.Media = append(beer.Media, item)
+	// Mantém image_url em sincronia com a primeira mídia (compat com clientes antigos).
+	if beer.ImageUrl == "" {
+		beer.ImageUrl = item.URL
+	}
+
+	if err := u.repo.Update(ctx, id, beer); err != nil {
+		return nil, errors.NewAppError(500, "Failed to attach media", err)
+	}
+
+	u.publish(realtime.Event{
+		Type: "beer.media.added",
+		ID:   id,
+		Data: map[string]any{"url": item.URL, "type": item.Type},
+	})
+
+	return beer.Media, nil
 }
 
 // SearchBeers searches for beers using the provided filters

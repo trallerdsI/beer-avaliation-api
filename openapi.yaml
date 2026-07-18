@@ -89,6 +89,49 @@ paths:
         '304':
           description: Not Modified — cliente pode reutilizar o cache (RFC 9111)
 
+  /api/v1/beers/{id}/media:
+    post:
+      summary: Upload de imagem da cerveja (RFC 7578 Multipart Form Data)
+      description: >
+        Recebe um ficheiro de imagem via multipart/form-data (campo 'file'),
+        valida por magic bytes (JPEG/PNG/WebP), faz upload para o object
+        storage (Supabase Storage) e anexa a URL à cerveja (coluna media JSONB).
+        AuthZ: só o criador ou um admin podem anexar.
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: Imagem (JPEG, PNG ou WebP), máx 10MB
+      responses:
+        '200':
+          description: Mídias da cerveja atualizadas
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/MediaItem'
+        '415':
+          description: Tipo de mídia não suportado
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden (não é o dono/admin)
+
   /api/v1/beers/search:
     get:
       summary: Search beers by filters
@@ -601,3 +644,16 @@ components:
         password:
           type: string
           format: password
+    MediaItem:
+      type: object
+      properties:
+        url:
+          type: string
+          format: uri
+          description: URL da imagem no object storage (https)
+        type:
+          type: string
+          enum: [image/jpeg, image/png, image/webp]
+        size:
+          type: integer
+          description: Tamanho do ficheiro em bytes

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	stdErrors "errors" // Renomeado para evitar conflito com o pacote de erros customizado
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -23,6 +24,7 @@ import (
 	appErrors "beer-review-app/pkg/errors" // Alias explícito para evitar confusão
 	"beer-review-app/pkg/middleware"
 	"beer-review-app/pkg/response"
+	"beer-review-app/pkg/storage"
 )
 
 // validate é um validador de structs de stack (zero-allocation por request no
@@ -68,21 +70,30 @@ func newValidator() *validator.Validate {
 	v.RegisterValidation("finish", func(fl validator.FieldLevel) bool {
 		return model.IsFinish(model.Finish(fl.Field().String()))
 	})
+	// media_type: allowlist de Content-Types aceites no upload (RFC 7578).
+	v.RegisterValidation("media_type", func(fl validator.FieldLevel) bool {
+		switch fl.Field().String() {
+		case "image/jpeg", "image/png", "image/webp":
+			return true
+		}
+		return false
+	})
 	return v
 }
 
 // BeerController handles HTTP requests related to beers.
 type BeerController struct {
-	usecase usecase.BeerUsecase
-	logger  *slog.Logger
+	usecase  usecase.BeerUsecase
+	logger   *slog.Logger
+	uploader storage.Uploader // opcional: nil desativa upload de mídia (404 no endpoint)
 }
 
 // NewBeerController makes a new controller for beer
-func NewBeerController(u usecase.BeerUsecase, logger *slog.Logger) *BeerController {
+func NewBeerController(u usecase.BeerUsecase, logger *slog.Logger, uploader storage.Uploader) *BeerController {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &BeerController{usecase: u, logger: logger}
+	return &BeerController{usecase: u, logger: logger, uploader: uploader}
 }
 
 // maxPageSize limita o tamanho de página para proteger o servidor contra
@@ -549,4 +560,81 @@ func (c *BeerController) GetEnums(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(payload)
+}
+
+// maxUploadBytes limita o tamanho do ficheiro de mídia (10MB) para evitar DoS
+// de memória no upload (RFC 7578). Imagens comprimidas raramente passam disso.
+const maxUploadBytes = 10 << 20
+
+// UploadBeerMedia recebe uma imagem via multipart/form-data (RFC 7578), valida
+// o binário por magic bytes (não só extensão), faz upload para o object storage
+// (Supabase Storage) e anexa a URL à cerveja (coluna media JSONB). O nome do
+// objeto é gerado no servidor (UUIDv7 + ext validada) — nunca se confia no
+// file.Filename do cliente (defesa contra path traversal).
+func (c *BeerController) UploadBeerMedia(w http.ResponseWriter, r *http.Request) {
+	if c.uploader == nil {
+		response.SendProblem(w, response.NewProblem(http.StatusNotImplemented, "media_disabled",
+			"Upload de mídia não está configurado no servidor."))
+		return
+	}
+
+	beerID := r.PathValue("id")
+
+	// Limita o tamanho total do body multipart antes de fazer parse.
+	r.Body = http.MaxBytesReader(w, r.Body, maxUploadBytes+1<<16)
+	if err := r.ParseMultipartForm(maxUploadBytes); err != nil {
+		response.SendProblem(w, response.NewProblem(http.StatusBadRequest, "invalid_multipart",
+			"Formulário multipart inválido ou ficheiro excede o limite."))
+		return
+	}
+
+	file, _, err := r.FormFile("file")
+	if err != nil {
+		response.SendProblem(w, response.NewProblem(http.StatusBadRequest, "missing_file",
+			"Nenhum ficheiro enviado no campo 'file'."))
+		return
+	}
+	defer file.Close()
+
+	data, err := io.ReadAll(io.LimitReader(file, maxUploadBytes))
+	if err != nil {
+		handleError(w, r.Context(), c.logger, err, "Failed to read upload", http.StatusInternalServerError)
+		return
+	}
+
+	contentType, err := detectImageType(data)
+	if err != nil {
+		response.SendProblem(w, response.NewProblem(http.StatusUnsupportedMediaType, "unsupported_media",
+			"Apenas imagens JPEG, PNG ou WebP são aceites."))
+		return
+	}
+
+	// Nome do objeto: UUIDv7 + extensão validada (sem confiar no cliente).
+	ext := contentTypeToExt(contentType)
+	objectName := "beers/" + uuid.MustNewV7() + ext
+
+	url, err := c.uploader.Upload(r.Context(), objectName, contentType, data)
+	if err != nil {
+		c.logger.ErrorContext(r.Context(), "falha no upload de mídia", "err", err, "beer_id", beerID)
+		response.SendProblem(w, response.NewProblem(http.StatusBadGateway, "upload_failed",
+			"Falha ao guardar a imagem no storage."))
+		return
+	}
+
+	media, err := c.usecase.AddMedia(r.Context(), beerID, model.MediaItem{
+		URL:  url,
+		Type: contentType,
+		Size: len(data),
+	})
+	if err != nil {
+		var appErr *appErrors.AppError
+		if stdErrors.As(err, &appErr) {
+			sendAppError(w, r, appErr)
+			return
+		}
+		handleError(w, r.Context(), c.logger, err, "Failed to attach media", http.StatusInternalServerError)
+		return
+	}
+
+	response.SendResponse(w, http.StatusOK, media)
 }

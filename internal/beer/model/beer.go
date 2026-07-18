@@ -65,6 +65,15 @@ const (
 	FinishLingering Finish = "Persistente"
 )
 
+// MediaItem representa um ficheiro de mídia anexado à cerveja (RFC 7578).
+// A URL aponta para o object storage (ex: Supabase Storage). Type segue um
+// allowlist do backend (image/jpeg, image/png, image/webp).
+type MediaItem struct {
+	URL  string `json:"url" validate:"required,https_url"`
+	Type string `json:"type" validate:"required,oneof=image/jpeg image/png image/webp"`
+	Size int    `json:"size"`
+}
+
 // Comment represents a comment with an ID, text, rating, and metadata.
 // rating (1-5) é a nota individual do utilizador; a cerveja expõe
 // average_rating/total_reviews agregados a partir dos ratings dos comentários.
@@ -97,6 +106,7 @@ type Beer struct {
 	Carbonation Carbonation `json:"carbonation" validate:"omitempty,carbonation"`
 	Finish      Finish      `json:"finish" validate:"omitempty,finish"`
 	Comments    []Comment   `json:"comments"`
+	Media       []MediaItem `json:"media"` // mídias anexadas (RFC 7578 upload server-side)
 	CreatedBy   string      `json:"createdBy"` // user_id do criador (AuthZ: só criador ou admin editam)
 	CreatedAt   string      `json:"createdAt"` // timestamp ISO8601 de criação da cerveja
 	UpdatedAt   string      `json:"updatedAt"` // timestamp ISO8601 da última alteração (base do ETag - RFC 9111)

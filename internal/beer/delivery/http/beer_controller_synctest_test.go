@@ -19,7 +19,7 @@ func TestLikeComment_ConcurrentDeterministic(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		mockBeerUsecase := new(MockBeerUsecase)
 		mockBeerUsecase.On("LikeComment", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
-		controller := NewBeerController(mockBeerUsecase, slog.Default())
+		controller := NewBeerController(mockBeerUsecase, slog.Default(), nil)
 
 		const beerID, commentID = "1", "1"
 		const workers = 16

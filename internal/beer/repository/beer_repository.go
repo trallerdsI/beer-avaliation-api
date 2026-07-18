@@ -212,7 +212,7 @@ func (r *PostgresBeerRepository) Create(ctx context.Context, beer *model.Beer) e
 // GetByID retrieves a beer by its ID from the PostgreSQL database.
 func (r *PostgresBeerRepository) GetByID(ctx context.Context, id string) (model.Beer, error) {
 	var beer model.Beer
-	var commentsJSON []byte
+	var commentsJSON, mediaJSON []byte
 	err := r.db.QueryRowContext(ctx, `
         SELECT
             id,
@@ -230,7 +230,8 @@ func (r *PostgresBeerRepository) GetByID(ctx context.Context, id string) (model.
             comments,
             created_by,
             created_at,
-            updated_at
+            updated_at,
+            media
         FROM beers WHERE id = $1`, id).
 		Scan(
 			&beer.ID,
@@ -248,7 +249,8 @@ func (r *PostgresBeerRepository) GetByID(ctx context.Context, id string) (model.
 			&commentsJSON,
 			&beer.CreatedBy,
 			&beer.CreatedAt,
-			&beer.UpdatedAt)
+			&beer.UpdatedAt,
+			&mediaJSON)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return model.Beer{}, errors.NewAppError(404, "beer not found", nil)
@@ -257,6 +259,7 @@ func (r *PostgresBeerRepository) GetByID(ctx context.Context, id string) (model.
 	}
 
 	beer.Comments = unmarshalComments(commentsJSON)
+	beer.Media = unmarshalMedia(mediaJSON)
 	setRatingAggregates(&beer)
 	setRatingAggregates(&beer)
 	return beer, nil
@@ -273,6 +276,19 @@ func unmarshalComments(data []byte) []model.Comment {
 		return []model.Comment{}
 	}
 	return comments
+}
+
+// unmarshalMedia decodifica o JSONB de mídias com fallback seguro (nunca nil).
+func unmarshalMedia(data []byte) []model.MediaItem {
+	if len(data) == 0 {
+		return []model.MediaItem{}
+	}
+	var media []model.MediaItem
+	if err := json.Unmarshal(data, &media); err != nil {
+		slog.Error("erro ao decodificar mídias", "err", err)
+		return []model.MediaItem{}
+	}
+	return media
 }
 
 // setRatingAggregates calcula averageRating e totalReviews a partir dos
@@ -314,7 +330,8 @@ func (r *PostgresBeerRepository) GetPaginated(ctx context.Context, page, pageSiz
             comments,
             created_by,
             created_at,
-            updated_at
+            updated_at,
+            media
         FROM beers LIMIT $1 OFFSET $2`, pageSize, offset)
 	if err != nil {
 		slog.Error("error querying beers", "err", err)
@@ -325,7 +342,7 @@ func (r *PostgresBeerRepository) GetPaginated(ctx context.Context, page, pageSiz
 	var beers []model.Beer
 	for rows.Next() {
 		var beer model.Beer
-		var commentsJSON []byte
+		var commentsJSON, mediaJSON []byte
 		var description, imageURL, createdBy, createdAt, updatedAt sql.NullString
 		if err := rows.Scan(
 			&beer.ID,
@@ -343,7 +360,8 @@ func (r *PostgresBeerRepository) GetPaginated(ctx context.Context, page, pageSiz
 			&commentsJSON,
 			&createdBy,
 			&createdAt,
-			&updatedAt); err != nil {
+			&updatedAt,
+			&mediaJSON); err != nil {
 			slog.Error("error scanning beer", "err", err)
 			return nil, 0, err
 		}
@@ -379,14 +397,21 @@ func (r *PostgresBeerRepository) Update(ctx context.Context, id string, beer mod
 	if beer.Comments == nil {
 		beer.Comments = []model.Comment{}
 	}
+	if beer.Media == nil {
+		beer.Media = []model.MediaItem{}
+	}
 	commentsJSON, err := json.Marshal(beer.Comments)
 	if err != nil {
 		return fmt.Errorf("failed to marshal comments: %w", err)
 	}
+	mediaJSON, err := json.Marshal(beer.Media)
+	if err != nil {
+		return fmt.Errorf("failed to marshal media: %w", err)
+	}
 
 	result, err := r.db.ExecContext(ctx,
-		"UPDATE beers SET name=$1, style=$2, taste=$3, aroma=$4, color=$5, body=$6, carbonation=$7, alcohol=$8, finish=$9, comments=$10 WHERE id=$11",
-		beer.Name, beer.Style, beer.Taste, beer.Aroma, beer.Color, beer.Body, beer.Carbonation, beer.Alcohol, beer.Finish, commentsJSON, id)
+		"UPDATE beers SET name=$1, style=$2, taste=$3, aroma=$4, color=$5, body=$6, carbonation=$7, alcohol=$8, finish=$9, comments=$10, media=$11, image_url=COALESCE(NULLIF($12, ''), image_url) WHERE id=$13",
+		beer.Name, beer.Style, beer.Taste, beer.Aroma, beer.Color, beer.Body, beer.Carbonation, beer.Alcohol, beer.Finish, commentsJSON, mediaJSON, beer.ImageUrl, id)
 	if err != nil {
 		return err
 	}
@@ -424,7 +449,7 @@ func (r *PostgresBeerRepository) SearchBeers(ctx context.Context, filters model.
 	var qb, cb strings.Builder
 	qb.Grow(256)
 	cb.Grow(128)
-	qb.WriteString("SELECT id, name, style, description, alcohol, taste, aroma, color, body, carbonation, finish, comments, created_by, created_at, updated_at FROM beers WHERE 1=1")
+	qb.WriteString("SELECT id, name, style, description, alcohol, taste, aroma, color, body, carbonation, finish, comments, created_by, created_at, updated_at, media FROM beers WHERE 1=1")
 	cb.WriteString("SELECT COUNT(*) FROM beers WHERE 1=1")
 	args := []interface{}{}
 	argPosition := 1
@@ -487,7 +512,7 @@ func (r *PostgresBeerRepository) SearchBeers(ctx context.Context, filters model.
 	var beers []model.Beer
 	for rows.Next() {
 		var beer model.Beer
-		var commentsJSON []byte
+		var commentsJSON, mediaJSON []byte
 		var createdBy, createdAt, updatedAt sql.NullString
 		err := rows.Scan(
 			&beer.ID,
@@ -505,6 +530,7 @@ func (r *PostgresBeerRepository) SearchBeers(ctx context.Context, filters model.
 			&createdBy,
 			&createdAt,
 			&updatedAt,
+			&mediaJSON,
 		)
 		if err != nil {
 			return nil, 0, fmt.Errorf("failed to scan beer: %w", err)
@@ -513,6 +539,7 @@ func (r *PostgresBeerRepository) SearchBeers(ctx context.Context, filters model.
 		beer.CreatedAt = createdAt.String
 		beer.UpdatedAt = updatedAt.String
 		beer.Comments = unmarshalComments(commentsJSON)
+		beer.Media = unmarshalMedia(mediaJSON)
 		setRatingAggregates(&beer)
 		beers = append(beers, beer)
 	}
@@ -527,7 +554,7 @@ func (r *PostgresBeerRepository) SearchBeers(ctx context.Context, filters model.
 // GetAll retrieves all beers from the PostgreSQL database.
 func (r *PostgresBeerRepository) GetAll(ctx context.Context) ([]model.Beer, error) {
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT id, name, style, description, image_url, alcohol, taste, aroma, color, body, carbonation, finish, comments, created_by, created_at, updated_at
+		SELECT id, name, style, description, image_url, alcohol, taste, aroma, color, body, carbonation, finish, comments, created_by, created_at, updated_at, media
 		FROM beers
 	`)
 	if err != nil {
@@ -538,7 +565,7 @@ func (r *PostgresBeerRepository) GetAll(ctx context.Context) ([]model.Beer, erro
 	var beers []model.Beer
 	for rows.Next() {
 		var beer model.Beer
-		var commentsJSON []byte
+		var commentsJSON, mediaJSON []byte
 		var description, imageURL, createdBy, createdAt, updatedAt sql.NullString
 		err := rows.Scan(
 			&beer.ID,
@@ -557,6 +584,7 @@ func (r *PostgresBeerRepository) GetAll(ctx context.Context) ([]model.Beer, erro
 			&createdBy,
 			&createdAt,
 			&updatedAt,
+			&mediaJSON,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan beer: %w", err)
@@ -567,6 +595,7 @@ func (r *PostgresBeerRepository) GetAll(ctx context.Context) ([]model.Beer, erro
 		beer.CreatedAt = createdAt.String
 		beer.UpdatedAt = updatedAt.String
 		beer.Comments = unmarshalComments(commentsJSON)
+		beer.Media = unmarshalMedia(mediaJSON)
 		setRatingAggregates(&beer)
 		beers = append(beers, beer)
 	}

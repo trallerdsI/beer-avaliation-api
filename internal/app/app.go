@@ -29,6 +29,7 @@ import (
 	appMetrics "beer-review-app/pkg/metrics"
 	middleware "beer-review-app/pkg/middleware"
 	"beer-review-app/pkg/realtime"
+	"beer-review-app/pkg/storage"
 )
 
 //go:embed migrations/*.sql
@@ -89,13 +90,23 @@ func BuildRouterWithDBErr(db *sql.DB, dbErr error, logger *slog.Logger) http.Han
 	beerUsecase := beerUsecase.NewBeerUsecase(beerRepo, eventHub)
 	userUsecase := userUsecase.NewUserUsecase(userRepo)
 
+	// Cliente de object storage para upload de mídia (RFC 7578). Opcional:
+	// se não estiver configurado, o endpoint de upload devolve 501 e o
+	// resto da API funciona normalmente.
+	var uploader storage.Uploader
+	if s, err := storage.NewSupabaseStorageFromEnv(); err != nil {
+		slog.Warn("storage de mídia não configurado; upload desativado", "err", err)
+	} else {
+		uploader = s
+	}
+
 	// Seed de admin global (idempotente): cria/promove admin se ADMIN_EMAIL e
 	// ADMIN_PASSWORD estiverem definidos. Não bloqueia o arranque se faltarem.
 	if err := userUsecase.SeedAdmin(context.Background()); err != nil {
 		slog.Error("falha no seed de admin", "err", err)
 	}
 
-	beerController := beerHttp.NewBeerController(beerUsecase, logger)
+	beerController := beerHttp.NewBeerController(beerUsecase, logger, uploader)
 	userController := userHttp.NewUserController(userUsecase, logger)
 	monitoringController := monitoring.NewMonitoringController(beerUsecase, userUsecase, logger, db, dbErr)
 
@@ -109,6 +120,7 @@ func BuildRouterWithDBErr(db *sql.DB, dbErr error, logger *slog.Logger) http.Han
 	mux.HandleFunc("GET /api/v1/beers/{id}", beerController.GetBeerByID)
 	mux.HandleFunc("PUT /api/v1/beers/{id}", middleware.Auth(beerController.UpdateBeer))
 	mux.HandleFunc("DELETE /api/v1/beers/{id}", middleware.Auth(beerController.DeleteBeer))
+	mux.HandleFunc("POST /api/v1/beers/{id}/media", middleware.Auth(beerController.UploadBeerMedia))
 	mux.HandleFunc("GET /api/v1/beers/search", beerController.SearchBeers)
 	mux.HandleFunc("POST /api/v1/beers/{id}/comments", middleware.Auth(beerController.AddComment))
 	mux.HandleFunc("DELETE /api/v1/beers/{id}/comments/{commentId}", middleware.Auth(beerController.DeleteComment))
@@ -285,6 +297,7 @@ func migrateDB(db *sql.DB) error {
 		"migrations/create_indexes.sql",
 		"migrations/use_uuid_pk.sql",
 		"migrations/add_updated_at.sql",
+		"migrations/extend_media.sql",
 	}
 
 	for _, file := range sqlFiles {

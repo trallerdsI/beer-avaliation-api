@@ -65,3 +65,9 @@ func (m *MockBeerRepository) SearchBeers(ctx context.Context, filters model.Beer
 	args := m.Called(ctx, filters)
 	return args.Get(0).([]model.Beer), args.Get(1).(int), args.Error(2)
 }
+
+// AddMedia mocks the AddMedia method of BeerRepository
+func (m *MockBeerRepository) AddMedia(ctx context.Context, id string, item model.MediaItem) ([]model.MediaItem, error) {
+	args := m.Called(ctx, id, item)
+	return args.Get(0).([]model.MediaItem), args.Error(1)
+}
