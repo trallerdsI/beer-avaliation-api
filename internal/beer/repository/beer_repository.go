@@ -180,9 +180,9 @@ func NewPostgresBeerRepository(db *sql.DB) (*PostgresBeerRepository, error) {
 }
 
 // Create adds a new beer to the PostgreSQL database.
-// O id é gerado pelo Postgres (SERIAL); não enviamos beer.ID no INSERT.
-// O valor gerado é lido via RETURNING id e escrito de volta em beer.ID (como
-// string) para manter o contrato do modelo com os clientes móveis.
+// O id é um UUIDv7 (RFC 9562) gerado pela aplicação e já preenchido em
+// beer.ID antes da chamada (ver beerUsecase.Create). Isto garante IDs
+// time-ordered não sequenciais e evita o round-trip RETURNING id.
 func (r *PostgresBeerRepository) Create(ctx context.Context, beer *model.Beer) error {
 	// Initialize Comments as an empty array if it's nil
 	if beer.Comments == nil {
@@ -194,22 +194,18 @@ func (r *PostgresBeerRepository) Create(ctx context.Context, beer *model.Beer) e
 		return fmt.Errorf("failed to marshal comments: %w", err)
 	}
 
-	var generatedID int64
-	// Inserting the beer into the beers table (id auto-gerado pelo SERIAL).
+	// Inserting the beer into the beers table (id vindo do app como UUIDv7).
 	// created_by regista o dono (AuthZ: só criador ou admin editam/apagam).
 	// created_at é definido no usecase (UTC) para ordenação cronológica.
-	err = r.db.QueryRowContext(ctx, `
+	_, err = r.db.ExecContext(ctx, `
    INSERT INTO beers (
-       name, style, description, image_url, alcohol, taste, aroma, color, body, carbonation, finish, comments, created_by, created_at
-   ) VALUES ($1, $2, COALESCE($3, NULL), $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
-   RETURNING id`,
-		beer.Name, beer.Style, beer.Description, beer.ImageUrl, beer.Alcohol, beer.Taste, beer.Aroma, beer.Color, beer.Body, beer.Carbonation, beer.Finish, commentsJSON, beer.CreatedBy, beer.CreatedAt).
-		Scan(&generatedID)
+      id, name, style, description, image_url, alcohol, taste, aroma, color, body, carbonation, finish, comments, created_by, created_at
+   ) VALUES ($1, $2, COALESCE($3, NULL), $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
+		beer.ID, beer.Name, beer.Style, beer.Description, beer.ImageUrl, beer.Alcohol, beer.Taste, beer.Aroma, beer.Color, beer.Body, beer.Carbonation, beer.Finish, commentsJSON, beer.CreatedBy, beer.CreatedAt)
 	if err != nil {
 		return err
 	}
 
-	beer.ID = fmt.Sprintf("%d", generatedID)
 	return nil
 }
 

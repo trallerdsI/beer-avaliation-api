@@ -10,6 +10,7 @@ import (
 	"beer-review-app/pkg/errors"
 	"beer-review-app/pkg/middleware"
 	"beer-review-app/pkg/realtime"
+	"beer-review-app/pkg/uuid"
 
 	"github.com/sony/gobreaker"
 )
@@ -78,6 +79,10 @@ func (u *beerUsecase) GetAll(ctx context.Context) ([]model.Beer, error) {
 
 // Create adds a new beer.
 func (u *beerUsecase) Create(ctx context.Context, beer *model.Beer) error {
+	// UUIDv7 (RFC 9562): id time-ordered gerado na app, antes do repo.
+	if beer.ID == "" {
+		beer.ID = uuid.MustNewV7()
+	}
 	// AuthZ: regista o criador (qualquer user logado pode criar cerveja global).
 	if uid, ok := middleware.UserIDFromContext(ctx); ok {
 		beer.CreatedBy = uid

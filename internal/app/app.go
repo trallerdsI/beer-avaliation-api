@@ -283,6 +283,7 @@ func migrateDB(db *sql.DB) error {
 		"migrations/create_comments_table.sql",
 		"migrations/add_comments_jsonb.sql",
 		"migrations/create_indexes.sql",
+		"migrations/use_uuid_pk.sql",
 	}
 
 	for _, file := range sqlFiles {

@@ -353,6 +353,8 @@ components:
       properties:
         id:
           type: string
+          format: uuid
+          description: UUIDv7 (RFC 9562), time-ordered. Não sequencial — evita enumeração.
         name:
           type: string
         style:
@@ -418,6 +420,8 @@ components:
       properties:
         id:
           type: string
+          format: uuid
+          description: UUIDv7 (RFC 9562).
         text:
           type: string
         likes:
@@ -468,6 +472,8 @@ components:
       properties:
         id:
           type: string
+          format: uuid
+          description: UUIDv7 (RFC 9562).
         name:
           type: string
         style:
@@ -486,6 +492,8 @@ components:
           description: Event name (beer.created, comment.added, comment.deleted, comment.liked)
         id:
           type: string
+          format: uuid
+          description: UUIDv7 (RFC 9562) do recurso afetado.
         data:
           type: object
           description: Event-specific payload

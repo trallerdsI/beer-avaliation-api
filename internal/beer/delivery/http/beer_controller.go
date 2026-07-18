@@ -14,8 +14,9 @@ import (
 	"time"
 
 	"github.com/go-playground/validator/v10"
-	"github.com/google/uuid"
 	"github.com/microcosm-cc/bluemonday"
+
+	"beer-review-app/pkg/uuid"
 
 	"beer-review-app/internal/beer/model"
 	"beer-review-app/internal/beer/usecase"
@@ -401,7 +402,7 @@ func (c *BeerController) AddComment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	comment.ID = uuid.New().String()
+	comment.ID = uuid.MustNewV7()
 	comment.Likes = 0
 	// AuthZ: regista o autor do comentário (qualquer user logado pode comentar).
 	if uid, ok := middleware.UserIDFromContext(r.Context()); ok {

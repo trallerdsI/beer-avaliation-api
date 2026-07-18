@@ -7,12 +7,11 @@ import (
 	"os"
 	"time"
 
-	"github.com/google/uuid"
-
 	"beer-review-app/internal/user/model"
 	"beer-review-app/internal/user/repository"
 	"beer-review-app/pkg/auth"
 	"beer-review-app/pkg/errors"
+	"beer-review-app/pkg/uuid"
 
 	"golang.org/x/crypto/bcrypt"
 )
@@ -181,7 +180,7 @@ func (u *userUsecase) SeedAdmin(ctx context.Context) error {
 		return fmt.Errorf("failed to hash admin password: %w", err)
 	}
 	admin := model.User{
-		ID:       uuid.New().String(),
+		ID:       uuid.MustNewV7(),
 		Username: "admin",
 		Email:    email,
 		Password: string(hashed),

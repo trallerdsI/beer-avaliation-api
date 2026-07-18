@@ -33,11 +33,14 @@ func NewPostgresUserRepository(db *sql.DB) (UserRepository, error) {
 }
 
 func (r *PostgresUserRepository) Create(ctx context.Context, user model.User) error {
+	// id é um UUIDv7 (RFC 9562) gerado pela aplicação e já preenchido em
+	// user.ID antes da chamada (ver userUsecase.Register/SeedAdmin).
 	query := `
-		INSERT INTO beerUsers (username, email, password, role, created)
-		VALUES ($1, $2, $3, $4, $5)`
+		INSERT INTO beerUsers (id, username, email, password, role, created)
+		VALUES ($1, $2, $3, $4, $5, $6)`
 
 	_, err := r.db.ExecContext(ctx, query,
+		user.ID,
 		user.Username,
 		user.Email,
 		user.Password,
@@ -169,6 +172,10 @@ func (r *PostgresUserRepository) List(ctx context.Context, page, pageSize int) (
 			return nil, 0, fmt.Errorf("failed to scan user: %w", err)
 		}
 		users = append(users, user)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("error iterating over user rows: %w", err)
 	}
 
 	return users, total, nil
