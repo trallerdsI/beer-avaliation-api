@@ -93,11 +93,14 @@ func (u *beerUsecase) Create(ctx context.Context, beer *model.Beer) error {
 		Page:     1,
 		PageSize: 5,
 	}); err == nil && len(existing) > 0 {
-		suggestions := make([]map[string]any, 0, len(existing))
+		details := make([]errors.ProblemDetail, 0, len(existing))
 		for _, b := range existing {
-			suggestions = append(suggestions, map[string]any{"id": b.ID, "name": b.Name})
+			details = append(details, errors.ProblemDetail{
+				Code:    "duplicate_beer",
+				Message: b.Name,
+			})
 		}
-		return errors.NewAppErrorWithDetail(409, "Uma cerveja com nome semelhante já existe", "DUPLICATE_BEER", suggestions)
+		return errors.NewAppErrorWithDetails(409, "Uma cerveja com nome semelhante já existe", "DUPLICATE_BEER", details)
 	}
 
 	if err := u.repo.Create(ctx, beer); err != nil {

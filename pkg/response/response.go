@@ -5,15 +5,9 @@ import (
 	"net/http"
 	"reflect"
 	"strings"
-)
 
-// errorEnvelope é uma struct de stack (não escapa para a Heap) usada para
-// codificar a resposta de erro sem alocar um map[string]string por request.
-type errorEnvelope struct {
-	Error  string `json:"error"`
-	Code   string `json:"code,omitempty"`   // código de erro estável para o cliente
-	Detail any    `json:"detail,omitempty"` // payload extra seguro (ex: sugestões)
-}
+	"beer-review-app/pkg/errors"
+)
 
 // SendResponse escreve payload JSON com Content-Type apropriado.
 // A compressão (gzip/brotli) é aplicada pelo CompressionMiddleware.
@@ -23,33 +17,62 @@ func SendResponse(w http.ResponseWriter, statusCode int, payload any) {
 	_ = json.NewEncoder(w).Encode(payload)
 }
 
-// SendError escreve um erro JSON enxuto. Usa uma struct de stack em vez de
-// map[string]string, evitando 1 alocação de mapa no heap por resposta de erro
-// (hot path de todos os 4xx/5xx). Opcionalmente inclui um código de erro
-// estável (Code) e um detail seguro para o cliente — nunca a causa raiz do
-// erro interno (segurança: OWASP A05).
-func SendError(w http.ResponseWriter, message string, statusCode int, opts ...ErrorOption) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(statusCode)
-	env := errorEnvelope{Error: message}
-	for _, o := range opts {
-		o(&env)
+// SendProblem escreve um erro no formato RFC 7807 (Problem Details) com o
+// Content-Type `application/problem+json`. Nunca expõe a causa interna nem
+// dados pessoais — apenas o que o Problem carrega (segurança: OWASP A05, LGPD).
+func SendProblem(w http.ResponseWriter, p *errors.Problem) {
+	if p == nil {
+		p = errors.NewProblem(http.StatusInternalServerError, "internal_server_error", "Erro interno do servidor.")
 	}
-	_ = json.NewEncoder(w).Encode(env)
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(p.Status)
+	_ = json.NewEncoder(w).Encode(p)
 }
 
-// ErrorOption configura campos do errorEnvelope (padrão functional options,
-// zero-alocação quando não há opções).
-type ErrorOption func(*errorEnvelope)
-
-// WithErrorCode adiciona um código de erro estável (ex: "DUPLICATE_BEER").
-func WithErrorCode(code string) ErrorOption {
-	return func(e *errorEnvelope) { e.Code = code }
+// NewProblem é um helper para construir um Problem mínimo e seguro (PT-BR).
+func NewProblem(status int, code, message string) *errors.Problem {
+	return &errors.Problem{
+		Type:    "/errors/" + code,
+		Title:   http.StatusText(status),
+		Status:  status,
+		Code:    code,
+		Message: message,
+	}
 }
 
-// WithDetail adiciona um payload extra seguro (ex: sugestões de duplicado).
-func WithDetail(detail any) ErrorOption {
-	return func(e *errorEnvelope) { e.Detail = detail }
+// ProblemOption configura campos do Problem (functional options, zero-alloc
+// quando não há opções).
+type ProblemOption func(*errors.Problem)
+
+// WithProblemCode define a chave i18n estável (ex: "duplicate_beer").
+func WithProblemCode(code string) ProblemOption {
+	return func(p *errors.Problem) { p.Code = code }
+}
+
+// WithProblemTrace associa o ID de correlação (RequestIDMiddleware) para o suporte.
+func WithProblemTrace(traceID string) ProblemOption {
+	return func(p *errors.Problem) { p.TraceID = traceID }
+}
+
+// WithProblemDetails anexa erros granulares tipados (ex: validação de campos).
+func WithProblemDetails(details ...errors.ProblemDetail) ProblemOption {
+	return func(p *errors.Problem) { p.Details = append(p.Details, details...) }
+}
+
+// WithProblemAction sugere um fluxo à UX (relogin/redirect/retry).
+func WithProblemAction(action *errors.ProblemAction) ProblemOption {
+	return func(p *errors.Problem) { p.Action = action }
+}
+
+// SendError escreve um erro RFC 7807 mínimo (apenas message + code opcional),
+// mantido para chamadas simples. Para erros de domínio ricos, usar SendProblem
+// com um AppError.ToProblem().
+func SendError(w http.ResponseWriter, message string, statusCode int, opts ...ProblemOption) {
+	p := NewProblem(statusCode, errors.HTTPStatusSlug(statusCode), message)
+	for _, o := range opts {
+		o(p)
+	}
+	SendProblem(w, p)
 }
 
 // SelectFields projeta apenas os campos solicitados de cada elemento de uma

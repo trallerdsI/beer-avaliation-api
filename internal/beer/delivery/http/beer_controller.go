@@ -115,23 +115,25 @@ func getIntParam(query url.Values, key string, defaultValue int) int {
 func handleError(w http.ResponseWriter, ctx context.Context, logger *slog.Logger, err error, message string, statusCode int) {
 	logger.ErrorContext(ctx, message, "err", err)
 	// Segurança (OWASP A05): nunca expõe a causa raiz (ex: erro de DB) ao
-	// cliente — apenas regista no log do servidor. O cliente recebe a
-	// mensagem genérica.
-	response.SendError(w, message, statusCode)
+	// cliente — apenas regista no log do servidor. O cliente recebe um Problem
+	// RFC 7807 genérico, sem dados internos nem PII.
+	p := response.NewProblem(statusCode, appErrors.HTTPStatusSlug(statusCode), message)
+	if trace := middleware.TraceIDFromContext(ctx); trace != "" {
+		p.TraceID = trace
+	}
+	response.SendProblem(w, p)
 }
 
-// sendAppError responde com o status/mensagem do AppError e, se presentes,
-// propaga o código de erro estável e o detail seguro (ex: sugestões de
-// duplicado) para o cliente — sem expor a causa interna.
-func sendAppError(w http.ResponseWriter, appErr *appErrors.AppError) {
-	opts := []response.ErrorOption{}
-	if appErr.ErrorCode != "" {
-		opts = append(opts, response.WithErrorCode(appErr.ErrorCode))
+// sendAppError converte um AppError num Problem RFC 7807 e envia ao cliente,
+// preservando o código estável, detalhes granulares e ação sugerida — sem
+// expor a causa interna (OWASP A05). O TraceID é injetado pelo
+// RequestIDMiddleware via contexto, se disponível.
+func sendAppError(w http.ResponseWriter, r *http.Request, appErr *appErrors.AppError) {
+	problem := appErr.ToProblem()
+	if trace := middleware.TraceIDFromContext(r.Context()); trace != "" {
+		problem.TraceID = trace
 	}
-	if appErr.Detail != nil {
-		opts = append(opts, response.WithDetail(appErr.Detail))
-	}
-	response.SendError(w, appErr.Message, appErr.Code, opts...)
+	response.SendProblem(w, problem)
 }
 
 // validationMessage traduz os erros do validator numa mensagem legível para o
@@ -270,7 +272,7 @@ func (c *BeerController) CreateBeer(w http.ResponseWriter, r *http.Request) {
 	if err := c.validateBeer(beer); err != nil {
 		var appErr *appErrors.AppError
 		if stdErrors.As(err, &appErr) {
-			sendAppError(w, appErr)
+			sendAppError(w, r, appErr)
 			return
 		}
 		handleError(w, r.Context(), c.logger, err, "Invalid beer", http.StatusBadRequest)
@@ -280,7 +282,7 @@ func (c *BeerController) CreateBeer(w http.ResponseWriter, r *http.Request) {
 	if err := c.usecase.Create(r.Context(), &beer); err != nil {
 		var appErr *appErrors.AppError
 		if stdErrors.As(err, &appErr) {
-			sendAppError(w, appErr)
+			sendAppError(w, r, appErr)
 			return
 		}
 		handleError(w, r.Context(), c.logger, err, "Failed to create beer", http.StatusInternalServerError)
@@ -316,7 +318,7 @@ func (c *BeerController) UpdateBeer(w http.ResponseWriter, r *http.Request) {
 	if err := c.validateBeer(beer); err != nil {
 		var appErr *appErrors.AppError
 		if stdErrors.As(err, &appErr) {
-			sendAppError(w, appErr)
+			sendAppError(w, r, appErr)
 			return
 		}
 		handleError(w, r.Context(), c.logger, err, "Invalid beer", http.StatusBadRequest)
@@ -326,7 +328,7 @@ func (c *BeerController) UpdateBeer(w http.ResponseWriter, r *http.Request) {
 	if err := c.usecase.Update(r.Context(), id, beer); err != nil {
 		var appErr *appErrors.AppError
 		if stdErrors.As(err, &appErr) {
-			sendAppError(w, appErr)
+			sendAppError(w, r, appErr)
 			return
 		}
 		handleError(w, r.Context(), c.logger, err, "Failed to update beer", http.StatusInternalServerError)
@@ -342,7 +344,7 @@ func (c *BeerController) DeleteBeer(w http.ResponseWriter, r *http.Request) {
 	if err := c.usecase.Delete(r.Context(), id); err != nil {
 		var appErr *appErrors.AppError
 		if stdErrors.As(err, &appErr) {
-			sendAppError(w, appErr)
+			sendAppError(w, r, appErr)
 			return
 		}
 		handleError(w, r.Context(), c.logger, err, "Failed to delete beer", http.StatusInternalServerError)
@@ -362,7 +364,7 @@ func (c *BeerController) GetBeerByID(w http.ResponseWriter, r *http.Request) {
 		if stdErrors.As(err, &appErr) && (appErr.Code == http.StatusNotFound || strings.Contains(strings.ToLower(appErr.Message), "not found")) {
 			// PADRONIZADO: envelope JSON consistente com os restantes erros
 			// do controller (response.SendError), em vez de texto plano.
-			sendAppError(w, appErr)
+			sendAppError(w, r, appErr)
 			return
 		}
 		handleError(w, r.Context(), c.logger, err, "Failed to retrieve beer", http.StatusInternalServerError)
@@ -427,7 +429,7 @@ func (c *BeerController) DeleteComment(w http.ResponseWriter, r *http.Request) {
 		var appErr *appErrors.AppError
 		// respeita o status do AppError (ex: 403 em AuthZ, 404 not found).
 		if stdErrors.As(err, &appErr) {
-			sendAppError(w, appErr)
+			sendAppError(w, r, appErr)
 			return
 		}
 		handleError(w, r.Context(), c.logger, err, "Failed to delete comment", http.StatusInternalServerError)
@@ -448,7 +450,7 @@ func (c *BeerController) LikeComment(w http.ResponseWriter, r *http.Request) {
 	if err := c.usecase.LikeComment(r.Context(), beerID, commentID, userID, ""); err != nil {
 		var appErr *appErrors.AppError
 		if stdErrors.As(err, &appErr) {
-			sendAppError(w, appErr)
+			sendAppError(w, r, appErr)
 			return
 		}
 		handleError(w, r.Context(), c.logger, err, "Failed to like comment", http.StatusInternalServerError)

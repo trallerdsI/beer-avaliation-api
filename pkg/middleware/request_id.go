@@ -32,3 +32,13 @@ func LoggerFromContext(ctx context.Context) *slog.Logger {
 	}
 	return slog.Default()
 }
+
+// TraceIDFromContext devolve o ID de correlação (request_id) injetado pelo
+// RequestIDMiddleware, ou "" se ausente. Usado para popular o campo trace_id
+// do Problem RFC 7807, permitindo ao suporte correlacionar erros com os logs.
+func TraceIDFromContext(ctx context.Context) string {
+	if id, ok := ctx.Value(requestIDKey).(string); ok {
+		return id
+	}
+	return ""
+}

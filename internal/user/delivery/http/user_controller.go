@@ -12,6 +12,7 @@ import (
 	"beer-review-app/internal/user/model"
 	"beer-review-app/internal/user/usecase"
 	appErrors "beer-review-app/pkg/errors"
+	"beer-review-app/pkg/middleware"
 	"beer-review-app/pkg/response"
 
 	"github.com/go-playground/validator/v10"
@@ -41,23 +42,45 @@ func NewUserController(u usecase.UserUsecase, logger *slog.Logger) *UserControll
 // Segurança (OWASP A05): não expõe a causa raiz ao cliente.
 func (c *UserController) respondError(w http.ResponseWriter, r *http.Request, err error, message string, statusCode int) {
 	c.logger.ErrorContext(r.Context(), message, "err", err)
-	response.SendError(w, message, statusCode)
+	// RFC 7807: erro genérico (sem causa interna) com trace_id para suporte.
+	p := response.NewProblem(statusCode, appErrors.HTTPStatusSlug(statusCode), message)
+	if trace := middleware.TraceIDFromContext(r.Context()); trace != "" {
+		p.TraceID = trace
+	}
+	response.SendProblem(w, p)
 }
 
-// validationMessage traduz os erros do validator numa mensagem legível para o
-// utilizador (ex: "nome: deve ter pelo menos 3 caracteres"), sem expor as tags
-// técnicas (min, email) nem o formato cru do go-playground.
-func validationMessage(err error) string {
+// validationDetails converte os erros do validator em detalhes granulares
+// tipados (RFC 7807), legíveis e sem expor tags técnicas (min, email) nem o
+// formato cru do go-playground.
+func validationDetails(err error) []appErrors.ProblemDetail {
 	var verrs validator.ValidationErrors
-	if stdErrors.As(err, &verrs) {
-		msgs := make([]string, 0, len(verrs))
-		for _, fe := range verrs {
-			msgs = append(msgs, fmt.Sprintf("%s: %s", fieldLabel(fe.Field()), ruleMessage(fe)))
-		}
-		return strings.Join(msgs, "; ")
+	if !stdErrors.As(err, &verrs) {
+		return nil
 	}
-	return err.Error()
+	details := make([]appErrors.ProblemDetail, 0, len(verrs))
+	for _, fe := range verrs {
+		details = append(details, appErrors.ProblemDetail{
+			Field:   fieldLabel(fe.Field()),
+			Code:    "invalid_" + fe.Tag(),
+			Message: fmt.Sprintf("%s: %s", fieldLabel(fe.Field()), ruleMessage(fe)),
+		})
+	}
+	return details
 }
+// sendValidationProblem envia um Problem RFC 7807 de validação (code
+// "validation_failed") com detalhes granulares tipados e trace_id.
+func (c *UserController) sendValidationProblem(w http.ResponseWriter, r *http.Request, err error) {
+	c.logger.ErrorContext(r.Context(), "validation failed", "err", err)
+	p := response.NewProblem(http.StatusBadRequest, "validation_failed",
+		"Os dados enviados contêm erros de validação.")
+	p.Details = validationDetails(err)
+	if trace := middleware.TraceIDFromContext(r.Context()); trace != "" {
+		p.TraceID = trace
+	}
+	response.SendProblem(w, p)
+}
+
 
 func fieldLabel(field string) string {
 	labels := map[string]string{
@@ -105,7 +128,7 @@ func isNumericKind(k reflect.Kind) bool {
 
 func (c *UserController) Register(w http.ResponseWriter, r *http.Request) {
 	if r.Body == nil {
-		response.SendError(w, "Invalid request body", http.StatusBadRequest)
+		response.SendProblem(w, response.NewProblem(http.StatusBadRequest, "invalid_request_body", "O corpo da requisição é inválido."))
 		return
 	}
 
@@ -119,7 +142,7 @@ func (c *UserController) Register(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := c.validator.Struct(&user); err != nil {
-		c.respondError(w, r, err, validationMessage(err), http.StatusBadRequest)
+		c.sendValidationProblem(w, r, err)
 		return
 	}
 
@@ -139,7 +162,7 @@ func (c *UserController) Register(w http.ResponseWriter, r *http.Request) {
 
 func (c *UserController) Login(w http.ResponseWriter, r *http.Request) {
 	if r.Body == nil {
-		response.SendError(w, "Invalid request body", http.StatusBadRequest)
+		response.SendProblem(w, response.NewProblem(http.StatusBadRequest, "invalid_request_body", "O corpo da requisição é inválido."))
 		return
 	}
 
@@ -157,7 +180,7 @@ func (c *UserController) Login(w http.ResponseWriter, r *http.Request) {
 
 	// Validação de login executada antes de ir para o usecase.
 	if err := c.validator.Struct(&credentials); err != nil {
-		c.respondError(w, r, err, validationMessage(err), http.StatusBadRequest)
+		c.sendValidationProblem(w, r, err)
 		return
 	}
 
@@ -176,7 +199,7 @@ func (c *UserController) Login(w http.ResponseWriter, r *http.Request) {
 func (c *UserController) GetProfile(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if id == "" {
-		response.SendError(w, "User ID is required", http.StatusBadRequest)
+		response.SendProblem(w, response.NewProblem(http.StatusBadRequest, "bad_request", "O ID do utilizador é obrigatório."))
 		return
 	}
 
@@ -186,7 +209,7 @@ func (c *UserController) GetProfile(w http.ResponseWriter, r *http.Request) {
 		// Uso idiomático de errors.As (agora com Unwrap suportado) para
 		// erros envelopados, preservando a causa original.
 		if stdErrors.As(err, &appErr) && (appErr.Code == http.StatusNotFound || appErr.Is(err)) {
-			response.SendError(w, "user not found", http.StatusNotFound)
+			response.SendProblem(w, response.NewProblem(http.StatusNotFound, "not_found", "Utilizador não encontrado."))
 			return
 		}
 		c.respondError(w, r, err, "Failed to get profile", http.StatusInternalServerError)
@@ -199,12 +222,12 @@ func (c *UserController) GetProfile(w http.ResponseWriter, r *http.Request) {
 func (c *UserController) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if id == "" {
-		response.SendError(w, "User ID is required", http.StatusBadRequest)
+		response.SendProblem(w, response.NewProblem(http.StatusBadRequest, "bad_request", "O ID do utilizador é obrigatório."))
 		return
 	}
 
 	if r.Body == nil {
-		response.SendError(w, "Invalid request body", http.StatusBadRequest)
+		response.SendProblem(w, response.NewProblem(http.StatusBadRequest, "invalid_request_body", "O corpo da requisição é inválido."))
 		return
 	}
 
@@ -217,7 +240,7 @@ func (c *UserController) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := c.validator.Struct(&user); err != nil {
-		c.respondError(w, r, err, validationMessage(err), http.StatusBadRequest)
+		c.sendValidationProblem(w, r, err)
 		return
 	}
 
@@ -234,7 +257,7 @@ func (c *UserController) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 func (c *UserController) DeleteAccount(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if id == "" {
-		response.SendError(w, "User ID is required", http.StatusBadRequest)
+		response.SendProblem(w, response.NewProblem(http.StatusBadRequest, "bad_request", "O ID do utilizador é obrigatório."))
 		return
 	}
 

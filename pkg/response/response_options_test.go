@@ -4,90 +4,113 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+
+	"beer-review-app/pkg/errors"
 )
 
-// TestSendErrorWithErrorCode valida que WithErrorCode injeta o código estável
-// (ex: "DUPLICATE_BEER") no envelope, sem vazar a causa raiz.
-func TestSendErrorWithErrorCode(t *testing.T) {
+// TestSendProblemRFC7807 valida o envelope RFC 7807: Content-Type
+// application/problem+json, campos type/title/status/code/message e ausência
+// de vazamento de causa interna.
+func TestSendProblemRFC7807(t *testing.T) {
 	rr := httptest.NewRecorder()
-	SendError(rr, "cerveja duplicada", http.StatusConflict, WithErrorCode("DUPLICATE_BEER"))
+	p := errors.NewProblem(http.StatusUnauthorized, "unauthorized", "O cabeçalho de autorização é obrigatório.")
+	SendProblem(rr, p)
 
-	if rr.Code != http.StatusConflict {
-		t.Fatalf("expected 409, got %d", rr.Code)
+	if rr.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d", rr.Code)
+	}
+	if ct := rr.Header().Get("Content-Type"); ct != "application/problem+json" {
+		t.Fatalf("expected application/problem+json, got %q", ct)
 	}
 
-	var body errorEnvelope
+	var body errors.Problem
 	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
 		t.Fatalf("invalid JSON: %v", err)
 	}
-	if body.Error != "cerveja duplicada" {
-		t.Fatalf("unexpected error: %q", body.Error)
+	if body.Code != "unauthorized" {
+		t.Fatalf("expected code unauthorized, got %q", body.Code)
 	}
-	if body.Code != "DUPLICATE_BEER" {
-		t.Fatalf("expected code DUPLICATE_BEER, got %q", body.Code)
+	if body.Status != http.StatusUnauthorized {
+		t.Fatalf("expected status 401, got %d", body.Status)
+	}
+	if body.Title != http.StatusText(http.StatusUnauthorized) {
+		t.Fatalf("expected title %q, got %q", http.StatusText(http.StatusUnauthorized), body.Title)
+	}
+	if body.Message != "O cabeçalho de autorização é obrigatório." {
+		t.Fatalf("unexpected message: %q", body.Message)
+	}
+	if body.Type != "/errors/unauthorized" {
+		t.Fatalf("expected type /errors/unauthorized, got %q", body.Type)
 	}
 }
 
-// TestSendErrorWithDetail valida que WithDetail injeta o payload seguro
-// (ex: sugestões) sem expor erro interno.
-func TestSendErrorWithDetail(t *testing.T) {
+// TestSendProblemWithDetails valida detalhes granulares tipados (validação).
+func TestSendProblemWithDetails(t *testing.T) {
 	rr := httptest.NewRecorder()
-	detail := []map[string]any{{"id": "12", "name": "Heineken Long Neck"}}
-	SendError(rr, "já existe", http.StatusConflict, WithDetail(detail))
+	p := errors.NewProblem(http.StatusBadRequest, "validation_failed", "Erro de validação.")
+	p.Details = []errors.ProblemDetail{
+		{Field: "email", Code: "email_invalid", Message: "Email inválido."},
+	}
+	SendProblem(rr, p)
 
-	var body errorEnvelope
+	var body errors.Problem
 	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
 		t.Fatalf("invalid JSON: %v", err)
 	}
-	if body.Detail == nil {
-		t.Fatal("expected detail to be set")
-	}
-	got, ok := body.Detail.([]any)
-	if !ok || len(got) != 1 {
-		t.Fatalf("unexpected detail: %#v", body.Detail)
+	if len(body.Details) != 1 || body.Details[0].Field != "email" {
+		t.Fatalf("unexpected details: %#v", body.Details)
 	}
 }
 
-// TestSendErrorWithAllOptions valida a combinação de código + detail.
-func TestSendErrorWithAllOptions(t *testing.T) {
+// TestSendProblemWithAction valida o campo action (sugestão de fluxo UX).
+func TestSendProblemWithAction(t *testing.T) {
 	rr := httptest.NewRecorder()
-	SendError(rr, "msg", http.StatusBadRequest,
-		WithErrorCode("BAD"),
-		WithDetail(map[string]any{"field": "name"}))
+	p := errors.NewProblem(http.StatusUnauthorized, "session_expired", "Sessão expirada.")
+	p.Action = &errors.ProblemAction{Type: "relogin", URI: "app://auth/login"}
+	SendProblem(rr, p)
 
-	var body errorEnvelope
+	var body errors.Problem
 	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
 		t.Fatalf("invalid JSON: %v", err)
 	}
-	if body.Code != "BAD" {
-		t.Fatalf("expected code BAD, got %q", body.Code)
-	}
-	if body.Detail == nil {
-		t.Fatal("expected detail set")
+	if body.Action == nil || body.Action.Type != "relogin" {
+		t.Fatalf("expected relogin action, got %#v", body.Action)
 	}
 }
 
-// TestSendErrorNoLeak garante que, SEM opções, o envelope não inclui code/detail
-// (omitempty), evitando vazamento de campos vazios.
-func TestSendErrorNoLeak(t *testing.T) {
+// TestSendErrorMinimal garante que SendError produz um Problem mínimo e
+// seguro, com Content-Type application/problem+json (retrocompatibilidade
+// das chamadas simples).
+func TestSendErrorMinimal(t *testing.T) {
 	rr := httptest.NewRecorder()
 	SendError(rr, "erro simples", http.StatusInternalServerError)
 
-	var body errorEnvelope
+	if rr.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d", rr.Code)
+	}
+	if ct := rr.Header().Get("Content-Type"); ct != "application/problem+json" {
+		t.Fatalf("expected application/problem+json, got %q", ct)
+	}
+
+	var body errors.Problem
 	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
 		t.Fatalf("invalid JSON: %v", err)
 	}
-	if body.Code != "" {
-		t.Fatalf("expected empty code, got %q", body.Code)
+	if body.Message != "erro simples" {
+		t.Fatalf("unexpected message: %q", body.Message)
 	}
-	if body.Detail != nil {
-		t.Fatalf("expected nil detail, got %#v", body.Detail)
+	if body.TraceID != "" {
+		t.Fatalf("expected empty trace_id, got %q", body.TraceID)
+	}
+	if len(body.Details) != 0 {
+		t.Fatalf("expected no details, got %#v", body.Details)
 	}
 }
 
-// TestSelectFields valida a projeção de campos (defesa de payload mobile) via
-// reflexão: seleciona apenas os campos pedidos e respeita o cap de 32 campos.
+// TestSelectFieldsSelectsOnlyRequested valida a projeção de campos (defesa de
+// payload mobile) via reflexão: seleciona apenas os campos pedidos.
 type selectFixture struct {
 	ID       string `json:"id"`
 	Name     string `json:"name"`
@@ -123,7 +146,6 @@ func TestSelectFieldsSelectsOnlyRequested(t *testing.T) {
 func TestSelectFieldsEmptyReturnsOriginal(t *testing.T) {
 	beers := []selectFixture{{ID: "1", Name: "X"}}
 	out := SelectFields(beers, "")
-	// Sem fields, devolve o payload original (sem alocação de projeção).
 	got, ok := out.([]selectFixture)
 	if !ok {
 		t.Fatalf("expected original []selectFixture, got %T", out)
@@ -145,3 +167,5 @@ func TestSelectFieldsUnknownFieldIgnored(t *testing.T) {
 		t.Fatal("nonexistent field must not appear")
 	}
 }
+
+var _ = strings.Contains

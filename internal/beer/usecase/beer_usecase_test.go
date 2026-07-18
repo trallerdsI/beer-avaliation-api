@@ -266,7 +266,7 @@ func TestCreateDuplicateWithSuggestions(t *testing.T) {
 	assert.ErrorAs(t, err, &appErr)
 	assert.Equal(t, 409, appErr.Code)
 	assert.Equal(t, "DUPLICATE_BEER", appErr.ErrorCode)
-	assert.NotNil(t, appErr.Detail)
+	assert.NotEmpty(t, appErr.Details)
 }
 
 // TestLikeCommentAlreadyLiked valida o 400 quando o mesmo utilizador

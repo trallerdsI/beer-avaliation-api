@@ -79,7 +79,7 @@ func (c *MonitoringController) GetStats(w http.ResponseWriter, r *http.Request) 
 	beers, totalBeers, err := c.beerUsecase.GetPaginated(ctx, 1, 5)
 	if err != nil {
 		c.logger.Error("Failed to get beers for stats", slog.String("error", err.Error()))
-		response.SendError(w, "Failed to get statistics", http.StatusInternalServerError)
+		response.SendProblem(w, response.NewProblem(http.StatusInternalServerError, "internal_server_error", "Falha ao obter estatísticas."))
 		return
 	}
 

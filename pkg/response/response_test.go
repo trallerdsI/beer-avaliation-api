@@ -8,8 +8,8 @@ import (
 	"testing"
 )
 
-// TestSendErrorSemantics valida o envelope de erro e garante que NÃO alocamos
-// um map[string]string por request (a struct errorEnvelope vive na stack).
+// TestSendErrorSemantics valida o envelope RFC 7807 produzido por SendError:
+// Content-Type application/problem+json e mensagem no campo "message".
 func TestSendErrorSemantics(t *testing.T) {
 	rr := httptest.NewRecorder()
 	SendError(rr, "invalid credentials", http.StatusUnauthorized)
@@ -17,21 +17,21 @@ func TestSendErrorSemantics(t *testing.T) {
 	if rr.Code != http.StatusUnauthorized {
 		t.Fatalf("expected status %d, got %d", http.StatusUnauthorized, rr.Code)
 	}
-	if ct := rr.Header().Get("Content-Type"); ct != "application/json" {
-		t.Fatalf("expected application/json, got %q", ct)
+	if ct := rr.Header().Get("Content-Type"); ct != "application/problem+json" {
+		t.Fatalf("expected application/problem+json, got %q", ct)
 	}
 
 	var body struct {
-		Error string `json:"error"`
+		Message string `json:"message"`
+		Code    string `json:"code"`
 	}
 	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
 		t.Fatalf("invalid JSON body: %v", err)
 	}
-	if body.Error != "invalid credentials" {
-		t.Fatalf("expected error message, got %q", body.Error)
+	if body.Message != "invalid credentials" {
+		t.Fatalf("expected message, got %q", body.Message)
 	}
-	// O envelope deve ser um objeto único com a chave "error".
-	if !strings.Contains(rr.Body.String(), `"error":"invalid credentials"`) {
+	if !strings.Contains(rr.Body.String(), `"message":"invalid credentials"`) {
 		t.Fatalf("unexpected body: %s", rr.Body.String())
 	}
 }

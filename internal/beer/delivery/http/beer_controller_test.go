@@ -119,19 +119,29 @@ func TestGetBeer(t *testing.T) {
 	if status := rr.Code; status != http.StatusNotFound {
 		t.Errorf("handler returned wrong status code for non-existent beer: got %v want %v", status, http.StatusNotFound)
 	}
-	// O 404 deve vir em envelope JSON consistente (não texto plano) — regressão
+	// O 404 deve vir em envelope RFC 7807 consistente (não texto plano) — regressão
 	// do Bug 1 (GetBeerByID usava http.Error).
-	if ct := rr.Header().Get("Content-Type"); ct != "application/json" {
-		t.Errorf("404 deve ser JSON, got Content-Type %q", ct)
+	if ct := rr.Header().Get("Content-Type"); ct != "application/problem+json" {
+		t.Errorf("404 deve ser application/problem+json, got Content-Type %q", ct)
 	}
 	var notFoundBody struct {
-		Error string `json:"error"`
+		Type    string `json:"type"`
+		Title   string `json:"title"`
+		Status  int    `json:"status"`
+		Code    string `json:"code"`
+		Message string `json:"message"`
 	}
 	if err := json.Unmarshal(rr.Body.Bytes(), &notFoundBody); err != nil {
 		t.Errorf("404 body should be valid JSON, got %q: %v", rr.Body.String(), err)
 	}
-	if notFoundBody.Error != "not found" {
-		t.Errorf("404 body error mismatch: got %q", notFoundBody.Error)
+	if notFoundBody.Status != http.StatusNotFound {
+		t.Errorf("404 status mismatch: got %d", notFoundBody.Status)
+	}
+	if notFoundBody.Code != "not_found" {
+		t.Errorf("404 code mismatch: got %q", notFoundBody.Code)
+	}
+	if notFoundBody.Message != "not found" {
+		t.Errorf("404 message mismatch: got %q", notFoundBody.Message)
 	}
 }
 
@@ -380,15 +390,22 @@ func TestCreateBeerValidationFailure(t *testing.T) {
 	mockBeerUsecase.AssertNotCalled(t, "Create", mock.Anything, mock.Anything)
 
 	var resp struct {
-		Error string `json:"error"`
+		Type    string `json:"type"`
+		Title   string `json:"title"`
+		Status  int    `json:"status"`
+		Code    string `json:"code"`
+		Message string `json:"message"`
 	}
 	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("body should be JSON, got %q: %v", rr.Body.String(), err)
 	}
-	if strings.Contains(resp.Error, "Error 400:") || strings.Contains(resp.Error, "invalid beer:") {
-		t.Fatalf("validation error leaked internal prefix: %q", resp.Error)
+	if resp.Status != http.StatusBadRequest {
+		t.Fatalf("expected status 400, got %d", resp.Status)
 	}
-	if !strings.Contains(resp.Error, "nome:") {
-		t.Fatalf("expected translated field label in error, got %q", resp.Error)
+	if strings.Contains(resp.Message, "Error 400:") || strings.Contains(resp.Message, "invalid beer:") {
+		t.Fatalf("validation error leaked internal prefix: %q", resp.Message)
+	}
+	if !strings.Contains(resp.Message, "nome:") {
+		t.Fatalf("expected translated field label in error, got %q", resp.Message)
 	}
 }
