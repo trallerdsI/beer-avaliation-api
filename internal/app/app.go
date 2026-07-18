@@ -284,6 +284,7 @@ func migrateDB(db *sql.DB) error {
 		"migrations/add_comments_jsonb.sql",
 		"migrations/create_indexes.sql",
 		"migrations/use_uuid_pk.sql",
+		"migrations/add_updated_at.sql",
 	}
 
 	for _, file := range sqlFiles {

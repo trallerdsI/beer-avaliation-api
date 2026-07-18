@@ -216,6 +216,14 @@ func (c *UserController) GetProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// RFC 9111: ETag por updated_at (versão estável do perfil).
+	etag := response.ETagForVersion(user.ID + ":" + user.UpdatedAt)
+	if response.IfNoneMatchMatches(r, etag) {
+		response.SendNotModified(w, etag)
+		return
+	}
+	response.SetCacheHeaders(w, etag, 120, true)
+
 	response.SendResponse(w, http.StatusOK, user)
 }
 

@@ -243,12 +243,30 @@ func (c *BeerController) GetAllBeers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	response.SendResponse(w, http.StatusOK, map[string]interface{}{
+	payload := map[string]interface{}{
 		"beers":    response.SelectFields(beers, query.Get("fields")),
 		"total":    total,
 		"page":     page,
 		"pageSize": pageSize,
-	})
+	}
+
+	// RFC 9111: lista paginada muda com frequência, logo ETag por conteúdo
+	// (hash do payload) e Cache-Control curto. 304 evita reenvio do body.
+	body, err := json.Marshal(payload)
+	if err != nil {
+		handleError(w, r.Context(), c.logger, err, "Failed to encode beers", http.StatusInternalServerError)
+		return
+	}
+	etag := response.ETagForContent(body)
+	if response.IfNoneMatchMatches(r, etag) {
+		response.SendNotModified(w, etag)
+		return
+	}
+	response.SetCacheHeaders(w, etag, 30, true)
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(payload)
 }
 
 func (c *BeerController) CreateBeer(w http.ResponseWriter, r *http.Request) {
@@ -371,6 +389,15 @@ func (c *BeerController) GetBeerByID(w http.ResponseWriter, r *http.Request) {
 		handleError(w, r.Context(), c.logger, err, "Failed to retrieve beer", http.StatusInternalServerError)
 		return
 	}
+
+	// RFC 9111: ETag por updated_at (versão estável). Se o cliente reenvia
+	// If-None-Match e bate, responde 304 sem body (poupa banda no mobile).
+	etag := response.ETagForVersion(beer.ID + ":" + beer.UpdatedAt)
+	if response.IfNoneMatchMatches(r, etag) {
+		response.SendNotModified(w, etag)
+		return
+	}
+	response.SetCacheHeaders(w, etag, 300, true)
 
 	// PADRONIZADO: Uso do helper global de respostas JSON em vez de encode cru manual
 	response.SendResponse(w, http.StatusOK, beer)

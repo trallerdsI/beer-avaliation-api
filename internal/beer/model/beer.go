@@ -99,6 +99,7 @@ type Beer struct {
 	Comments    []Comment   `json:"comments"`
 	CreatedBy   string      `json:"createdBy"` // user_id do criador (AuthZ: só criador ou admin editam)
 	CreatedAt   string      `json:"createdAt"` // timestamp ISO8601 de criação da cerveja
+	UpdatedAt   string      `json:"updatedAt"` // timestamp ISO8601 da última alteração (base do ETag - RFC 9111)
 
 	// Campos agregados (calculados no repositório, não persistidos).
 	AverageRating float64 `json:"averageRating,omitempty"` // média dos ratings dos comentários

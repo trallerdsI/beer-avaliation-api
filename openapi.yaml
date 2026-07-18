@@ -34,10 +34,21 @@ paths:
       responses:
         '200':
           description: Paginated list of beers
+          headers:
+            ETag:
+              description: ETag forte derivado do conteúdo da página (RFC 9111)
+              schema:
+                type: string
+            Cache-Control:
+              description: Cache-Control curto (RFC 9111)
+              schema:
+                type: string
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/BeerListResponse'
+        '304':
+          description: Not Modified — cliente pode reutilizar o cache (RFC 9111)
     post:
       summary: Create a beer
       requestBody:
@@ -108,10 +119,21 @@ paths:
       responses:
         '200':
           description: Beer details
+          headers:
+            ETag:
+              description: ETag forte derivado de updated_at (RFC 9111)
+              schema:
+                type: string
+            Cache-Control:
+              description: Cache-Control (RFC 9111)
+              schema:
+                type: string
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Beer'
+        '304':
+          description: Not Modified — cliente pode reutilizar o cache (RFC 9111)
         '404':
           description: Beer not found
     put:
@@ -252,6 +274,17 @@ paths:
       responses:
         '200':
           description: User profile
+          headers:
+            ETag:
+              description: ETag forte derivado de updated_at (RFC 9111)
+              schema:
+                type: string
+            Cache-Control:
+              description: Cache-Control (RFC 9111)
+              schema:
+                type: string
+        '304':
+          description: Not Modified — cliente pode reutilizar o cache (RFC 9111)
         '401':
           description: Unauthorized
     put:
@@ -321,10 +354,21 @@ paths:
       responses:
         '200':
           description: Home feed payload
+          headers:
+            ETag:
+              description: ETag forte derivado do conteúdo do feed (RFC 9111)
+              schema:
+                type: string
+            Cache-Control:
+              description: Cache-Control curto (RFC 9111)
+              schema:
+                type: string
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/HomeFeed'
+        '304':
+          description: Not Modified — cliente pode reutilizar o cache (RFC 9111)
 
   /api/v1/stream:
     get:

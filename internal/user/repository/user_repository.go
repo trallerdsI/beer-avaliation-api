@@ -55,14 +55,15 @@ func (r *PostgresUserRepository) Create(ctx context.Context, user model.User) er
 
 func (r *PostgresUserRepository) GetByID(ctx context.Context, id string) (model.User, error) {
 	var user model.User
-	query := `SELECT id, username, email, role, created FROM beerUsers WHERE id = $1`
+	query := `SELECT id, username, email, role, created, updated_at FROM beerUsers WHERE id = $1`
 
 	err := r.db.QueryRowContext(ctx, query, id).Scan(
 		&user.ID,
 		&user.Username,
 		&user.Email,
 		&user.Role,
-		&user.Created)
+		&user.Created,
+		&user.UpdatedAt)
 
 	if err == sql.ErrNoRows {
 		return user, fmt.Errorf("user not found")
@@ -75,7 +76,7 @@ func (r *PostgresUserRepository) GetByID(ctx context.Context, id string) (model.
 
 func (r *PostgresUserRepository) GetByEmail(ctx context.Context, email string) (model.User, error) {
 	var user model.User
-	query := `SELECT id, username, email, password, role, created FROM beerUsers WHERE email = $1`
+	query := `SELECT id, username, email, password, role, created, updated_at FROM beerUsers WHERE email = $1`
 
 	err := r.db.QueryRowContext(ctx, query, email).Scan(
 		&user.ID,
@@ -83,7 +84,8 @@ func (r *PostgresUserRepository) GetByEmail(ctx context.Context, email string) (
 		&user.Email,
 		&user.Password,
 		&user.Role,
-		&user.Created)
+		&user.Created,
+		&user.UpdatedAt)
 
 	if err == sql.ErrNoRows {
 		return user, fmt.Errorf("user not found")

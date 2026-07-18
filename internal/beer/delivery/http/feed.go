@@ -1,6 +1,7 @@
 package http
 
 import (
+	"encoding/json"
 	"net/http"
 
 	"beer-review-app/pkg/response"
@@ -50,10 +51,28 @@ func (c *BeerController) GetHomeFeed(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	response.SendResponse(w, http.StatusOK, HomeFeed{
+	payload := HomeFeed{
 		Featured: items,
 		Total:    total,
 		Page:     page,
 		PageSize: pageSize,
-	})
+	}
+
+	// RFC 9111: o feed muda frequentemente, logo ETag por conteúdo e
+	// Cache-Control curto (30s). 304 poupa banda no app móvel.
+	body, err := json.Marshal(payload)
+	if err != nil {
+		handleError(w, r.Context(), c.logger, err, "Failed to encode home feed", http.StatusInternalServerError)
+		return
+	}
+	etag := response.ETagForContent(body)
+	if response.IfNoneMatchMatches(r, etag) {
+		response.SendNotModified(w, etag)
+		return
+	}
+	response.SetCacheHeaders(w, etag, 30, true)
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(payload)
 }

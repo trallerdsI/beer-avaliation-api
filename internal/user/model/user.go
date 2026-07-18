@@ -13,4 +13,5 @@ type User struct {
 	Password string `json:"password" validate:"required,min=6"` // "-" means don't show in JSON
 	Role     string `json:"role"`
 	Created  string `json:"-"`
+	UpdatedAt string `json:"-"` // base do ETag (RFC 9111); não exposto no JSON do perfil
 }
