@@ -79,9 +79,12 @@ func trimSpace(s string) string {
 
 // SetCacheHeaders aplica ETag e Cache-Control numa resposta de leitura. O
 // maxAge (segundos) instrui caches intermediários (proxy/CDN/Flutter); mustRevalidate
-// força revalidação no servidor após a expiração.
+// força revalidação no servidor após a expiração. O Vary: Accept-Encoding é
+// sempre definido (RFC 9111) para que proxies/CDNs não sirvam a variante
+// gzip de um cliente a outro que não a suporta.
 func SetCacheHeaders(w http.ResponseWriter, etag string, maxAge int, mustRevalidate bool) {
 	w.Header().Set("ETag", etag)
+	w.Header().Add("Vary", "Accept-Encoding")
 	cc := "public, max-age=" + itoa(maxAge)
 	if mustRevalidate {
 		cc += ", must-revalidate"

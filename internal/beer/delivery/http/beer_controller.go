@@ -264,9 +264,11 @@ func (c *BeerController) GetAllBeers(w http.ResponseWriter, r *http.Request) {
 	}
 	response.SetCacheHeaders(w, etag, 30, true)
 
+	// Reusa o body já serializado para o ETag (evita duplo marshal e garante
+	// que o ETag corresponde exatamente ao que é enviado).
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(payload)
+	_, _ = w.Write(body)
 }
 
 func (c *BeerController) CreateBeer(w http.ResponseWriter, r *http.Request) {
@@ -528,6 +530,23 @@ func (c *BeerController) SearchBeers(w http.ResponseWriter, r *http.Request) {
 // GetEnums devolve os valores aceites para os enums do domínio (style, taste,
 // aroma, color, body, carbonation, finish). O backend é a fonte da verdade:
 // o app Flutter consome esta lista e não aceita entrada livre do utilizador.
+// RFC 9111: lista quase estática do domínio — ETag por conteúdo e cache longo
+// (1h), poupando polling do app móvel.
 func (c *BeerController) GetEnums(w http.ResponseWriter, r *http.Request) {
-	response.SendResponse(w, http.StatusOK, model.EnumValues())
+	payload := model.EnumValues()
+	body, err := json.Marshal(payload)
+	if err != nil {
+		handleError(w, r.Context(), c.logger, err, "Failed to encode enums", http.StatusInternalServerError)
+		return
+	}
+	etag := response.ETagForContent(body)
+	if response.IfNoneMatchMatches(r, etag) {
+		response.SendNotModified(w, etag)
+		return
+	}
+	response.SetCacheHeaders(w, etag, 3600, true)
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(payload)
 }

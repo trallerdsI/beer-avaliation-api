@@ -72,7 +72,9 @@ func (c *BeerController) GetHomeFeed(w http.ResponseWriter, r *http.Request) {
 	}
 	response.SetCacheHeaders(w, etag, 30, true)
 
+	// Reusa o body já serializado para o ETag (evita duplo marshal e garante
+	// que o ETag corresponde exatamente ao que é enviado).
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(payload)
+	_, _ = w.Write(body)
 }

@@ -67,6 +67,28 @@ paths:
         '400':
           description: Invalid request payload
 
+  /api/v1/beers/enums:
+    get:
+      summary: Domain enum values (allowlist) for the mobile client
+      description: >
+        Returns the allowlist of valid enum values (style, taste, aroma, color,
+        body, carbonation, finish). The backend is the source of truth; the
+        Flutter app consumes this list and does not accept free user input.
+      responses:
+        '200':
+          description: Enum allowlist
+          headers:
+            ETag:
+              description: ETag forte derivado do conteúdo (RFC 9111)
+              schema:
+                type: string
+            Cache-Control:
+              description: Cache-Control longo (~1h, RFC 9111)
+              schema:
+                type: string
+        '304':
+          description: Not Modified — cliente pode reutilizar o cache (RFC 9111)
+
   /api/v1/beers/search:
     get:
       summary: Search beers by filters
