@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -134,26 +135,95 @@ func sendAppError(w http.ResponseWriter, appErr *appErrors.AppError) {
 }
 
 // validationMessage traduz os erros do validator numa mensagem legível para o
-// cliente (ex: "name: o valor é menor que 3 caracteres"), em vez de expor o
-// formato cru do go-playground ("Key: 'Beer.Name' Error:...").
+// utilizador (ex: "nome: deve ter pelo menos 3 caracteres"), em vez de expor o
+// formato cru do go-playground ("Key: 'Beer.Name' Error:...") nem as tags
+// técnicas (min, https_url, flavor). O cliente (app Flutter) recebe texto
+// compreensível, sem vazar detalhes de implementação (OWASP A05).
 func validationMessage(err error) string {
 	var verrs validator.ValidationErrors
 	if stdErrors.As(err, &verrs) {
 		msgs := make([]string, 0, len(verrs))
 		for _, fe := range verrs {
-			msgs = append(msgs, fmt.Sprintf("%s: valor inválido para a regra '%s'", fe.Field(), fe.Tag()))
+			msgs = append(msgs, fmt.Sprintf("%s: %s", fieldLabel(fe.Field()), ruleMessage(fe)))
 		}
 		return strings.Join(msgs, "; ")
 	}
 	return err.Error()
 }
 
+// fieldLabel traduz o nome do campo Go para um rótulo legível em PT.
+func fieldLabel(field string) string {
+	labels := map[string]string{
+		"Name":        "nome",
+		"Style":       "estilo",
+		"Description": "descrição",
+		"ImageUrl":    "imagem",
+		"Alcohol":     "teor alcoólico",
+		"Taste":       "sabor",
+		"Aroma":       "aroma",
+		"Color":       "cor",
+		"Body":        "corpo",
+		"Carbonation": "carbonatação",
+		"Finish":      "finalização",
+		"Text":        "texto",
+		"Rating":      "avaliação",
+		"Comments":    "comentários",
+	}
+	if l, ok := labels[field]; ok {
+		return l
+	}
+	return strings.ToLower(field)
+}
+
+// ruleMessage gera uma frase clara para a regra violada, incluindo o valor
+// esperado (fe.Param) quando aplicável.
+func ruleMessage(fe validator.FieldError) string {
+	param := fe.Param()
+	switch fe.Tag() {
+	case "required":
+		return "é obrigatório"
+	case "min":
+		if isNumericKind(fe.Kind()) {
+			return fmt.Sprintf("deve ser no mínimo %s", param)
+		}
+		return fmt.Sprintf("deve ter pelo menos %s caracteres", param)
+	case "max":
+		if isNumericKind(fe.Kind()) {
+			return fmt.Sprintf("deve ser no máximo %s", param)
+		}
+		return fmt.Sprintf("deve ter no máximo %s caracteres", param)
+	case "https_url":
+		return "deve ser um URL https válido"
+	case "email":
+		return "deve ser um email válido"
+	default:
+		// Regras custom de enum (flavor, aroma, color, body, carbonation, finish):
+		// não expõem a tag técnica, apenas indicam valor inválido.
+		return "valor inválido"
+	}
+}
+
+// isNumericKind indica se o kind do campo é inteiro ou float (para distinguir
+// "caracteres" de "valor numérico" nas regras min/max).
+func isNumericKind(k reflect.Kind) bool {
+	switch k {
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
+		reflect.Float32, reflect.Float64:
+		return true
+	}
+	return false
+}
+
 // validateBeer valida o modelo completo (name, style, alcohol, url, enums)
 // usando o validator já configurado no package scope, garantindo que regras de
-// negócio (ex: ABV 0–100) sejam aplicadas no create/update.
+// negócio (ex: ABV 0–100) sejam aplicadas no create/update. Em caso de falha,
+// devolve um *AppError cuja Message é a mensagem de validação já traduzida
+// (ex: "Name: valor inválido para a regra 'min'"), SEM o prefixo interno
+// "Error 400: invalid beer:" — evitando vazar a string crua do AppError no
+// corpo da resposta (OWASP A05).
 func (c *BeerController) validateBeer(beer model.Beer) error {
 	if err := validate.Struct(beer); err != nil {
-		return fmt.Errorf("%w: %s", appErrors.NewAppError(400, "invalid beer", nil), validationMessage(err))
+		return appErrors.NewAppError(400, validationMessage(err), nil)
 	}
 	return nil
 }
@@ -198,7 +268,12 @@ func (c *BeerController) CreateBeer(w http.ResponseWriter, r *http.Request) {
 	beer.Description = sanitizer.Sanitize(beer.Description)
 
 	if err := c.validateBeer(beer); err != nil {
-		handleError(w, r.Context(), c.logger, err, err.Error(), http.StatusBadRequest)
+		var appErr *appErrors.AppError
+		if stdErrors.As(err, &appErr) {
+			sendAppError(w, appErr)
+			return
+		}
+		handleError(w, r.Context(), c.logger, err, "Invalid beer", http.StatusBadRequest)
 		return
 	}
 
@@ -239,7 +314,12 @@ func (c *BeerController) UpdateBeer(w http.ResponseWriter, r *http.Request) {
 	beer.Description = sanitizer.Sanitize(beer.Description)
 
 	if err := c.validateBeer(beer); err != nil {
-		handleError(w, r.Context(), c.logger, err, err.Error(), http.StatusBadRequest)
+		var appErr *appErrors.AppError
+		if stdErrors.As(err, &appErr) {
+			sendAppError(w, appErr)
+			return
+		}
+		handleError(w, r.Context(), c.logger, err, "Invalid beer", http.StatusBadRequest)
 		return
 	}
 
@@ -280,7 +360,9 @@ func (c *BeerController) GetBeerByID(w http.ResponseWriter, r *http.Request) {
 		var appErr *appErrors.AppError
 		// CORRIGIDO: Uso moderno de errors.As para segurança e compatibilidade com wrapping
 		if stdErrors.As(err, &appErr) && (appErr.Code == http.StatusNotFound || strings.Contains(strings.ToLower(appErr.Message), "not found")) {
-			http.Error(w, appErr.Message, http.StatusNotFound)
+			// PADRONIZADO: envelope JSON consistente com os restantes erros
+			// do controller (response.SendError), em vez de texto plano.
+			sendAppError(w, appErr)
 			return
 		}
 		handleError(w, r.Context(), c.logger, err, "Failed to retrieve beer", http.StatusInternalServerError)

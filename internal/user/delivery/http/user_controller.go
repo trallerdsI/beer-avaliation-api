@@ -3,8 +3,11 @@ package http
 import (
 	"encoding/json"
 	stdErrors "errors" // Renomeado para evitar conflito com o pacote de erros do projeto
+	"fmt"
 	"log/slog"
 	"net/http"
+	"reflect"
+	"strings"
 
 	"beer-review-app/internal/user/model"
 	"beer-review-app/internal/user/usecase"
@@ -41,6 +44,65 @@ func (c *UserController) respondError(w http.ResponseWriter, r *http.Request, er
 	response.SendError(w, message, statusCode)
 }
 
+// validationMessage traduz os erros do validator numa mensagem legível para o
+// utilizador (ex: "nome: deve ter pelo menos 3 caracteres"), sem expor as tags
+// técnicas (min, email) nem o formato cru do go-playground.
+func validationMessage(err error) string {
+	var verrs validator.ValidationErrors
+	if stdErrors.As(err, &verrs) {
+		msgs := make([]string, 0, len(verrs))
+		for _, fe := range verrs {
+			msgs = append(msgs, fmt.Sprintf("%s: %s", fieldLabel(fe.Field()), ruleMessage(fe)))
+		}
+		return strings.Join(msgs, "; ")
+	}
+	return err.Error()
+}
+
+func fieldLabel(field string) string {
+	labels := map[string]string{
+		"Username": "nome de utilizador",
+		"Email":    "email",
+		"Password": "palavra-passe",
+		"Role":     "perfil",
+	}
+	if l, ok := labels[field]; ok {
+		return l
+	}
+	return strings.ToLower(field)
+}
+
+func ruleMessage(fe validator.FieldError) string {
+	param := fe.Param()
+	switch fe.Tag() {
+	case "required":
+		return "é obrigatório"
+	case "min":
+		if isNumericKind(fe.Kind()) {
+			return fmt.Sprintf("deve ter no mínimo %s", param)
+		}
+		return fmt.Sprintf("deve ter pelo menos %s caracteres", param)
+	case "max":
+		if isNumericKind(fe.Kind()) {
+			return fmt.Sprintf("deve ter no máximo %s", param)
+		}
+		return fmt.Sprintf("deve ter no máximo %s caracteres", param)
+	case "email":
+		return "deve ser um email válido"
+	default:
+		return "valor inválido"
+	}
+}
+
+func isNumericKind(k reflect.Kind) bool {
+	switch k {
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
+		reflect.Float32, reflect.Float64:
+		return true
+	}
+	return false
+}
+
 func (c *UserController) Register(w http.ResponseWriter, r *http.Request) {
 	if r.Body == nil {
 		response.SendError(w, "Invalid request body", http.StatusBadRequest)
@@ -57,7 +119,7 @@ func (c *UserController) Register(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := c.validator.Struct(&user); err != nil {
-		c.respondError(w, r, err, "Invalid input", http.StatusBadRequest)
+		c.respondError(w, r, err, validationMessage(err), http.StatusBadRequest)
 		return
 	}
 
@@ -95,7 +157,7 @@ func (c *UserController) Login(w http.ResponseWriter, r *http.Request) {
 
 	// Validação de login executada antes de ir para o usecase.
 	if err := c.validator.Struct(&credentials); err != nil {
-		c.respondError(w, r, err, "Invalid email or password format", http.StatusBadRequest)
+		c.respondError(w, r, err, validationMessage(err), http.StatusBadRequest)
 		return
 	}
 
@@ -155,7 +217,7 @@ func (c *UserController) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := c.validator.Struct(&user); err != nil {
-		c.respondError(w, r, err, "Invalid input", http.StatusBadRequest)
+		c.respondError(w, r, err, validationMessage(err), http.StatusBadRequest)
 		return
 	}
 

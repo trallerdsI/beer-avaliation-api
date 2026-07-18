@@ -112,12 +112,26 @@ func TestGetBeer(t *testing.T) {
 	}
 
 	// Additional test case for non-existent beer ID
-	mockBeerUsecase.On("GetByID", context.Background(), "99").Return(model.Beer{}, errors.NewAppError(0, "not found", nil))
+	mockBeerUsecase.On("GetByID", context.Background(), "99").Return(model.Beer{}, errors.NewAppError(http.StatusNotFound, "not found", nil))
 
 	// Request for non-existent beer ID 99
 	rr = makeRequest("/beers/99")
 	if status := rr.Code; status != http.StatusNotFound {
 		t.Errorf("handler returned wrong status code for non-existent beer: got %v want %v", status, http.StatusNotFound)
+	}
+	// O 404 deve vir em envelope JSON consistente (não texto plano) — regressão
+	// do Bug 1 (GetBeerByID usava http.Error).
+	if ct := rr.Header().Get("Content-Type"); ct != "application/json" {
+		t.Errorf("404 deve ser JSON, got Content-Type %q", ct)
+	}
+	var notFoundBody struct {
+		Error string `json:"error"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &notFoundBody); err != nil {
+		t.Errorf("404 body should be valid JSON, got %q: %v", rr.Body.String(), err)
+	}
+	if notFoundBody.Error != "not found" {
+		t.Errorf("404 body error mismatch: got %q", notFoundBody.Error)
 	}
 }
 
@@ -331,4 +345,50 @@ func TestDeleteComment(t *testing.T) {
 			t.Errorf("handler returned wrong status code: got %v want %v", status, http.StatusNotFound)
 		}
 	})
+}
+
+// TestCreateBeerValidationFailure valida que um payload inválido (ex: nome
+// abaixo do mínimo) devolve 400 com mensagem de validação traduzida e LIMPA,
+// sem o prefixo interno "Error 400: invalid beer:" (regressão do Bug 2).
+func TestCreateBeerValidationFailure(t *testing.T) {
+	mockBeerUsecase = new(MockBeerUsecase)
+	controller := NewBeerController(mockBeerUsecase, mockLogger)
+
+	abv := 5.0
+	beer := model.Beer{
+		Name:        "ab", // < min=3
+		Style:       "IPA",
+		Description: "desc",
+		ImageUrl:    "https://x.com/a.jpg",
+		Alcohol:     &abv,
+		Taste:       "Doce",
+		Aroma:       "Floral",
+		Color:       "Clara",
+		Body:        "Leve",
+		Carbonation: "Baixa",
+		Finish:      "Seco",
+	}
+	body, _ := json.Marshal(beer)
+	req := httptest.NewRequest(http.MethodPost, "/beers", bytes.NewBuffer(body))
+	rr := httptest.NewRecorder()
+	controller.CreateBeer(rr, req)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", rr.Code)
+	}
+	// O usecase NÃO deve ser chamado para um payload inválido.
+	mockBeerUsecase.AssertNotCalled(t, "Create", mock.Anything, mock.Anything)
+
+	var resp struct {
+		Error string `json:"error"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("body should be JSON, got %q: %v", rr.Body.String(), err)
+	}
+	if strings.Contains(resp.Error, "Error 400:") || strings.Contains(resp.Error, "invalid beer:") {
+		t.Fatalf("validation error leaked internal prefix: %q", resp.Error)
+	}
+	if !strings.Contains(resp.Error, "nome:") {
+		t.Fatalf("expected translated field label in error, got %q", resp.Error)
+	}
 }
