@@ -29,14 +29,14 @@ func NewUnavailableError() *AppError {
 //   - `Details` descreve erros granulares (ex: validação de campos).
 //   - `Action` sugere um fluxo à UX (relogin/redirect/retry) sem a forçar.
 type Problem struct {
-	Type    string           `json:"type"`              // URI relativa do erro (ex: /errors/duplicate_beer)
-	Title   string           `json:"title"`             // Resumo legível (http.StatusText)
-	Status  int              `json:"status"`            // Cópia do HTTP status
-	Code    string           `json:"code,omitempty"`    // Chave i18n estável (snake_case)
-	Message string           `json:"message"`           // Mensagem fallback (não expõe causa)
-	TraceID string           `json:"trace_id,omitempty"` // ID de correlação (RequestIDMiddleware)
-	Details []ProblemDetail  `json:"details,omitempty"`  // Erros granulares (ex: validação)
-	Action  *ProblemAction   `json:"action,omitempty"`   // Sugestão de fluxo para a UX
+	Type    string          `json:"type"`               // URI relativa do erro (ex: /errors/duplicate_beer)
+	Title   string          `json:"title"`              // Resumo legível (http.StatusText)
+	Status  int             `json:"status"`             // Cópia do HTTP status
+	Code    string          `json:"code,omitempty"`     // Chave i18n estável (snake_case)
+	Message string          `json:"message"`            // Mensagem fallback (não expõe causa)
+	TraceID string          `json:"trace_id,omitempty"` // ID de correlação (RequestIDMiddleware)
+	Details []ProblemDetail `json:"details,omitempty"`  // Erros granulares (ex: validação)
+	Action  *ProblemAction  `json:"action,omitempty"`   // Sugestão de fluxo para a UX
 }
 
 // ProblemDetail descreve um erro granular (ex: um campo inválido).
@@ -58,14 +58,14 @@ type ProblemAction struct {
 // TraceID espelham o Problem, permitindo mapeamento direto e sem perda de
 // contexto seguro.
 type AppError struct {
-	Code      int              // HTTP status sugerido
-	Message   string           // Mensagem de erro (não expõe causa raiz)
-	Err       error            // Causa interna (apenas para logs servidor)
-	ErrorCode string           // Código de erro estável para o cliente (ex: "DUPLICATE_BEER")
-	Detail    any              // Payload extra seguro (legado; preferir Details)
-	Details   []ProblemDetail  // Erros granulares tipados (ex: validação)
-	Action    *ProblemAction   // Sugestão de fluxo para a UX
-	TraceID   string           // ID de correlação (RequestIDMiddleware)
+	Code      int             // HTTP status sugerido
+	Message   string          // Mensagem de erro (não expõe causa raiz)
+	Err       error           // Causa interna (apenas para logs servidor)
+	ErrorCode string          // Código de erro estável para o cliente (ex: "DUPLICATE_BEER")
+	Detail    any             // Payload extra seguro (legado; preferir Details)
+	Details   []ProblemDetail // Erros granulares tipados (ex: validação)
+	Action    *ProblemAction  // Sugestão de fluxo para a UX
+	TraceID   string          // ID de correlação (RequestIDMiddleware)
 }
 
 func (e *AppError) Error() string {

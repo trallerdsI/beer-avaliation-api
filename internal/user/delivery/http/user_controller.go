@@ -68,6 +68,7 @@ func validationDetails(err error) []appErrors.ProblemDetail {
 	}
 	return details
 }
+
 // sendValidationProblem envia um Problem RFC 7807 de validação (code
 // "validation_failed") com detalhes granulares tipados e trace_id.
 func (c *UserController) sendValidationProblem(w http.ResponseWriter, r *http.Request, err error) {
@@ -80,7 +81,6 @@ func (c *UserController) sendValidationProblem(w http.ResponseWriter, r *http.Re
 	}
 	response.SendProblem(w, p)
 }
-
 
 func fieldLabel(field string) string {
 	labels := map[string]string{

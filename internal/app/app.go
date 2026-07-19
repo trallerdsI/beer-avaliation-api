@@ -197,6 +197,7 @@ func isServerlessRuntime() bool {
 //     que quebram sob o transaction pooling do PgBouncer (erro "prepared
 //     statement already exists / portal"). Com o protocolo simples o driver
 //     manda a query direta e o pooler funciona.
+//
 // Além disso, se o host resolver APENAS para IPv6 (caso do host direto
 // db.<ref>.supabase.co no Vercel, que não roteia IPv6 -> "cannot assign
 // requested address"), reescreve o host para o pooler IPv4 (aws-0-*.pooler.

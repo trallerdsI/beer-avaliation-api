@@ -106,7 +106,7 @@ type Beer struct {
 	Carbonation Carbonation `json:"carbonation" validate:"omitempty,carbonation"`
 	Finish      Finish      `json:"finish" validate:"omitempty,finish"`
 	Comments    []Comment   `json:"comments"`
-	Media       []MediaItem `json:"media"` // mídias anexadas (RFC 7578 upload server-side)
+	Media       []MediaItem `json:"media"`     // mídias anexadas (RFC 7578 upload server-side)
 	CreatedBy   string      `json:"createdBy"` // user_id do criador (AuthZ: só criador ou admin editam)
 	CreatedAt   string      `json:"createdAt"` // timestamp ISO8601 de criação da cerveja
 	UpdatedAt   string      `json:"updatedAt"` // timestamp ISO8601 da última alteração (base do ETag - RFC 9111)
