@@ -132,6 +132,7 @@ func InitDBFromEnv() (*sql.DB, error) {
 	if dsn == "" {
 		return nil, fmt.Errorf("database connection string is not configured")
 	}
+	slog.Info("resolvendo connection string para o banco de dados", "conn", maskPassword(dsn))
 	return InitDB(dsn)
 }
 
@@ -146,7 +147,7 @@ func InitDB(dsn string) (*sql.DB, error) {
 	db.SetConnMaxLifetime(5 * time.Minute)
 
 	if isServerlessRuntime() {
-		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		if err = db.PingContext(ctx); err != nil {
 			db.Close()
