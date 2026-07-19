@@ -6,7 +6,6 @@ import (
 	"embed"
 	"fmt"
 	"log/slog"
-	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -182,32 +181,35 @@ func isServerlessRuntime() bool {
 	return os.Getenv("VERCEL") != "" || os.Getenv("NOW_REGION") != "" || os.Getenv("AWS_LAMBDA_FUNCTION_NAME") != ""
 }
 
-// forceIPv4 reescreve o host do DSN para o seu endereço IPv4 literal quando o
-// host resolver para um IPv6 não roteável (caso conhecido do Supabase no Vercel:
-// o DNS devolve AAAA com endereço que o Go não consegue usar, e o lib/pq não faz
-// fallback para A). Resolver para A e injetar o IP no DSN força o dial TCP/IPv4,
-// contornando o "cannot assign requested address". Sem hardcode de URL: o host
-// vem da variável de ambiente; apenas substituímos pelo IP resolvido.
-func forceIPv4(dsn string) string {
+// forceIPv4 reescreve o host do DSN para o seu endereço IPv4 literal... REMOVIDO:
+// o host direto do Supabase (db.<ref>.supabase.co) NÃO tem registo A nenhum,
+// apenas AAAA (IPv6). Por isso a resolução para IPv4 falha sempre. A única via
+// IPv4 no Vercel é o pooler (aws-0-*.pooler.supabase.com), que já vem nas vars
+// POSTGRES_URL / POSTGRES_URL_NON_POOLING. Mantemos esse host e forçamos o
+// protocolo simples do lib/pq para funcionar através do PgBouncer.
+
+// normalizeSupabaseDSN normaliza uma connection string do Supabase para o
+// Vercel: mantém o host ORIGINAL (que já é o pooler IPv4-reachável) e garante
+// os parâmetros necessários ao lib/pq:
+//   - sslmode=require (obrigatório no Supabase)
+//   - default_query_exec_mode=simple_protocol: desativa prepared statements,
+//     que quebram sob o transaction pooling do PgBouncer (erro "prepared
+//     statement already exists / portal"). Com o protocolo simples o driver
+//     manda a query direta e o pooler funciona.
+// Não reconstrói a string com POSTGRES_HOST (host direto v6) — isso era a causa
+// do "cannot assign requested address" no Vercel.
+func normalizeSupabaseDSN(dsn string) string {
 	u, err := url.Parse(dsn)
 	if err != nil {
 		return dsn
 	}
-	host := u.Hostname()
-	// Já é IP (v4 ou v6 literal) ou não é supabase: não tocamos.
-	if net.ParseIP(host) != nil || !strings.Contains(host, "supabase.co") {
-		return dsn
-	}
-	ips, err := net.DefaultResolver.LookupIP(context.Background(), "ip4", host)
-	if err != nil || len(ips) == 0 {
-		slog.Warn("não foi possível resolver IPv4 para o host; mantendo hostname", "host", host, "err", err)
-		return dsn
-	}
-	port := u.Port()
-	if port == "" {
-		port = "5432"
-	}
-	u.Host = net.JoinHostPort(ips[0].String(), port)
+	q := u.Query()
+	q.Set("sslmode", "require")
+	q.Set("default_query_exec_mode", "simple_protocol")
+	// Remove parâmetros incompatíveis com o pooler em protocolo simples.
+	q.Del("pgbouncer")
+	q.Del("supa")
+	u.RawQuery = q.Encode()
 	return u.String()
 }
 
@@ -222,37 +224,28 @@ func maskPassword(connString string) string {
 	return "***masked***"
 }
 
-func forceSupabaseSSL(connString string) string {
-	if strings.Contains(connString, "supabase.co") && !strings.Contains(connString, "sslmode=") {
-		sep := "?"
-		if strings.Contains(connString, "?") {
-			sep = "&"
-		}
-		return connString + sep + "sslmode=require"
-	}
-	return connString
-}
-
 func resolveDBConnString() string {
 	for _, key := range []string{"DB_CONN_STRING", "DBConnString"} {
 		if v := os.Getenv(key); v != "" {
-			return forceSupabaseSSL(v)
+			return normalizeSupabaseDSN(v)
 		}
 		if v := viper.GetString(key); v != "" {
-			return forceSupabaseSSL(v)
+			return normalizeSupabaseDSN(v)
 		}
 	}
 
-	// NOTA: POSTGRES_URL_NON_POOLING vem PRIMEIRO. O POSTGRES_URL aponta para o
-	// pooler (porta 6543, pgbouncer=true) que quebra prepared statements do
-	// lib/pq; o sufixo "_NON_POOLING" é enganoso pois ainda aponta ao pooler,
-	// mas é a única var que expõe a porta 5432 direta da Supabase.
+	// NOTA: POSTGRES_URL_NON_POOLING vem PRIMEIRO. Tanto POSTGRES_URL quanto
+	// NON_POOLING apontam ao pooler Supabase (aws-0-*.pooler.supabase.com), que
+	// é o ÚNICO host que resolve para IPv4 no Vercel. O host direto
+	// db.<ref>.supabase.co só tem AAAA (IPv6) e o Vercel não roteia -> "cannot
+	// assign requested address". Por isso NUNCA reconstruímos a string com
+	// POSTGRES_HOST (que é o host v6); mantemos o host do pooler intacto.
 	for _, key := range []string{"POSTGRES_URL_NON_POOLING", "POSTGRES_URL"} {
 		if v := os.Getenv(key); v != "" {
-			return rebuildSupabaseURL(v)
+			return normalizeSupabaseDSN(v)
 		}
 		if v := viper.GetString(key); v != "" {
-			return rebuildSupabaseURL(v)
+			return normalizeSupabaseDSN(v)
 		}
 	}
 
@@ -266,24 +259,8 @@ func resolveDBConnString() string {
 	if user == "" || name == "" {
 		return ""
 	}
-	return forceIPv4(fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=%s",
-		url.QueryEscape(user), url.QueryEscape(pass), host, port, name, sslmode))
-}
-
-func rebuildSupabaseURL(raw string) string {
-	host := firstNonEmpty(os.Getenv("DB_HOST"), viper.GetString("DB_HOST"), os.Getenv("POSTGRES_HOST"), "")
-	user := firstNonEmpty(os.Getenv("DB_USER"), viper.GetString("DB_USER"), os.Getenv("POSTGRES_USER"), "")
-	pass := firstNonEmpty(os.Getenv("DB_PASSWORD"), viper.GetString("DB_PASSWORD"), os.Getenv("POSTGRES_PASSWORD"), "")
-	port := firstNonEmpty(os.Getenv("DB_PORT"), viper.GetString("DB_PORT"), "5432")
-	name := firstNonEmpty(os.Getenv("DB_NAME"), viper.GetString("DB_NAME"), os.Getenv("POSTGRES_DATABASE"), "postgres")
-	sslmode := firstNonEmpty(os.Getenv("DB_SSL_MODE"), viper.GetString("DB_SSL_MODE"), "require")
-
-	if host == "" || user == "" || pass == "" {
-		return forceIPv4(forceSupabaseSSL(raw))
-	}
-
-	return forceIPv4(fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=%s",
-		url.QueryEscape(user), url.QueryEscape(pass), host, port, name, sslmode))
+	return fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=%s",
+		url.QueryEscape(user), url.QueryEscape(pass), host, port, name, sslmode)
 }
 
 func firstNonEmpty(vals ...string) string {

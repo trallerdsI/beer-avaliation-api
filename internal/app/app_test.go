@@ -13,7 +13,7 @@ func TestResolveDBConnStringPrefersExplicitEnvVars(t *testing.T) {
 	t.Setenv("DB_CONN_STRING", "postgres://local")
 	t.Setenv("DBConnString", "postgres://vercel")
 
-	if got := resolveDBConnString(); got != "postgres://local" {
+	if got := resolveDBConnString(); got != "postgres://local?default_query_exec_mode=simple_protocol&sslmode=require" {
 		t.Fatalf("expected DB_CONN_STRING to be preferred, got %q", got)
 	}
 }
@@ -22,7 +22,7 @@ func TestResolveDBConnStringFallsBackToVercelStyleEnv(t *testing.T) {
 	os.Unsetenv("DB_CONN_STRING")
 	t.Setenv("DBConnString", "postgres://vercel")
 
-	if got := resolveDBConnString(); got != "postgres://vercel" {
+	if got := resolveDBConnString(); got != "postgres://vercel?default_query_exec_mode=simple_protocol&sslmode=require" {
 		t.Fatalf("expected DBConnString fallback, got %q", got)
 	}
 }

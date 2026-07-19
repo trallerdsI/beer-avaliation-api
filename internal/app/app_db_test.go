@@ -32,7 +32,7 @@ func TestResolveDBConnStringPrefersFull(t *testing.T) {
 	t.Setenv("DB_CONN_STRING", "postgres://full@host:5432/db?sslmode=require")
 	t.Setenv("DB_USER", "ignored")
 
-	if got := resolveDBConnString(); got != "postgres://full@host:5432/db?sslmode=require" {
+	if got := resolveDBConnString(); got != "postgres://full@host:5432/db?default_query_exec_mode=simple_protocol&sslmode=require" {
 		t.Fatalf("expected full string preference, got %q", got)
 	}
 }
