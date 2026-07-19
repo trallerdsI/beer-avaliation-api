@@ -6,6 +6,7 @@ import (
 	"embed"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -189,20 +190,36 @@ func isServerlessRuntime() bool {
 // protocolo simples do lib/pq para funcionar através do PgBouncer.
 
 // normalizeSupabaseDSN normaliza uma connection string do Supabase para o
-// Vercel: mantém o host ORIGINAL (que já é o pooler IPv4-reachável) e garante
-// os parâmetros necessários ao lib/pq:
+// Vercel: garante os parâmetros necessários ao lib/pq:
 //   - sslmode=require (obrigatório no Supabase)
 //   - default_query_exec_mode=simple_protocol: desativa prepared statements,
 //     que quebram sob o transaction pooling do PgBouncer (erro "prepared
 //     statement already exists / portal"). Com o protocolo simples o driver
 //     manda a query direta e o pooler funciona.
-// Não reconstrói a string com POSTGRES_HOST (host direto v6) — isso era a causa
-// do "cannot assign requested address" no Vercel.
+// Além disso, se o host resolver APENAS para IPv6 (caso do host direto
+// db.<ref>.supabase.co no Vercel, que não roteia IPv6 -> "cannot assign
+// requested address"), reescreve o host para o pooler IPv4 (aws-0-*.pooler.
+// supabase.com), que é o único alvo IPv4-reachável. Isto torna o código imune
+// à configuração de ambiente: funciona quer a Vercel passe o host direto ou o
+// pooler.
 func normalizeSupabaseDSN(dsn string) string {
 	u, err := url.Parse(dsn)
 	if err != nil {
 		return dsn
 	}
+	host := u.Hostname()
+	if strings.Contains(host, "supabase.co") && !hostIsIPv4Reachable(host) {
+		if pooler := poolerHostFor(host); pooler != "" {
+			port := u.Port()
+			if port == "" {
+				port = "5432"
+			}
+			u.Host = net.JoinHostPort(pooler, port)
+			slog.Warn("host supabase resolve só para IPv6 no Vercel; a reescrever para o pooler IPv4",
+				"original", maskPassword(dsn), "pooler", pooler)
+		}
+	}
+
 	q := u.Query()
 	q.Set("sslmode", "require")
 	q.Set("default_query_exec_mode", "simple_protocol")
@@ -211,6 +228,43 @@ func normalizeSupabaseDSN(dsn string) string {
 	q.Del("supa")
 	u.RawQuery = q.Encode()
 	return u.String()
+}
+
+// hostIsIPv4Reachable devolve true se o host resolver para pelo menos um
+// registo A (IPv4). No Vercel o host direto do Supabase só tem AAAA, logo isto
+// devolve false e aciona a reescrita para o pooler.
+func hostIsIPv4Reachable(host string) bool {
+	if ip := net.ParseIP(host); ip != nil {
+		return ip.To4() != nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	ips, err := net.DefaultResolver.LookupIP(ctx, "ip4", host)
+	if err != nil || len(ips) == 0 {
+		return false
+	}
+	return true
+}
+
+// poolerHostFor deriva o host do pooler Supabase IPv4 a partir de um host
+// direto db.<ref>.supabase.co. O pooler segue o padrão
+// aws-<region>-<az>.pooler.supabase.co; como não conhecemos a região do host
+// direto, usamos a região explícita em POSTGRES_URL / POSTGRES_URL_NON_POOLING
+// quando disponível; em último caso caímos no padrão us-east-1.
+func poolerHostFor(directHost string) string {
+	// Tenta extrair a região de uma URL de pooler já presente no ambiente.
+	for _, key := range []string{"POSTGRES_URL_NON_POOLING", "POSTGRES_URL", "POSTGRES_PRISMA_URL"} {
+		if raw := os.Getenv(key); raw != "" {
+			if u, err := url.Parse(raw); err == nil {
+				h := u.Hostname()
+				if strings.Contains(h, "pooler.supabase.co") {
+					return h
+				}
+			}
+		}
+	}
+	// Fallback: padrão us-east-1 (região do projeto corrente).
+	return "aws-0-us-east-1.pooler.supabase.com"
 }
 
 func maskPassword(connString string) string {
@@ -259,8 +313,8 @@ func resolveDBConnString() string {
 	if user == "" || name == "" {
 		return ""
 	}
-	return fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=%s",
-		url.QueryEscape(user), url.QueryEscape(pass), host, port, name, sslmode)
+	return normalizeSupabaseDSN(fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=%s",
+		url.QueryEscape(user), url.QueryEscape(pass), host, port, name, sslmode))
 }
 
 func firstNonEmpty(vals ...string) string {
