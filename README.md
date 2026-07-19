@@ -219,6 +219,28 @@ Variáveis adicionais:
 - `CORS_ALLOWED_ORIGINS` — origens permitidas (ex.: `https://app.vercel.app`)
 - `CORS_ALLOWED_REGEX` — regex opcional para subdomínios
 - `SUPABASE_STORAGE_BUCKET` — bucket de imagens (ex.: `beer-media`)
+- `OAUTH_GOOGLE_AUDIENCE` — client ID da app Flutter no Google (valor esperado em `aud` do id_token). Defina para ativar login Google.
+- `OAUTH_GOOGLE_JWKS_URL` — **opcional**; default `https://www.googleapis.com/oauth2/v3/certs`.
+- `OAUTH_APPLE_AUDIENCE` — Service ID da app no Apple Developer. Defina para ativar login Apple.
+- `OAUTH_APPLE_JWKS_URL` — **opcional**; default `https://appleid.apple.com/auth/keys`.
+
+##### Login social (OAuth2 / OIDC — RFC 6749)
+
+O endpoint `POST /api/v1/users/oauth` recebe `{ provider, id_token }`,
+onde `id_token` é o JWT RS256 emitido pelo Google/Apple após o fluxo
+PKCE no cliente (Flutter). A API:
+
+1. Valida `iss`, `aud` (== `*_AUDIENCE`), `exp` e `alg=RS256` do token
+   contra o JWKS do IdP (cache em memória que respeita `Cache-Control:
+   max-age`, suportando rotação de chaves sem rede por login).
+2. Faz **upsert** do utilizador em `beerUsers` ligado por
+   `(provider, external_sub)` — contas sociais não têm `password`.
+3. Devolve o **nosso** JWT HS256 de sessão (`JWT_SECRET`). O middleware
+   `Auth` existente não muda: o resto da API aceita apenas esse token.
+
+Sem nenhuma `*_AUDIENCE` definida, o endpoint responde `400`
+(`unsupported provider`). Nenhum segredo do IdP é necessário no backend —
+apenas os client IDs (públicos) e os endpoints JWKS públicos por issuer.
 
 #### 3. Deploy
 
