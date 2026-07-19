@@ -2,10 +2,10 @@ package middleware
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"log/slog"
 	"net/http"
-
-	"github.com/google/uuid"
 )
 
 const (
@@ -13,9 +13,19 @@ const (
 	loggerKey    contextKey = "logger"
 )
 
+// newRequestID gera um ID de correlação (16 bytes aleatórios) em stdlib,
+// sem depender de github.com/google/uuid (redundante com pkg/uuid).
+func newRequestID() string {
+	var b [16]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "rid-fallback"
+	}
+	return hex.EncodeToString(b[:])
+}
+
 func RequestIDMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		requestID := uuid.New().String()
+		requestID := newRequestID()
 		ctx := context.WithValue(r.Context(), requestIDKey, requestID)
 		// Anexa um logger com o request_id ao contexto para uso nos handlers.
 		logger := slog.With(slog.Default(), "request_id", requestID)
