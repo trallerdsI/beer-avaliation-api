@@ -74,8 +74,6 @@ func (c *BeerController) GetHomeFeed(w http.ResponseWriter, r *http.Request) {
 	setPaginationLinks(w, r, page, pageSize, total, "/api/v1/feed")
 
 	w.Header().Set("Content-Type", "application/json")
-	// que o ETag corresponde exatamente ao que é enviado).
-	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(body)
 }

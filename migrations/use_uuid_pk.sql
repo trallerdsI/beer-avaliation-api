@@ -30,10 +30,11 @@ ALTER TABLE comments
   ADD CONSTRAINT comments_user_id_fkey FOREIGN KEY (user_id)
   REFERENCES beerUsers(id) ON DELETE CASCADE;
 
--- Índice BRIN sobre created_at para ordenação cronológica eficiente de feeds
--- (UUIDv7 já ordena por tempo no índice btree da PK; BRIN cobre created_at).
-CREATE INDEX IF NOT EXISTS idx_beers_created_brin ON beers USING brin (created);
-CREATE INDEX IF NOT EXISTS idx_comments_created_brin ON comments USING brin (created);
+-- Índice BRIN sobre created_at (e não 'created', que é coluna legada não lida
+-- pelo repositório) para ordenação cronológica eficiente de feeds. A tabela
+-- comments separada é removida por drop_legacy_comments_table.sql, logo NÃO se
+-- cria índice nela (criaria erro e abortaria migrateDB).
+CREATE INDEX IF NOT EXISTS idx_beers_created_brin ON beers USING brin (created_at);
 
 -- ROLLBACK (Gap C): reverter para SERIAL caso necessário.
 -- ALTER TABLE comments DROP CONSTRAINT IF EXISTS comments_beer_id_fkey;

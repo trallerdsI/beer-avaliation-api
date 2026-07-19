@@ -261,7 +261,6 @@ func (r *PostgresBeerRepository) GetByID(ctx context.Context, id string) (model.
 	beer.Comments = unmarshalComments(commentsJSON)
 	beer.Media = unmarshalMedia(mediaJSON)
 	setRatingAggregates(&beer)
-	setRatingAggregates(&beer)
 	return beer, nil
 }
 
