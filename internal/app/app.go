@@ -32,7 +32,7 @@ import (
 	"beer-review-app/pkg/storage"
 )
 
-//go:embed migrations/*.sql
+//go:embed all:migrations/*.sql
 var embeddedMigrations embed.FS
 
 //go:embed openapi.yaml
@@ -231,7 +231,6 @@ func isServerlessRuntime() bool {
 // resiliente a .env ausente no deploy ou a hosts distintos (docker "postgres"
 // vs local "localhost") — Defense-in-Depth (Pilar 4).
 func maskPassword(connString string) string {
-	// Mascara a senha na connection string para não vazar credenciais nos logs.
 	if i := strings.Index(connString, "://"); i >= 0 {
 		prefix := connString[:i+3]
 		rest := connString[i+3:]
@@ -240,6 +239,17 @@ func maskPassword(connString string) string {
 		}
 	}
 	return "***masked***"
+}
+
+func forceSupabaseSSL(connString string) string {
+	if strings.Contains(connString, "supabase.co") && !strings.Contains(connString, "sslmode=") {
+		sep := "?"
+		if strings.Contains(connString, "?") {
+			sep = "&"
+		}
+		return connString + sep + "sslmode=require"
+	}
+	return connString
 }
 
 func resolveDBConnString() string {
