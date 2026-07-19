@@ -31,6 +31,11 @@ paths:
             type: integer
             minimum: 1
             default: 10
+        - in: query
+          name: fields
+          description: Comma-separated field projection (e.g. id,name,imageUrl)
+          schema:
+            type: string
       responses:
         '200':
           description: Paginated list of beers
@@ -43,6 +48,15 @@ paths:
               description: Cache-Control curto (RFC 9111)
               schema:
                 type: string
+            Link:
+              description: >
+                Web Linking (RFC 8288) para paginação. Contém rel="first",
+                rel="prev", rel="next", rel="last" com a URL absoluta da
+                coleção e os parâmetros de página corretos. Ausente quando não
+                aplicável (ex.: sem página seguinte).
+              schema:
+                type: string
+                example: '<https://beer-avaliation-api.vercel.app/api/v1/beers?page=2&pageSize=10>; rel="next", <https://beer-avaliation-api.vercel.app/api/v1/beers?page=5&pageSize=10>; rel="last"'
           content:
             application/json:
               schema:
@@ -428,6 +442,13 @@ paths:
               description: Cache-Control curto (RFC 9111)
               schema:
                 type: string
+            Link:
+              description: >
+                Web Linking (RFC 8288) para paginação do feed (rel="first",
+                rel="prev", rel="next", rel="last"). Mesma semântica de
+                /api/v1/beers.
+              schema:
+                type: string
           content:
             application/json:
               schema:
@@ -456,6 +477,25 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
+  headers:
+    Link:
+      description: >
+        Web Linking (RFC 8288). Em coleções paginadas (/api/v1/beers,
+        /api/v1/feed) contém rel="first", rel="prev", rel="next", rel="last".
+      schema:
+        type: string
+    ETag:
+      description: ETag forte (RFC 9111) para validação de cache por versão/conteúdo.
+      schema:
+        type: string
+  parameters:
+    corsOrigin:
+      name: Origin
+      in: header
+      required: false
+      description: Origem da requisição (CORS). Validada contra CORS_ALLOWED_ORIGINS / CORS_ALLOWED_REGEX.
+      schema:
+        type: string
   schemas:
     Beer:
       type: object
