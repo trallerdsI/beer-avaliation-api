@@ -5,7 +5,7 @@ CREATE TABLE IF NOT EXISTS comments (
     user_id INT NOT NULL,
     text TEXT NOT NULL,
     likes INT DEFAULT 0,
-    liked_by TEXT[],
+    liked_by TEXT[], -- Array of user IDs who liked the comment
     positive BOOLEAN NOT NULL,
     created TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (beer_id) REFERENCES beers(id) ON DELETE CASCADE,
