@@ -126,10 +126,11 @@ func getIntParam(query url.Values, key string, defaultValue int) int {
 
 func handleError(w http.ResponseWriter, ctx context.Context, logger *slog.Logger, err error, message string, statusCode int) {
 	logger.ErrorContext(ctx, message, "err", err)
-	// Segurança (OWASP A05): nunca expõe a causa raiz (ex: erro de DB) ao
-	// cliente — apenas regista no log do servidor. O cliente recebe um Problem
-	// RFC 7807 genérico, sem dados internos nem PII.
-	p := response.NewProblem(statusCode, appErrors.HTTPStatusSlug(statusCode), message)
+	status := statusCode
+	if appErr := (*appErrors.AppError)(nil); stdErrors.As(err, &appErr) {
+		status = appErr.Code
+	}
+	p := response.NewProblem(status, appErrors.HTTPStatusSlug(status), message)
 	if trace := middleware.TraceIDFromContext(ctx); trace != "" {
 		p.TraceID = trace
 	}
@@ -250,7 +251,11 @@ func (c *BeerController) GetAllBeers(w http.ResponseWriter, r *http.Request) {
 
 	beers, total, err := c.usecase.GetPaginated(r.Context(), page, pageSize)
 	if err != nil {
-		handleError(w, r.Context(), c.logger, err, "Failed to retrieve beers", http.StatusInternalServerError)
+		status := http.StatusInternalServerError
+		if appErr := (*appErrors.AppError)(nil); stdErrors.As(err, &appErr) {
+			status = appErr.Code
+		}
+		handleError(w, r.Context(), c.logger, err, "Failed to retrieve beers", status)
 		return
 	}
 

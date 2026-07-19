@@ -187,6 +187,7 @@ func InitDB(dbConnString string) (*sql.DB, error) {
 		defer cancel()
 		if err = db.PingContext(ctx); err != nil {
 			db.Close()
+			slog.Error("falha no ping do banco de dados (serverless)", "err", err, "conn_string", maskPassword(dbConnString))
 			return nil, fmt.Errorf("banco de dados indisponível: %w", err)
 		}
 	} else {
@@ -197,12 +198,13 @@ func InitDB(dbConnString string) (*sql.DB, error) {
 				break
 			}
 			retries--
-			slog.Warn("tentando conectar ao banco de dados", "retries_left", retries)
+			slog.Warn("tentando conectar ao banco de dados", "retries_left", retries, "err", err)
 			time.Sleep(2 * time.Second)
 		}
 
 		if retries == 0 {
 			db.Close()
+			slog.Error("banco de dados indisponível após várias tentativas", "conn_string", maskPassword(dbConnString))
 			return nil, fmt.Errorf("banco de dados não está disponível após várias tentativas")
 		}
 	}
@@ -228,8 +230,20 @@ func isServerlessRuntime() bool {
 // DB_PASSWORD, DB_HOST, DB_PORT, DB_NAME, DB_SSLMODE). Isto torna o arranque
 // resiliente a .env ausente no deploy ou a hosts distintos (docker "postgres"
 // vs local "localhost") — Defense-in-Depth (Pilar 4).
+func maskPassword(connString string) string {
+	// Mascara a senha na connection string para não vazar credenciais nos logs.
+	if i := strings.Index(connString, "://"); i >= 0 {
+		prefix := connString[:i+3]
+		rest := connString[i+3:]
+		if j := strings.Index(rest, "@"); j >= 0 {
+			return prefix + "****@" + rest[j+1:]
+		}
+	}
+	return "***masked***"
+}
+
 func resolveDBConnString() string {
-	for _, key := range []string{"DB_CONN_STRING", "DBConnString"} {
+	for _, key := range []string{"DB_CONN_STRING", "DBConnString", "POSTGRES_URL_NON_POOLING"} {
 		if v := os.Getenv(key); v != "" {
 			return v
 		}
@@ -238,14 +252,12 @@ func resolveDBConnString() string {
 		}
 	}
 
-	// Sem defaults para user/name: se ausentes, não podemos compor uma
-	// string válida e devolvemos "" (o servidor então usa o fallback offline).
-	user := firstNonEmpty(os.Getenv("DB_USER"), viper.GetString("DB_USER"))
-	pass := firstNonEmpty(os.Getenv("DB_PASSWORD"), viper.GetString("DB_PASSWORD"))
-	host := firstNonEmpty(os.Getenv("DB_HOST"), viper.GetString("DB_HOST"), "localhost")
+	user := firstNonEmpty(os.Getenv("DB_USER"), viper.GetString("DB_USER"), os.Getenv("POSTGRES_USER"))
+	pass := firstNonEmpty(os.Getenv("DB_PASSWORD"), viper.GetString("DB_PASSWORD"), os.Getenv("POSTGRES_PASSWORD"))
+	host := firstNonEmpty(os.Getenv("DB_HOST"), viper.GetString("DB_HOST"), os.Getenv("POSTGRES_HOST"), "localhost")
 	port := firstNonEmpty(os.Getenv("DB_PORT"), viper.GetString("DB_PORT"), "5432")
-	name := firstNonEmpty(os.Getenv("DB_NAME"), viper.GetString("DB_NAME"))
-	sslmode := firstNonEmpty(os.Getenv("DB_SSLMODE"), viper.GetString("DB_SSLMODE"), "disable")
+	name := firstNonEmpty(os.Getenv("DB_NAME"), viper.GetString("DB_NAME"), os.Getenv("POSTGRES_DATABASE"), "postgres")
+	sslmode := firstNonEmpty(os.Getenv("DB_SSLMODE"), viper.GetString("DB_SSLMODE"), "require")
 
 	if user == "" || name == "" {
 		return ""
