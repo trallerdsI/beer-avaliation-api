@@ -348,6 +348,7 @@ func maxIdleConns() int {
 
 func migrateDB(db *sql.DB) error {
 	sqlFiles := []string{
+		"migrations/000_reset.sql",
 		"migrations/create_users_table.sql",
 		"migrations/add_role_to_users.sql",
 		"migrations/create_beers_table.sql",
