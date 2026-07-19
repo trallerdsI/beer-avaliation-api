@@ -72,7 +72,9 @@ A API segue estes RFCs (9 de 12 implementados):
 - **Banco como fonte de verdade:** A API recria o esquema a cada arranque
   (`migrations/000_reset.sql` faz `DROP TABLE IF EXISTS ... CASCADE` antes de
   recriar). Migrações destrutivas são aceitáveis — não há front dependiente nem
-  dados definitivos.
+  dados definitivos. Controlado por `DB_RESET_SCHEMA` (default `true`):
+  defina `false`/`0`/`no` na Vercel quando o banco tiver dados reais para
+  desativar o reset destrutivo e aplicar apenas migrations incrementais.
 - **Migrações embutidas (`go:embed`):** os ficheiros SQL vivem em
   `internal/app/migrations/` e são embutidos no binário (necessário na Vercel,
   onde o filesystem do lambda não tem a pasta). O `vercel.json` builda apenas

@@ -346,9 +346,29 @@ func maxIdleConns() int {
 	return 5
 }
 
+// resetSchemaEnabled devolve true se a API deve recriar o esquema do zero a
+// cada arranque (DROP + CREATE). Controlado por DB_RESET_SCHEMA (default true).
+// Enquanto o banco for descartável (sem front dependiente nem dados definitivos)
+// isto mantém o esquema sempre sincronizado com as migrations. Quando o banco
+// passar a ter dados reais, basta definir DB_RESET_SCHEMA=false na Vercel para
+// desativar o reset destrutivo e passar a aplicar apenas as migrations
+// incrementais (idempotentes com IF NOT EXISTS / IF EXISTS).
+func resetSchemaEnabled() bool {
+	v := strings.ToLower(os.Getenv("DB_RESET_SCHEMA"))
+	return v != "false" && v != "0" && v != "no"
+}
+
 func migrateDB(db *sql.DB) error {
-	sqlFiles := []string{
-		"migrations/000_reset.sql",
+	// Reset destrutivo em primeiro lugar, mas apenas se ativado.
+	sqlFiles := make([]string, 0, 13)
+	if resetSchemaEnabled() {
+		sqlFiles = append(sqlFiles, "migrations/000_reset.sql")
+		slog.Info("DB_RESET_SCHEMA=true: esquema será recriado do zero (banco descartável)")
+	} else {
+		slog.Warn("DB_RESET_SCHEMA=false: reset destrutivo desativado; a aplicar apenas migrations incrementais (não destrutivas)")
+	}
+
+	sqlFiles = append(sqlFiles,
 		"migrations/create_users_table.sql",
 		"migrations/add_role_to_users.sql",
 		"migrations/create_beers_table.sql",
@@ -361,7 +381,7 @@ func migrateDB(db *sql.DB) error {
 		"migrations/extend_media.sql",
 		"migrations/drop_legacy_comments_table.sql",
 		"migrations/enable_rls.sql",
-	}
+	)
 
 	for _, file := range sqlFiles {
 		err := executeSQLFile(db, file)

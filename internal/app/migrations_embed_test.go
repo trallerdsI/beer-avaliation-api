@@ -38,3 +38,30 @@ func TestEmbeddedMigrationsPresent(t *testing.T) {
 		}
 	}
 }
+
+// TestResetSchemaEnabled é table-driven e valida a flag DB_RESET_SCHEMA que
+// controla o reset destrutivo do esquema (banco como fonte de verdade).
+// Default true; false/0/no desativam o reset quando o banco tem dados reais.
+func TestResetSchemaEnabled(t *testing.T) {
+	tests := []struct {
+		name string
+		env  string // valor de DB_RESET_SCHEMA (vazio = default)
+		want bool
+	}{
+		{"default (vazio)", "", true},
+		{"true", "true", true},
+		{"1", "1", true},
+		{"false", "false", false},
+		{"0", "0", false},
+		{"no", "no", false},
+		{"FALSE maiusculo", "FALSE", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("DB_RESET_SCHEMA", tt.env)
+			if got := resetSchemaEnabled(); got != tt.want {
+				t.Fatalf("resetSchemaEnabled() com DB_RESET_SCHEMA=%q = %v, want %v", tt.env, got, tt.want)
+			}
+		})
+	}
+}
