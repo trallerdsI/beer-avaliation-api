@@ -243,7 +243,7 @@ func maskPassword(connString string) string {
 }
 
 func resolveDBConnString() string {
-	for _, key := range []string{"DB_CONN_STRING", "DBConnString", "POSTGRES_URL_NON_POOLING", "POSTGRES_URL"} {
+	for _, key := range []string{"DB_CONN_STRING", "DBConnString", "POSTGRES_URL", "POSTGRES_URL_NON_POOLING"} {
 		if v := os.Getenv(key); v != "" {
 			return v
 		}
