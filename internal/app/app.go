@@ -493,11 +493,18 @@ func openapiSpecHandler() http.HandlerFunc {
 }
 
 func InitializeVercelHandler() http.Handler {
-	logger := slog.Default()
+	// No Vercel o handler default de slog pode não capturar Info/Warn
+	// conforme esperado; forçamos JSON para stdout com nível Debug para que o
+	// arranque (resolução de DSN, erro de ping) seja sempre visível nos logs.
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	slog.SetDefault(logger)
 
 	db, err := InitDBFromEnv()
 	if err != nil {
-		slog.Warn("vercel bootstrap warning; rotas de dados retornarão 503", "err", err)
+		// Error (e nao Warn) para garantir visibilidade no Vercel.
+		slog.Error("vercel bootstrap: banco indisponível; rotas de dados retornarão 503", "err", err)
+	} else {
+		slog.Info("vercel bootstrap: banco inicializado com sucesso")
 	}
 
 	return BuildRouterWithDBErr(db, err, logger)
