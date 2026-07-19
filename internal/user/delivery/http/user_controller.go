@@ -286,6 +286,12 @@ func (c *UserController) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Invariante de Poluição / Escalonamento de Privilégio: o id vem do path e
+	// o role é imutável pelo próprio utilizador (apenas admin via seed). O
+	// cliente NUNCA pode promover-se a admin ou alterar o dono do recurso.
+	user.ID = ""
+	user.Role = ""
+
 	if err := c.usecase.UpdateProfile(r.Context(), id, user); err != nil {
 		c.respondError(w, r, err, "Failed to update profile", http.StatusInternalServerError)
 		return

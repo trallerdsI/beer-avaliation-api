@@ -309,6 +309,13 @@ func (c *BeerController) CreateBeer(w http.ResponseWriter, r *http.Request) {
 	}
 
 	beer.Comments = make([]model.Comment, 0)
+	// Invariante de Poluição: campos protegidos NUNCA vêm do cliente. O
+	// servidor é a única fonte de id/autor/timestamps (o usecase regera a
+	// partir do token de sessão). Limpar previne forja de createdBy/id.
+	beer.ID = ""
+	beer.CreatedBy = ""
+	beer.CreatedAt = ""
+	beer.UpdatedAt = ""
 	beer.Name = sanitizer.Sanitize(beer.Name)
 	beer.Description = sanitizer.Sanitize(beer.Description)
 
@@ -354,7 +361,11 @@ func (c *BeerController) UpdateBeer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	beer.ID = id
+	beer.ID = id // vem do path, nunca do body
+	// Invariante de Poluição: o autor/timestamps de criação são imutáveis e
+	// nunca vêm do cliente num PUT — mantêm-se os originais da BD.
+	beer.CreatedBy = ""
+	beer.CreatedAt = ""
 	beer.Name = sanitizer.Sanitize(beer.Name)
 	beer.Description = sanitizer.Sanitize(beer.Description)
 

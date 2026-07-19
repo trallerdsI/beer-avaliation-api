@@ -302,6 +302,37 @@ func TestUserUpdateProfileInvalidBody(t *testing.T) {
 	}
 }
 
+// Invariante de Poluição / Escalonamento de Privilégio: o cliente não pode
+// promover-se a admin nem forjar o id no PUT /users/{id}.
+func TestUserUpdateProfile_RejectsRoleForge(t *testing.T) {
+	mu := new(MockUserUsecase)
+	c := newUserController(mu)
+
+	var captured model.User
+	mu.On("UpdateProfile", mock.Anything, "u1", mock.Anything).
+		Run(func(args mock.Arguments) {
+			captured = args.Get(2).(model.User)
+		}).
+		Return(nil)
+
+	body, _ := json.Marshal(map[string]string{"username": "vitinho", "email": "v@x.com", "role": "admin", "id": "forged"})
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/users/u1", bytes.NewBuffer(body))
+	req.SetPathValue("id", "u1")
+	rr := httptest.NewRecorder()
+
+	c.UpdateProfile(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d (%s)", rr.Code, rr.Body.String())
+	}
+	if captured.Role == "admin" {
+		t.Errorf("poluição: cliente conseguiu forjar role=admin (%q)", captured.Role)
+	}
+	if captured.ID == "forged" {
+		t.Errorf("poluição: cliente conseguiu forjar id (%q)", captured.ID)
+	}
+}
+
 // --- DeleteAccount ---
 
 func TestUserDeleteAccountSuccess(t *testing.T) {

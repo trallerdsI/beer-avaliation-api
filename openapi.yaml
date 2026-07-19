@@ -71,15 +71,54 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/BeerInput'
+            example:
+              name: Fumaçônica Double IPA
+              style: Imperial IPA
+              alcohol: 8.5
+              brewery: Fumaçônica
+              taste: Amargo
+              aroma: Cítrico
+              color: Âmbar
+              body: Médio
+              carbonation: Alta
+              finish: Seco
       responses:
         '201':
-          description: Beer created successfully
+          description: Beer created successfully (idempotência via nome+estilo únicos)
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Beer'
         '400':
-          description: Invalid request payload
+          description: Invalid request payload (RFC 7807)
+        '409':
+          description: >
+            Conflito de similaridade — uma cerveja com nome/estilo muito
+            próximo já existe no catálogo (prevenção de fragmentação).
+            Devolve sugestões para o cliente direcionar o utilizador.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: Uma cerveja similar já existe no catálogo.
+                  suggestions:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                          format: uuid
+                        name:
+                          type: string
+              example:
+                error: Uma cerveja similar já existe no catálogo.
+                suggestions:
+                  - id: uuid-1
+                    name: Fumaçônica IPA
 
   /api/v1/beers/enums:
     get:
