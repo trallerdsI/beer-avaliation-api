@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	_ "github.com/lib/pq" // Register the PostgreSQL driver.
+	_ "github.com/lib/pq"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/spf13/viper"
 
@@ -38,26 +38,10 @@ var embeddedMigrations embed.FS
 //go:embed openapi.yaml
 var embeddedOpenAPI embed.FS
 
-// BuildRouter creates the main HTTP router for the application.
-//
-// Go 1.22+ Enhanced Routing: net/http.ServeMux nativo suporta método + padrão
-// de caminho (ex: "GET /api/v1/beers/{id}"). O roteador expõe r.Pattern com o
-// template estático da rota, eliminando cardinalidade no Prometheus e removendo
-// a dependência externa gorilla/mux.
-// BuildRouter creates the main HTTP router for the application.
-//
-// Go 1.22+ Enhanced Routing: net/http.ServeMux nativo suporta método + padrão
-// de caminho (ex: "GET /api/v1/beers/{id}"). O roteador expõe r.Pattern com o
-// template estático da rota, eliminando cardinalidade no Prometheus e removendo
-// a dependência externa gorilla/mux.
 func BuildRouter(db *sql.DB, logger *slog.Logger) http.Handler {
 	return BuildRouterWithDBErr(db, nil, logger)
 }
 
-// BuildRouterWithDBErr é idêntico a BuildRouter, mas propaga o erro de
-// inicialização da base de dados (se houver) para o controller de saúde, que o
-// expõe em /health — essencial para diagnosticar falhas de ligação/SSL em
-// ambientes serverless (ex: Vercel) sem acesso aos logs do processo.
 func BuildRouterWithDBErr(db *sql.DB, dbErr error, logger *slog.Logger) http.Handler {
 	if logger == nil {
 		logger = slog.Default()
@@ -66,33 +50,13 @@ func BuildRouterWithDBErr(db *sql.DB, dbErr error, logger *slog.Logger) http.Han
 		slog.Warn("base de dados indisponível no arranque; rotas de dados retornarão 503", "err", dbErr)
 	}
 
-	// Repositórios Postgres. Se o DB não estiver disponível (db nil ou Ping
-	// falha), mantemos o servidor de pé para /docs, /health e /metrics; as
-	// rotas de dados retornam 503 específico em vez de derrubar o processo.
-	var beerRepo beerRepository.BeerRepository
-	var err error
-	beerRepo, err = beerRepository.NewPostgresBeerRepository(db)
-	if err != nil {
-		slog.Error("repositório de cervejas indisponível; rotas de dados retornarão 503", "err", err)
-		beerRepo = beerRepository.NewUnavailableBeerRepository()
-	}
+	beerRepo := newBeerRepo(db)
+	userRepo := newUserRepo(db)
 
-	var userRepo userRepository.UserRepository
-	userRepo, err = userRepository.NewPostgresUserRepository(db)
-	if err != nil {
-		slog.Error("repositório de utilizadores indisponível; rotas de dados retornarão 503", "err", err)
-		userRepo = userRepository.NewUnavailableUserRepository()
-	}
-
-	// Hub SSE único (singleton por processo) para difusão em tempo real.
 	eventHub := realtime.NewHub(64)
-
 	beerUsecase := beerUsecase.NewBeerUsecase(beerRepo, eventHub)
 	userUsecase := userUsecase.NewUserUsecase(userRepo)
 
-	// Cliente de object storage para upload de mídia (RFC 7578). Opcional:
-	// se não estiver configurado, o endpoint de upload devolve 501 e o
-	// resto da API funciona normalmente.
 	var uploader storage.Uploader
 	if s, err := storage.NewSupabaseStorageFromEnv(); err != nil {
 		slog.Warn("storage de mídia não configurado; upload desativado", "err", err)
@@ -100,8 +64,6 @@ func BuildRouterWithDBErr(db *sql.DB, dbErr error, logger *slog.Logger) http.Han
 		uploader = s
 	}
 
-	// Seed de admin global (idempotente): cria/promove admin se ADMIN_EMAIL e
-	// ADMIN_PASSWORD estiverem definidos. Não bloqueia o arranque se faltarem.
 	if err := userUsecase.SeedAdmin(context.Background()); err != nil {
 		slog.Error("falha no seed de admin", "err", err)
 	}
@@ -110,10 +72,7 @@ func BuildRouterWithDBErr(db *sql.DB, dbErr error, logger *slog.Logger) http.Han
 	userController := userHttp.NewUserController(userUsecase, logger)
 	monitoringController := monitoring.NewMonitoringController(beerUsecase, userUsecase, logger, db, dbErr)
 
-	// Go 1.22+ ServeMux: registro declarativo com método + padrão.
 	mux := http.NewServeMux()
-
-	// Middleware global aplicado via wrapping (RequestID + Metrics + Auth contextual).
 	mux.HandleFunc("GET /api/v1/beers/enums", beerController.GetEnums)
 	mux.HandleFunc("GET /api/v1/beers", beerController.GetAllBeers)
 	mux.HandleFunc("POST /api/v1/beers", middleware.Auth(beerController.CreateBeer))
@@ -125,32 +84,22 @@ func BuildRouterWithDBErr(db *sql.DB, dbErr error, logger *slog.Logger) http.Han
 	mux.HandleFunc("POST /api/v1/beers/{id}/comments", middleware.Auth(beerController.AddComment))
 	mux.HandleFunc("DELETE /api/v1/beers/{id}/comments/{commentId}", middleware.Auth(beerController.DeleteComment))
 	mux.HandleFunc("POST /api/v1/beers/{id}/comments/{commentId}/like", middleware.Auth(beerController.LikeComment))
-
-	// BFF: payload único para a home do app móvel (sem N requests sequenciais).
 	mux.HandleFunc("GET /api/v1/feed", beerController.GetHomeFeed)
-
-	// SSE: stream de eventos em tempo real (substitui polling do cliente).
 	mux.HandleFunc("GET /api/v1/stream", realtime.SSEHandler(eventHub))
-
 	mux.HandleFunc("POST /api/v1/users/register", userController.Register)
 	mux.HandleFunc("POST /api/v1/users/login", userController.Login)
-
-	// Rotas protegidas por JWT.
 	mux.HandleFunc("GET /api/v1/users/{id}", middleware.Auth(userController.GetProfile))
 	mux.HandleFunc("PUT /api/v1/users/{id}", middleware.Auth(userController.UpdateProfile))
 	mux.HandleFunc("DELETE /api/v1/users/{id}", middleware.Auth(userController.DeleteAccount))
-
 	mux.HandleFunc("GET /api/v1/stats", monitoringController.GetStats)
 	mux.HandleFunc("GET /api/v1/health", monitoringController.HealthCheck)
-
 	mux.HandleFunc("GET /docs", docsHandler())
 	mux.HandleFunc("GET /docs/openapi.yaml", openapiSpecHandler())
 	if !appMetrics.IsServerlessRuntime() {
 		mux.Handle("GET /metrics", promhttp.Handler())
 	}
 
-	// Encadeamento de middlewares: CORS -> Compression -> RequestID -> Metrics -> handler.
-	var handler http.Handler = mux
+	handler := http.Handler(mux)
 	handler = middleware.CORSMiddleware(handler)
 	handler = middleware.MetricsMiddleware(handler)
 	handler = middleware.RequestIDMiddleware(handler)
@@ -159,19 +108,34 @@ func BuildRouterWithDBErr(db *sql.DB, dbErr error, logger *slog.Logger) http.Han
 	return handler
 }
 
-// InitDBFromEnv initializes the database connection using environment variables.
-func InitDBFromEnv() (*sql.DB, error) {
-	dbConnString := resolveDBConnString()
-	if dbConnString == "" {
-		return nil, fmt.Errorf("database connection string is not configured")
+func newBeerRepo(db *sql.DB) beerRepository.BeerRepository {
+	repo, err := beerRepository.NewPostgresBeerRepository(db)
+	if err != nil {
+		slog.Error("repositório de cervejas indisponível; rotas de dados retornarão 503", "err", err)
+		return beerRepository.NewUnavailableBeerRepository()
 	}
-
-	return InitDB(dbConnString)
+	return repo
 }
 
-// InitDB opens and configures the PostgreSQL connection pool.
-func InitDB(dbConnString string) (*sql.DB, error) {
-	db, err := sql.Open("postgres", dbConnString)
+func newUserRepo(db *sql.DB) userRepository.UserRepository {
+	repo, err := userRepository.NewPostgresUserRepository(db)
+	if err != nil {
+		slog.Error("repositório de utilizadores indisponível; rotas de dados retornarão 503", "err", err)
+		return userRepository.NewUnavailableUserRepository()
+	}
+	return repo
+}
+
+func InitDBFromEnv() (*sql.DB, error) {
+	dsn := resolveDBConnString()
+	if dsn == "" {
+		return nil, fmt.Errorf("database connection string is not configured")
+	}
+	return InitDB(dsn)
+}
+
+func InitDB(dsn string) (*sql.DB, error) {
+	db, err := sql.Open("postgres", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("erro ao conectar com o banco de dados: %w", err)
 	}
@@ -180,15 +144,12 @@ func InitDB(dbConnString string) (*sql.DB, error) {
 	db.SetMaxIdleConns(maxIdleConns())
 	db.SetConnMaxLifetime(5 * time.Minute)
 
-	// Em runtime serverless o orçamento de cold-start é curto: não bloqueamos
-	// com retries de 2s. Fazemos um único Ping com timeout de contexto — falha
-	// rápido para o chamador aplicar o fallback (Pilar 4: defesa contra bloqueio).
 	if isServerlessRuntime() {
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
 		if err = db.PingContext(ctx); err != nil {
 			db.Close()
-			slog.Error("falha no ping do banco de dados (serverless)", "err", err, "conn_string", maskPassword(dbConnString))
+			slog.Error("falha no ping do banco de dados (serverless)", "err", err, "conn", maskPassword(dsn))
 			return nil, fmt.Errorf("banco de dados indisponível: %w", err)
 		}
 	} else {
@@ -202,10 +163,9 @@ func InitDB(dbConnString string) (*sql.DB, error) {
 			slog.Warn("tentando conectar ao banco de dados", "retries_left", retries, "err", err)
 			time.Sleep(2 * time.Second)
 		}
-
 		if retries == 0 {
 			db.Close()
-			slog.Error("banco de dados indisponível após várias tentativas", "conn_string", maskPassword(dbConnString))
+			slog.Error("banco de dados indisponível após várias tentativas", "conn", maskPassword(dsn))
 			return nil, fmt.Errorf("banco de dados não está disponível após várias tentativas")
 		}
 	}
@@ -214,23 +174,13 @@ func InitDB(dbConnString string) (*sql.DB, error) {
 		db.Close()
 		return nil, fmt.Errorf("migrations failed: %w", err)
 	}
-
 	return db, nil
 }
 
-// isServerlessRuntime devolve true quando a aplicação corre em modo serverless
-// (Vercel/Now/AWS Lambda). Usado para ajustar o orçamento de cold-start (ex:
-// não bloquear com retries de Ping) e desativar /metrics.
 func isServerlessRuntime() bool {
 	return os.Getenv("VERCEL") != "" || os.Getenv("NOW_REGION") != "" || os.Getenv("AWS_LAMBDA_FUNCTION_NAME") != ""
 }
 
-// resolveDBConnString devolve a connection string do PostgreSQL, tolerando
-// as várias nomenclaturas usadas no projeto (DB_CONN_STRING, DBConnString) e,
-// em último caso, compõe-a a partir das variáveis individuais (DB_USER,
-// DB_PASSWORD, DB_HOST, DB_PORT, DB_NAME, DB_SSLMODE). Isto torna o arranque
-// resiliente a .env ausente no deploy ou a hosts distintos (docker "postgres"
-// vs local "localhost") — Defense-in-Depth (Pilar 4).
 func maskPassword(connString string) string {
 	if i := strings.Index(connString, "://"); i >= 0 {
 		prefix := connString[:i+3]
@@ -254,12 +204,21 @@ func forceSupabaseSSL(connString string) string {
 }
 
 func resolveDBConnString() string {
-	for _, key := range []string{"DB_CONN_STRING", "DBConnString", "POSTGRES_URL_NON_POOLING", "POSTGRES_URL"} {
+	for _, key := range []string{"DB_CONN_STRING", "DBConnString"} {
 		if v := os.Getenv(key); v != "" {
-			return v
+			return forceSupabaseSSL(v)
 		}
 		if v := viper.GetString(key); v != "" {
-			return v
+			return forceSupabaseSSL(v)
+		}
+	}
+
+	for _, key := range []string{"POSTGRES_URL", "POSTGRES_URL_NON_POOLING"} {
+		if v := os.Getenv(key); v != "" {
+			return rebuildSupabaseURL(v)
+		}
+		if v := viper.GetString(key); v != "" {
+			return rebuildSupabaseURL(v)
 		}
 	}
 
@@ -268,7 +227,7 @@ func resolveDBConnString() string {
 	host := firstNonEmpty(os.Getenv("DB_HOST"), viper.GetString("DB_HOST"), os.Getenv("POSTGRES_HOST"), "localhost")
 	port := firstNonEmpty(os.Getenv("DB_PORT"), viper.GetString("DB_PORT"), "5432")
 	name := firstNonEmpty(os.Getenv("DB_NAME"), viper.GetString("DB_NAME"), os.Getenv("POSTGRES_DATABASE"), "postgres")
-	sslmode := firstNonEmpty(os.Getenv("DB_SSLMODE"), viper.GetString("DB_SSLMODE"), "require")
+	sslmode := firstNonEmpty(os.Getenv("DB_SSLMODE"), viper.GetString("DB_SSLMODE"), os.Getenv("DB_SSL_MODE"), viper.GetString("DB_SSL_MODE"), "require")
 
 	if user == "" || name == "" {
 		return ""
@@ -277,8 +236,22 @@ func resolveDBConnString() string {
 		url.QueryEscape(user), url.QueryEscape(pass), host, port, name, sslmode)
 }
 
-// firstNonEmpty devolve o primeiro valor não-vazio (helper zero-alloc de
-// curta duração, vive na stack).
+func rebuildSupabaseURL(raw string) string {
+	host := firstNonEmpty(os.Getenv("DB_HOST"), viper.GetString("DB_HOST"), os.Getenv("POSTGRES_HOST"), "")
+	user := firstNonEmpty(os.Getenv("DB_USER"), viper.GetString("DB_USER"), os.Getenv("POSTGRES_USER"), "")
+	pass := firstNonEmpty(os.Getenv("DB_PASSWORD"), viper.GetString("DB_PASSWORD"), os.Getenv("POSTGRES_PASSWORD"), "")
+	port := firstNonEmpty(os.Getenv("DB_PORT"), viper.GetString("DB_PORT"), "5432")
+	name := firstNonEmpty(os.Getenv("DB_NAME"), viper.GetString("DB_NAME"), os.Getenv("POSTGRES_DATABASE"), "postgres")
+	sslmode := firstNonEmpty(os.Getenv("DB_SSL_MODE"), viper.GetString("DB_SSL_MODE"), "require")
+
+	if host == "" || user == "" || pass == "" {
+		return forceSupabaseSSL(raw)
+	}
+
+	return fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=%s",
+		url.QueryEscape(user), url.QueryEscape(pass), host, port, name, sslmode)
+}
+
 func firstNonEmpty(vals ...string) string {
 	for _, v := range vals {
 		if v != "" {
@@ -288,7 +261,6 @@ func firstNonEmpty(vals ...string) string {
 	return ""
 }
 
-// maxOpenConns lê DB_MAX_OPEN_CONNS (padrão 10) para tuning do pool por ambiente.
 func maxOpenConns() int {
 	if v := os.Getenv("DB_MAX_OPEN_CONNS"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
@@ -298,7 +270,6 @@ func maxOpenConns() int {
 	return 10
 }
 
-// maxIdleConns lê DB_MAX_IDLE_CONNS (padrão 5) para tuning do pool por ambiente.
 func maxIdleConns() int {
 	if v := os.Getenv("DB_MAX_IDLE_CONNS"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
@@ -338,7 +309,6 @@ func executeSQLFile(db *sql.DB, filePath string) error {
 	if err != nil {
 		return err
 	}
-
 	_, err = db.Exec(string(sqlBytes))
 	return err
 }
@@ -450,17 +420,11 @@ func openapiSpecHandler() http.HandlerFunc {
 			http.Error(w, "openapi spec not found", http.StatusNotFound)
 			return
 		}
-
 		w.Header().Set("Content-Type", "application/yaml")
 		_, _ = w.Write(specData)
 	}
 }
 
-// InitializeVercelHandler returns the shared handler the Vercel function uses.
-// Se o banco não estiver disponível no arranque, mantemos o servidor de pé:
-// BuildRouter aplica o fallback UnavailableBeerRepository, então /docs,
-// /health e /metrics continuam operacionais e só as rotas de dados retornam
-// 503 (em vez de um 503 global em tudo). Não bloqueamos com handler de erro.
 func InitializeVercelHandler() http.Handler {
 	logger := slog.Default()
 
