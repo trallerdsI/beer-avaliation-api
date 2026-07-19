@@ -71,8 +71,9 @@ func (c *BeerController) GetHomeFeed(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	response.SetCacheHeaders(w, etag, 30, true)
+	setPaginationLinks(w, r, page, pageSize, total, "/api/v1/feed")
 
-	// Reusa o body já serializado para o ETag (evita duplo marshal e garante
+	w.Header().Set("Content-Type", "application/json")
 	// que o ETag corresponde exatamente ao que é enviado).
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)

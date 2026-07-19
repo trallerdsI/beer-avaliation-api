@@ -292,12 +292,12 @@ func migrateDB(db *sql.DB) error {
 		"migrations/create_beers_table.sql",
 		"migrations/add_created_by_to_beers.sql",
 		"migrations/add_created_at_to_beers.sql",
-		"migrations/create_comments_table.sql",
 		"migrations/add_comments_jsonb.sql",
 		"migrations/create_indexes.sql",
 		"migrations/use_uuid_pk.sql",
 		"migrations/add_updated_at.sql",
 		"migrations/extend_media.sql",
+		"migrations/drop_legacy_comments_table.sql",
 	}
 
 	for _, file := range sqlFiles {
