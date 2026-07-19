@@ -128,6 +128,7 @@ func newUserRepo(db *sql.DB) userRepository.UserRepository {
 
 func InitDBFromEnv() (*sql.DB, error) {
 	dsn := resolveDBConnString()
+	slog.Info("resolvendo connection string", "dsn", maskPassword(dsn))
 	if dsn == "" {
 		return nil, fmt.Errorf("database connection string is not configured")
 	}
