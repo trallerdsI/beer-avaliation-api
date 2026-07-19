@@ -19,6 +19,7 @@ import (
 type UserUsecase interface {
 	Register(ctx context.Context, user model.User) error
 	Login(ctx context.Context, email, password string) (string, error) // Returns JWT token
+	OAuthLogin(ctx context.Context, provider, idToken string) (string, error)
 	GetProfile(ctx context.Context, id string) (model.User, error)
 	UpdateProfile(ctx context.Context, id string, user model.User) error
 	DeleteAccount(ctx context.Context, id string) error
@@ -105,6 +106,49 @@ func (u *userUsecase) Login(ctx context.Context, email, password string) (string
 	}
 
 	slog.InfoContext(ctx, "user logged in", "user_id", user.ID)
+	return token, nil
+}
+
+// OAuthLogin valida um id_token OIDC (RFC 6749/OpenID Connect) de um
+// provedor configurado (Google/Apple), faz upsert do utilizador em beerUsers
+// ligado por (provider, external_sub) e devolve o nosso JWT HS256 de sessão.
+// O resto da API continua a aceitar apenas o nosso token via middleware Auth.
+func (u *userUsecase) OAuthLogin(ctx context.Context, provider, idToken string) (string, error) {
+	slog.InfoContext(ctx, "oauth login attempt", "provider", provider)
+
+	verifier := auth.OIDC().Verifier(provider)
+	if verifier == nil {
+		slog.WarnContext(ctx, "oauth provider não configurado", "provider", provider)
+		return "", errors.NewAppError(400, "unsupported provider", nil)
+	}
+
+	claims, err := verifier.Verify(ctx, idToken)
+	if err != nil {
+		slog.WarnContext(ctx, "oauth token inválido", "provider", provider, "err", err)
+		return "", errors.NewAppError(401, "invalid id_token", err)
+	}
+
+	user, err := u.repo.UpsertByExternal(ctx, model.User{
+		ID:          uuid.MustNewV7(),
+		Username:    claims.Username,
+		Email:       claims.Email,
+		Role:        model.RoleUser,
+		Provider:    provider,
+		ExternalSub: claims.Sub,
+		Created:     time.Now().UTC().Format(time.RFC3339),
+	})
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to upsert oauth user", "err", err)
+		return "", errors.NewAppError(500, "failed to create user", err)
+	}
+
+	token, err := auth.GenerateToken(user.ID, user.Role)
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to generate token", "err", err)
+		return "", errors.NewAppError(500, "failed to generate token", err)
+	}
+
+	slog.InfoContext(ctx, "oauth user logged in", "user_id", user.ID, "provider", provider)
 	return token, nil
 }
 

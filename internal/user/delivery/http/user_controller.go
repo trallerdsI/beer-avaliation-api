@@ -196,6 +196,40 @@ func (c *UserController) Login(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (c *UserController) OAuth(w http.ResponseWriter, r *http.Request) {
+	if r.Body == nil {
+		response.SendProblem(w, response.NewProblem(http.StatusBadRequest, "invalid_request_body", "O corpo da requisição é inválido."))
+		return
+	}
+
+	// Limita o payload (o id_token é pequeno, mas mantemos o teto defensivo).
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+
+	var body struct {
+		Provider string `json:"provider" validate:"required"`
+		IDToken  string `json:"id_token" validate:"required"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		c.respondError(w, r, err, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+	if err := c.validator.Struct(body); err != nil {
+		c.sendValidationProblem(w, r, err)
+		return
+	}
+
+	token, err := c.usecase.OAuthLogin(r.Context(), body.Provider, body.IDToken)
+	if err != nil {
+		// Não vazamos a causa interna (falha de validação do IdP).
+		c.respondError(w, r, err, "OAuth login failed", http.StatusUnauthorized)
+		return
+	}
+
+	response.SendResponse(w, http.StatusOK, map[string]string{
+		"token": token,
+	})
+}
+
 func (c *UserController) GetProfile(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if id == "" {

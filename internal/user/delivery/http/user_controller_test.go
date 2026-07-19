@@ -30,6 +30,11 @@ func (m *MockUserUsecase) Login(ctx context.Context, email, password string) (st
 	return args.String(0), args.Error(1)
 }
 
+func (m *MockUserUsecase) OAuthLogin(ctx context.Context, provider, idToken string) (string, error) {
+	args := m.Called(ctx, provider, idToken)
+	return args.String(0), args.Error(1)
+}
+
 func (m *MockUserUsecase) GetProfile(ctx context.Context, id string) (model.User, error) {
 	args := m.Called(ctx, id)
 	return args.Get(0).(model.User), args.Error(1)
@@ -345,5 +350,66 @@ func TestUserDeleteAccountFailure(t *testing.T) {
 
 	if rr.Code != http.StatusInternalServerError {
 		t.Fatalf("expected 500, got %d", rr.Code)
+	}
+}
+
+// --- OAuth ---
+
+func TestUserOAuthSuccess(t *testing.T) {
+	mu := new(MockUserUsecase)
+	c := newUserController(mu)
+
+	mu.On("OAuthLogin", mock.Anything, "google", "idtok-123").Return("jwt-session", nil)
+
+	body, _ := json.Marshal(map[string]string{"provider": "google", "id_token": "idtok-123"})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/users/oauth", bytes.NewBuffer(body))
+	rr := httptest.NewRecorder()
+
+	c.OAuth(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d (%s)", rr.Code, rr.Body.String())
+	}
+	var resp struct {
+		Token string `json:"token"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if resp.Token != "jwt-session" {
+		t.Fatalf("expected session token, got %q", resp.Token)
+	}
+}
+
+func TestUserOAuthUnauthorized(t *testing.T) {
+	mu := new(MockUserUsecase)
+	c := newUserController(mu)
+
+	mu.On("OAuthLogin", mock.Anything, "google", "bad").
+		Return("", appErrors.NewAppError(401, "invalid id_token", nil))
+
+	body, _ := json.Marshal(map[string]string{"provider": "google", "id_token": "bad"})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/users/oauth", bytes.NewBuffer(body))
+	rr := httptest.NewRecorder()
+
+	c.OAuth(rr, req)
+
+	if rr.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d", rr.Code)
+	}
+}
+
+func TestUserOAuthBadRequest(t *testing.T) {
+	mu := new(MockUserUsecase)
+	c := newUserController(mu)
+
+	body, _ := json.Marshal(map[string]string{"provider": ""})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/users/oauth", bytes.NewBuffer(body))
+	rr := httptest.NewRecorder()
+
+	c.OAuth(rr, req)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", rr.Code)
 	}
 }

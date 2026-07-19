@@ -339,6 +339,35 @@ paths:
         '401':
           description: Invalid credentials
 
+  /api/v1/users/oauth:
+    post:
+      summary: Login social OAuth2/OIDC (RFC 6749)
+      description: >
+        Recebe o `id_token` (JWT RS256) de um IdP configurado (Google/Apple).
+        A API valida assinatura e claims (iss/aud/exp/alg=RS256) contra o JWKS
+        do provedor, faz upsert do utilizador e devolve o JWT HS256 de sessão
+        da aplicação. Sem providers configurados, responde 400.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [provider, id_token]
+              properties:
+                provider:
+                  type: string
+                  enum: [google, apple]
+                id_token:
+                  type: string
+      responses:
+        '200':
+          description: OAuth login successful — returns app session JWT
+        '400':
+          description: Unsupported provider or invalid body
+        '401':
+          description: Invalid or expired id_token (RFC 7807)
+
   /api/v1/users/{id}:
     get:
       summary: Get user profile

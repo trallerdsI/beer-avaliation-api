@@ -89,6 +89,7 @@ func BuildRouterWithDBErr(db *sql.DB, dbErr error, logger *slog.Logger) http.Han
 	mux.HandleFunc("GET /api/v1/stream", realtime.SSEHandler(eventHub))
 	mux.HandleFunc("POST /api/v1/users/register", userController.Register)
 	mux.HandleFunc("POST /api/v1/users/login", userController.Login)
+	mux.HandleFunc("POST /api/v1/users/oauth", userController.OAuth)
 	mux.HandleFunc("GET /api/v1/users/{id}", middleware.Auth(userController.GetProfile))
 	mux.HandleFunc("PUT /api/v1/users/{id}", middleware.Auth(userController.UpdateProfile))
 	mux.HandleFunc("DELETE /api/v1/users/{id}", middleware.Auth(userController.DeleteAccount))

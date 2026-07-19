@@ -13,6 +13,8 @@ type UserRepository interface {
 	Create(ctx context.Context, user model.User) error
 	GetByID(ctx context.Context, id string) (model.User, error)
 	GetByEmail(ctx context.Context, email string) (model.User, error)
+	GetByExternal(ctx context.Context, provider, externalSub string) (model.User, error)
+	UpsertByExternal(ctx context.Context, user model.User) (model.User, error)
 	Update(ctx context.Context, id string, user model.User) error
 	Delete(ctx context.Context, id string) error
 	List(ctx context.Context, page, pageSize int) ([]model.User, int, error)
@@ -94,6 +96,68 @@ func (r *PostgresUserRepository) GetByEmail(ctx context.Context, email string) (
 		return user, fmt.Errorf("failed to get user: %w", err)
 	}
 	return user, nil
+}
+
+func (r *PostgresUserRepository) GetByExternal(ctx context.Context, provider, externalSub string) (model.User, error) {
+	var user model.User
+	query := `SELECT id, username, email, role, provider, external_sub, created, updated_at FROM beerUsers WHERE provider = $1 AND external_sub = $2`
+
+	err := r.db.QueryRowContext(ctx, query, provider, externalSub).Scan(
+		&user.ID,
+		&user.Username,
+		&user.Email,
+		&user.Role,
+		&user.Provider,
+		&user.ExternalSub,
+		&user.Created,
+		&user.UpdatedAt)
+
+	if err == sql.ErrNoRows {
+		return user, fmt.Errorf("user not found")
+	}
+	if err != nil {
+		return user, fmt.Errorf("failed to get user by external: %w", err)
+	}
+	return user, nil
+}
+
+// UpsertByExternal insere ou atualiza uma conta social com base no par
+// (provider, external_sub) único. No conflito, atualiza email/username e
+// mantém o id/role existentes, garantindo que logins repetidos não duplicam
+// utilizadores.
+func (r *PostgresUserRepository) UpsertByExternal(ctx context.Context, user model.User) (model.User, error) {
+	query := `
+		INSERT INTO beerUsers (id, username, email, password, role, provider, external_sub, created)
+		VALUES ($1, $2, $3, NULL, $4, $5, $6, $7)
+		ON CONFLICT (provider, external_sub) WHERE external_sub IS NOT NULL
+		DO UPDATE SET
+			email = EXCLUDED.email,
+			username = EXCLUDED.username
+		RETURNING id, username, email, role, provider, external_sub, created, updated_at`
+
+	var created model.User
+	err := r.db.QueryRowContext(ctx, query,
+		user.ID,
+		user.Username,
+		user.Email,
+		user.Role,
+		user.Provider,
+		user.ExternalSub,
+		user.Created,
+	).Scan(
+		&created.ID,
+		&created.Username,
+		&created.Email,
+		&created.Role,
+		&created.Provider,
+		&created.ExternalSub,
+		&created.Created,
+		&created.UpdatedAt)
+
+	if err != nil {
+		return model.User{}, fmt.Errorf("failed to upsert external user: %w", err)
+	}
+	return created, nil
 }
 
 func (r *PostgresUserRepository) Update(ctx context.Context, id string, user model.User) error {
@@ -199,6 +263,12 @@ func (r *UnavailableUserRepository) GetByID(ctx context.Context, id string) (mod
 	return model.User{}, appErrors.NewUnavailableError()
 }
 func (r *UnavailableUserRepository) GetByEmail(ctx context.Context, email string) (model.User, error) {
+	return model.User{}, appErrors.NewUnavailableError()
+}
+func (r *UnavailableUserRepository) GetByExternal(ctx context.Context, provider, externalSub string) (model.User, error) {
+	return model.User{}, appErrors.NewUnavailableError()
+}
+func (r *UnavailableUserRepository) UpsertByExternal(ctx context.Context, user model.User) (model.User, error) {
 	return model.User{}, appErrors.NewUnavailableError()
 }
 func (r *UnavailableUserRepository) Update(ctx context.Context, id string, user model.User) error {

@@ -64,7 +64,7 @@ A API segue estes RFCs (9 de 12 implementados):
 | 7578 | Multipart/form-data (upload imagem → Supabase Storage) | ✅ |
 | 6455 | SSE (tempo real; WebSocket rejeitado — ver Decisões) | ✅ |
 | 8288 | Web Linking (`Link` header em listas paginadas) | ✅ |
-| 6749 | OAuth2 | ⏳ pendente |
+| 6749 | OAuth2 / OIDC (login social Google/Apple via id_token RS256+JWKS) | ✅ |
 | 8030 | Web Push | ⏳ pendente |
 
 ## Decisões de Arquitetura (decisões desta fase)
@@ -75,6 +75,18 @@ A API segue estes RFCs (9 de 12 implementados):
   dados definitivos. Controlado por `DB_RESET_SCHEMA` (default `true`):
   defina `false`/`0`/`no` na Vercel quando o banco tiver dados reais para
   desativar o reset destrutivo e aplicar apenas migrations incrementais.
+- **Login social (RFC 6749 / OIDC):** `POST /api/v1/users/oauth` recebe
+  `provider` + `id_token` (JWT RS256 do Google/Apple). A API valida a
+  assinatura e as claims (`iss`, `aud`, `exp`, `alg=RS256`) contra o JWKS
+  do IdP (cache em memória com respeito por `Cache-Control: max-age`, suporta
+  rotação de chaves) usando `golang-jwt/v5`. Em seguida faz upsert do
+  utilizador em `beerUsers` ligado por `(provider, external_sub)` e devolve o
+  **nosso** JWT HS256 de sessão — o middleware `Auth` existente não muda.
+  Providers configurados via `OAUTH_GOOGLE_AUDIENCE` / `OAUTH_APPLE_AUDIENCE`
+  (e opcionalmente `*_JWKS_URL`). Sem providers configurados, o endpoint
+  responde 400. Decisão: usar lib de mercado (`golang-jwt/v5`) para OIDC,
+  exceção à regra Zero-Dependency, dado o risco criptográfico de RS256/JWKS
+  escrito à mão.
 - **Migrações embutidas (`go:embed`):** os ficheiros SQL vivem em
   `internal/app/migrations/` e são embutidos no binário (necessário na Vercel,
   onde o filesystem do lambda não tem a pasta). O `vercel.json` builda apenas
@@ -103,18 +115,21 @@ A API segue estes RFCs (9 de 12 implementados):
 ## Getting Started
 
 1. Clone the repository:
+
 ```bash
 git clone https://github.com/yourusername/beer-review-app.git
 cd beer-review-app
 ```
 
-2. Set up environment variables:
+1. Set up environment variables:
+
 ```bash
 cp .env.example .env
 # Edit .env with your configuration
 ```
 
-3. Run the application:
+1. Run the application:
+
 ```bash
 go run cmd/server/main.go
 ```
@@ -122,6 +137,7 @@ go run cmd/server/main.go
 ## API Endpoints
 
 ### Beer Operations
+
 - `GET /api/v1/beers` - List all beers
 - `POST /api/v1/beers` - Create a new beer
 - `GET /api/v1/beers/{id}` - Get beer details
@@ -130,11 +146,13 @@ go run cmd/server/main.go
 - `GET /api/v1/beers/search` - Search beers with filters
 
 ### Comments
+
 - `POST /api/v1/beers/{id}/comments` - Add comment
 - `DELETE /api/v1/beers/{id}/comments/{commentId}` - Delete comment
 - `POST /api/v1/beers/{id}/comments/{commentId}/like` - Like comment
 
 ### User Operations
+
 - `POST /api/v1/users/register` - Register new user
 - `POST /api/v1/users/login` - User login
 - `GET /api/v1/users/{id}` - Get user profile
@@ -142,6 +160,7 @@ go run cmd/server/main.go
 - `DELETE /api/v1/users/{id}` - Delete account
 
 ### Monitoring
+
 - `GET /api/v1/health` - Health check
 - `GET /api/v1/stats` - Application statistics
 - `GET /metrics` - Prometheus metrics
@@ -176,6 +195,7 @@ O `github/workflows/ci.yml` corre `go mod tidy`, `gofmt`, `go vet`, `go build`,
 A aplicação corre na Vercel como função serverless e usa PostgreSQL no Supabase.
 
 #### 1. Banco (Supabase)
+
 - Projeto Supabase (Free Plan ok). O esquema é recriado automaticamente a cada
   deploy via `migrateDB` (migrações embutidas em `internal/app/migrations/`).
   **Não é necessário correr SQL manualmente.**
@@ -183,6 +203,7 @@ A aplicação corre na Vercel como função serverless e usa PostgreSQL no Supab
   não expor os endpoints publicamente.
 
 #### 2. Variáveis de ambiente na Vercel
+
 A integração Supabase injeta automaticamente `POSTGRES_URL`,
 `POSTGRES_URL_NON_POOLING`, `POSTGRES_HOST`, `POSTGRES_USER`, `POSTGRES_PASSWORD`,
 `POSTGRES_DATABASE`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, etc.
@@ -193,18 +214,21 @@ A resolução de DSN (`internal/app/app.go`) prioriza o **pooler IPv4** e força
 resolve para IPv6 e falha no Vercel.
 
 Variáveis adicionais:
+
 - `JWT_SECRET` — secreto para assinar/validar JWT (obrigatório)
 - `CORS_ALLOWED_ORIGINS` — origens permitidas (ex.: `https://app.vercel.app`)
 - `CORS_ALLOWED_REGEX` — regex opcional para subdomínios
 - `SUPABASE_STORAGE_BUCKET` — bucket de imagens (ex.: `beer-media`)
 
 #### 3. Deploy
+
 O repo já inclui [vercel.json](vercel.json) e [api/index.go](api/index.go).
 Ao importar na Vercel, as rotas `/api/*` são servidas pelo handler Go. O
 GitHub Actions (`.github/workflows/ci.yml`) corre `gofmt`, `go vet`,
 `go test -race` e `govulncheck`.
 
 ### Local (fora da Vercel)
+
 ```bash
 cp .env.example .env   # ajuste DBConnString / JWT_SECRET
 go run cmd/server/main.go
@@ -213,6 +237,7 @@ go run cmd/server/main.go
 ## Monitoring
 
 The application exposes metrics for Prometheus at `/metrics` and includes:
+
 - Response times
 - Error counts
 - Request counts

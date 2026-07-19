@@ -32,6 +32,16 @@ func (m *mockUserRepo) GetByEmail(ctx context.Context, email string) (model.User
 	return args.Get(0).(model.User), args.Error(1)
 }
 
+func (m *mockUserRepo) GetByExternal(ctx context.Context, provider, externalSub string) (model.User, error) {
+	args := m.Called(ctx, provider, externalSub)
+	return args.Get(0).(model.User), args.Error(1)
+}
+
+func (m *mockUserRepo) UpsertByExternal(ctx context.Context, u model.User) (model.User, error) {
+	args := m.Called(ctx, u)
+	return args.Get(0).(model.User), args.Error(1)
+}
+
 func (m *mockUserRepo) Update(ctx context.Context, id string, u model.User) error {
 	args := m.Called(ctx, id, u)
 	return args.Error(0)
@@ -327,4 +337,61 @@ func TestSeedAdminAlreadyAdminNoop(t *testing.T) {
 	err := uc.SeedAdmin(context.Background())
 	assert.NoError(t, err)
 	repo.AssertNotCalled(t, "Update", mock.Anything, mock.Anything, mock.Anything)
+}
+
+// --- OAuthLogin (RFC 6749 / OIDC) ---
+
+func TestOAuthLoginSuccess(t *testing.T) {
+	// Injeta um verifier fake no registry global de auth e sobrescreve o
+	// Verify via hook (sem rede).
+	auth.OIDC().RegisterVerifier("google", "https://accounts.google.com", "aud-test", "")
+	v := auth.OIDC().Verifier("google")
+	v.SetVerifyOverride(func(ctx context.Context, idToken string) (auth.OIDCClaims, error) {
+		return auth.OIDCClaims{Sub: "google|sub1", Email: "oauth@example.com", Username: "OAuth User"}, nil
+	})
+
+	repo := new(mockUserRepo)
+	uc := newUserUsecase(repo)
+
+	repo.On("UpsertByExternal", mock.Anything, mock.Anything).Return(model.User{
+		ID: "u-oauth", Role: model.RoleUser,
+	}, nil)
+
+	t.Setenv("JWT_SECRET", "test-secret-key")
+	auth.JWTSecretForTest()
+
+	token, err := uc.OAuthLogin(context.Background(), "google", "fake-id-token")
+	assert.NoError(t, err)
+	assert.NotEmpty(t, token)
+	repo.AssertCalled(t, "UpsertByExternal", mock.Anything, mock.Anything)
+}
+
+func TestOAuthLoginUnsupportedProvider(t *testing.T) {
+	repo := new(mockUserRepo)
+	uc := newUserUsecase(repo)
+
+	_, err := uc.OAuthLogin(context.Background(), "unknown", "tok")
+	assert.Error(t, err)
+	var appErr *appErrors.AppError
+	assert.ErrorAs(t, err, &appErr)
+	assert.Equal(t, 400, appErr.Code)
+	repo.AssertNotCalled(t, "UpsertByExternal", mock.Anything, mock.Anything)
+}
+
+func TestOAuthLoginInvalidToken(t *testing.T) {
+	auth.OIDC().RegisterVerifier("google", "https://accounts.google.com", "aud-test", "")
+	v := auth.OIDC().Verifier("google")
+	v.SetVerifyOverride(func(ctx context.Context, idToken string) (auth.OIDCClaims, error) {
+		return auth.OIDCClaims{}, errors.New("invalid id_token")
+	})
+
+	repo := new(mockUserRepo)
+	uc := newUserUsecase(repo)
+
+	_, err := uc.OAuthLogin(context.Background(), "google", "bad")
+	assert.Error(t, err)
+	var appErr *appErrors.AppError
+	assert.ErrorAs(t, err, &appErr)
+	assert.Equal(t, 401, appErr.Code)
+	repo.AssertNotCalled(t, "UpsertByExternal", mock.Anything, mock.Anything)
 }
