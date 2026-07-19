@@ -149,8 +149,9 @@ func BuildRouterWithDBErr(db *sql.DB, dbErr error, logger *slog.Logger) http.Han
 		mux.Handle("GET /metrics", promhttp.Handler())
 	}
 
-	// Encadeamento de middlewares: Compression -> RequestID -> Metrics -> handler.
+	// Encadeamento de middlewares: CORS -> Compression -> RequestID -> Metrics -> handler.
 	var handler http.Handler = mux
+	handler = middleware.CORSMiddleware(handler)
 	handler = middleware.MetricsMiddleware(handler)
 	handler = middleware.RequestIDMiddleware(handler)
 	handler = middleware.CompressionMiddleware(handler)
