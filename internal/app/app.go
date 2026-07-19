@@ -253,7 +253,7 @@ func forceSupabaseSSL(connString string) string {
 }
 
 func resolveDBConnString() string {
-	for _, key := range []string{"DB_CONN_STRING", "DBConnString", "POSTGRES_URL", "POSTGRES_URL_NON_POOLING"} {
+	for _, key := range []string{"DB_CONN_STRING", "DBConnString", "POSTGRES_URL_NON_POOLING", "POSTGRES_URL"} {
 		if v := os.Getenv(key); v != "" {
 			return v
 		}
