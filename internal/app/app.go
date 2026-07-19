@@ -360,6 +360,7 @@ func migrateDB(db *sql.DB) error {
 		"migrations/add_updated_at.sql",
 		"migrations/extend_media.sql",
 		"migrations/drop_legacy_comments_table.sql",
+		"migrations/enable_rls.sql",
 	}
 
 	for _, file := range sqlFiles {

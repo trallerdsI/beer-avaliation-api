@@ -259,6 +259,13 @@ func (c *BeerController) GetAllBeers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Contrato de resposta (regressão): uma lista vazia NUNCA é serializada
+	// como null. O SelectFields devolve o payload original quando não há
+	// "fields", e um slice nil de Beers marshala para null. Forçamos [] aqui.
+	if beers == nil {
+		beers = []model.Beer{}
+	}
+
 	payload := map[string]interface{}{
 		"beers":    response.SelectFields(beers, query.Get("fields")),
 		"total":    total,
@@ -532,6 +539,11 @@ func (c *BeerController) SearchBeers(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		handleError(w, r.Context(), c.logger, err, "Failed to search beers", http.StatusInternalServerError)
 		return
+	}
+
+	// Contrato: lista vazia nunca como null.
+	if beers == nil {
+		beers = []model.Beer{}
 	}
 
 	response.SendResponse(w, http.StatusOK, map[string]interface{}{

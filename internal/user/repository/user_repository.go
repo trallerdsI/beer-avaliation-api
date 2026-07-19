@@ -162,7 +162,7 @@ func (r *PostgresUserRepository) List(ctx context.Context, page, pageSize int) (
 	}
 	defer rows.Close()
 
-	var users []model.User
+	var users []model.User = make([]model.User, 0)
 	for rows.Next() {
 		var user model.User
 		if err := rows.Scan(

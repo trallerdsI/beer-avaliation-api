@@ -311,6 +311,8 @@ func setRatingAggregates(b *model.Beer) {
 func (r *PostgresBeerRepository) GetPaginated(ctx context.Context, page, pageSize int) ([]model.Beer, int, error) {
 	offset := (page - 1) * pageSize
 
+	var beers []model.Beer = make([]model.Beer, 0)
+
 	// Consultando as cervejas
 	rows, err := r.db.QueryContext(ctx, `
         SELECT 
@@ -338,7 +340,6 @@ func (r *PostgresBeerRepository) GetPaginated(ctx context.Context, page, pageSiz
 	}
 	defer rows.Close()
 
-	var beers []model.Beer
 	for rows.Next() {
 		var beer model.Beer
 		var commentsJSON, mediaJSON []byte
@@ -508,7 +509,7 @@ func (r *PostgresBeerRepository) SearchBeers(ctx context.Context, filters model.
 	}
 	defer rows.Close()
 
-	var beers []model.Beer
+	var beers []model.Beer = make([]model.Beer, 0)
 	for rows.Next() {
 		var beer model.Beer
 		var commentsJSON, mediaJSON []byte
@@ -561,7 +562,7 @@ func (r *PostgresBeerRepository) GetAll(ctx context.Context) ([]model.Beer, erro
 	}
 	defer rows.Close()
 
-	var beers []model.Beer
+	var beers []model.Beer = make([]model.Beer, 0)
 	for rows.Next() {
 		var beer model.Beer
 		var commentsJSON, mediaJSON []byte

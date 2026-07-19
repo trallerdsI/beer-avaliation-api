@@ -414,3 +414,81 @@ func TestCreateBeerValidationFailure(t *testing.T) {
 		t.Fatalf("expected translated field label in error, got %q", resp.Message)
 	}
 }
+
+// TestGetAllBeersRegressionNullSlice é um teste de regressão (filosofia
+// table-driven) para o contrato de resposta de GET /api/v1/beers. Garante que
+// uma lista vazia é serializada como "[]" e nunca como "null" (Bug Gap: o
+// repositorio devolvia slice nil -> json null), e que o caminho de erro do
+// usecase produz 500 sem vazar a causa interna.
+func TestGetAllBeersRegressionNullSlice(t *testing.T) {
+	tests := []struct {
+		name       string
+		beers      []model.Beer
+		total      int
+		repoErr    error
+		wantStatus int
+		wantBeers  string // substring esperada no body
+	}{
+		{
+			name:       "lista vazia serializa como colchetes",
+			beers:      []model.Beer{},
+			total:      0,
+			repoErr:    nil,
+			wantStatus: http.StatusOK,
+			wantBeers:  `"beers":[]`,
+		},
+		{
+			name:       "nil slice nao pode produzir null",
+			beers:      nil,
+			total:      0,
+			repoErr:    nil,
+			wantStatus: http.StatusOK,
+			wantBeers:  `"beers":[]`,
+		},
+		{
+			name:       "uma cerveja presente",
+			beers:      []model.Beer{{ID: "b1", Name: "IPA"}},
+			total:      1,
+			repoErr:    nil,
+			wantStatus: http.StatusOK,
+			wantBeers:  `"id":"b1"`,
+		},
+		{
+			name:       "erro do repositorio preserva o status do AppError (503)",
+			beers:      nil,
+			total:      0,
+			repoErr:    errors.NewAppError(503, "database is not ready", nil),
+			wantStatus: http.StatusServiceUnavailable,
+			wantBeers:  "application/problem+json",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockBeerUsecase.On("GetPaginated", mock.Anything, 1, 10).
+				Return(tt.beers, tt.total, tt.repoErr).Once()
+
+			controller := NewBeerController(mockBeerUsecase, mockLogger, nil)
+			req := httptest.NewRequest(http.MethodGet, "/api/v1/beers?page=1&pageSize=10", nil)
+			rr := httptest.NewRecorder()
+
+			controller.GetAllBeers(rr, req)
+
+			if rr.Code != tt.wantStatus {
+				t.Fatalf("status = %d, want %d (body=%s)", rr.Code, tt.wantStatus, rr.Body.String())
+			}
+			if tt.wantBeers == "application/problem+json" {
+				if ct := rr.Header().Get("Content-Type"); !strings.Contains(ct, tt.wantBeers) {
+					t.Fatalf("Content-Type = %q, want %q (body=%s)", ct, tt.wantBeers, rr.Body.String())
+				}
+			} else if !strings.Contains(rr.Body.String(), tt.wantBeers) {
+				t.Fatalf("body %q não contém %q", rr.Body.String(), tt.wantBeers)
+			}
+			// Regra de contrato: nunca expor null para a lista.
+			if strings.Contains(rr.Body.String(), `"beers":null`) {
+				t.Fatalf("contrato violado: beers serializado como null: %s", rr.Body.String())
+			}
+			mockBeerUsecase.AssertExpectations(t)
+		})
+	}
+}
