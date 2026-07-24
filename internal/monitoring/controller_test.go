@@ -49,7 +49,7 @@ func (f *fakeBeerUsecase) SearchBeers(ctx context.Context, filters model.BeerFil
 }
 
 func TestHealthCheckNilDB(t *testing.T) {
-	c := NewMonitoringController(&fakeBeerUsecase{}, nil, nil, nil)
+	c := NewMonitoringController(&fakeBeerUsecase{}, nil, nil, nil, nil, nil)
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodGet, "/api/v1/health", nil)
 
@@ -62,7 +62,7 @@ func TestHealthCheckNilDB(t *testing.T) {
 
 func TestHealthCheckDBError(t *testing.T) {
 	dbErr := errors.NewAppError(500, "db down", nil)
-	c := NewMonitoringController(&fakeBeerUsecase{}, nil, nil, dbErr)
+	c := NewMonitoringController(&fakeBeerUsecase{}, nil, nil, nil, nil, dbErr)
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodGet, "/api/v1/health", nil)
 
@@ -73,18 +73,38 @@ func TestHealthCheckDBError(t *testing.T) {
 	}
 }
 
-func TestGetStatsUsecaseError(t *testing.T) {
-	c := NewMonitoringController(&fakeBeerUsecase{
-		getPaginated: func(ctx context.Context, page, pageSize int) ([]model.Beer, int, error) {
-			return nil, 0, errors.NewAppError(500, "db error", nil)
-		},
-	}, nil, nil, nil)
+func TestGetStatsRepoNil(t *testing.T) {
+	c := NewMonitoringController(&fakeBeerUsecase{}, nil, nil, nil, nil, nil)
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodGet, "/api/v1/stats", nil)
 
 	c.GetStats(w, r)
 
-	if w.Code != http.StatusInternalServerError {
-		t.Fatalf("expected 500 on stats error, got %d", w.Code)
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503 when repo is nil, got %d", w.Code)
+	}
+}
+
+func TestGetAdminStatsForbidden(t *testing.T) {
+	c := NewMonitoringController(&fakeBeerUsecase{}, nil, nil, nil, nil, nil)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/api/v1/admin/stats", nil)
+
+	c.GetAdminStats(w, r)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 when not admin, got %d", w.Code)
+	}
+}
+
+func TestGetUserStatsUnauthorized(t *testing.T) {
+	c := NewMonitoringController(&fakeBeerUsecase{}, nil, nil, nil, nil, nil)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/api/v1/users/me/stats", nil)
+
+	c.GetUserStats(w, r)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 when not authenticated, got %d", w.Code)
 	}
 }

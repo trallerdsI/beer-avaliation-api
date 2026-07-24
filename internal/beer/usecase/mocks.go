@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"beer-review-app/internal/beer/model"
+	"beer-review-app/internal/beer/repository"
 
 	"github.com/stretchr/testify/mock"
 )
@@ -64,6 +65,24 @@ func (m *MockBeerRepository) DeleteComment(ctx context.Context, id string, comme
 func (m *MockBeerRepository) SearchBeers(ctx context.Context, filters model.BeerFilters) ([]model.Beer, int, error) {
 	args := m.Called(ctx, filters)
 	return args.Get(0).([]model.Beer), args.Get(1).(int), args.Error(2)
+}
+
+// GetAdminStats mocks the GetAdminStats method of BeerRepository
+func (m *MockBeerRepository) GetAdminStats(ctx context.Context) (*repository.AdminStats, error) {
+	args := m.Called(ctx)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*repository.AdminStats), args.Error(1)
+}
+
+// GetUserStats mocks the GetUserStats method of BeerRepository
+func (m *MockBeerRepository) GetUserStats(ctx context.Context, userID string) (*repository.UserStats, error) {
+	args := m.Called(ctx, userID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*repository.UserStats), args.Error(1)
 }
 
 // AddMedia mocks the AddMedia method of BeerRepository

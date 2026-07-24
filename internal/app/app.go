@@ -69,7 +69,7 @@ func BuildRouterWithDBErr(db *sql.DB, dbErr error, logger *slog.Logger) http.Han
 
 	beerController := beerHttp.NewBeerController(beerUsecase, logger, uploader)
 	userController := userHttp.NewUserController(userUsecase, logger)
-	monitoringController := monitoring.NewMonitoringController(beerUsecase, logger, db, dbErr)
+	monitoringController := monitoring.NewMonitoringController(beerUsecase, beerRepo, userRepo, logger, db, dbErr)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/v1/beers/enums", beerController.GetEnums)
@@ -95,6 +95,8 @@ func BuildRouterWithDBErr(db *sql.DB, dbErr error, logger *slog.Logger) http.Han
 	mux.HandleFunc("POST /api/v1/users/{id}/push/unsubscribe", middleware.Auth(userController.UnsubscribePush))
 	mux.HandleFunc("GET /api/v1/users/{id}/push", middleware.Auth(userController.ListPushSubscriptions))
 	mux.HandleFunc("GET /api/v1/stats", monitoringController.GetStats)
+	mux.HandleFunc("GET /api/v1/admin/stats", middleware.RequireAdmin(monitoringController.GetAdminStats))
+	mux.HandleFunc("GET /api/v1/users/me/stats", middleware.Auth(monitoringController.GetUserStats))
 	mux.HandleFunc("GET /api/v1/health", monitoringController.HealthCheck)
 	mux.HandleFunc("GET /docs", docsHandler())
 	mux.HandleFunc("GET /docs/openapi.yaml", openapiSpecHandler())

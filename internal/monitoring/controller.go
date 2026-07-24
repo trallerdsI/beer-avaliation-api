@@ -8,24 +8,19 @@ import (
 	"runtime"
 	"time"
 
+	beerRepo "beer-review-app/internal/beer/repository"
 	"beer-review-app/internal/beer/usecase"
+	userRepo "beer-review-app/internal/user/repository"
 	"beer-review-app/pkg/errors"
+	"beer-review-app/pkg/middleware"
 	"beer-review-app/pkg/response"
 )
 
 // Structs de resposta para tipagem forte e melhor documentação Swagger
 
-type RecentActivity struct {
-	Type      string    `json:"type"`
-	UserID    string    `json:"userId"`
-	BeerID    string    `json:"beerId"`
-	Timestamp time.Time `json:"timestamp"` // O Go serializa automaticamente para RFC3339
-}
-
 type StatsResponse struct {
-	TotalBeers     int              `json:"totalBeers"` // CORRIGIDO: Alterado de int64 para int para evitar erros de compilação
-	TopBeers       interface{}      `json:"topBeers"`   // Substitua interface{} pela sua struct real de Beer se disponível
-	RecentActivity []RecentActivity `json:"recentActivity"`
+	TotalBeers int                  `json:"totalBeers"`
+	TopStyles  []beerRepo.StyleCount `json:"topStyles"`
 }
 
 type MemoryStats struct {
@@ -45,18 +40,22 @@ type HealthResponse struct {
 
 type MonitoringController struct {
 	beerUsecase usecase.BeerUsecase
+	beerRepo    beerRepo.BeerRepository
+	userRepo    userRepo.UserRepository
 	logger      *slog.Logger
 	startTime   time.Time
 	db          *sql.DB // opcional: nil em runtime offline/serverless desativa o ping de DB
 	dbErr       error   // erro de inicialização da BD (ex: sem DB_CONN_STRING); exposto em /health
 }
 
-func NewMonitoringController(bu usecase.BeerUsecase, logger *slog.Logger, db *sql.DB, dbErr error) *MonitoringController {
+func NewMonitoringController(bu usecase.BeerUsecase, beerRepo beerRepo.BeerRepository, userRepo userRepo.UserRepository, logger *slog.Logger, db *sql.DB, dbErr error) *MonitoringController {
 	if logger == nil {
 		logger = slog.Default()
 	}
 	return &MonitoringController{
 		beerUsecase: bu,
+		beerRepo:    beerRepo,
+		userRepo:    userRepo,
 		logger:      logger,
 		startTime:   time.Now(),
 		db:          db,
@@ -65,29 +64,31 @@ func NewMonitoringController(bu usecase.BeerUsecase, logger *slog.Logger, db *sq
 }
 
 // @Summary Get application statistics
-// @Description Get statistics about beers, users, and activity
+// @Description Get public statistics about beers, users, and activity
 // @Produce json
-// @Security BearerAuth
 // @Success 200 {object} StatsResponse
 // @Router /stats [get]
 func (c *MonitoringController) GetStats(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	// Obtendo as top 5 cervejas e o total real cadastrado no sistema (totalBeers)
-	beers, totalBeers, err := c.beerUsecase.GetPaginated(ctx, 1, 5)
+	if c.beerRepo == nil {
+		response.SendProblem(w, errors.NewProblem(http.StatusServiceUnavailable, "service_unavailable", "Estatísticas indisponíveis."))
+		return
+	}
+
+	stats, err := c.beerRepo.GetAdminStats(ctx)
 	if err != nil {
-		c.logger.Error("Failed to get beers for stats", slog.String("error", err.Error()))
+		c.logger.Error("Failed to get stats", slog.String("error", err.Error()))
 		response.SendProblem(w, errors.NewProblem(http.StatusInternalServerError, "internal_server_error", "Falha ao obter estatísticas."))
 		return
 	}
 
-	stats := StatsResponse{
-		TotalBeers:     totalBeers, // Atribuição direta sem necessidade de conversão manual
-		TopBeers:       beers,
-		RecentActivity: c.getRecentActivity(ctx),
+	publicStats := StatsResponse{
+		TotalBeers: stats.TotalBeers,
+		TopStyles:  stats.TopStyles,
 	}
 
-	response.SendResponse(w, http.StatusOK, stats)
+	response.SendResponse(w, http.StatusOK, publicStats)
 }
 
 // @Summary Get application health status
@@ -136,21 +137,123 @@ func (c *MonitoringController) HealthCheck(w http.ResponseWriter, r *http.Reques
 	response.SendResponse(w, status, health)
 }
 
-func (c *MonitoringController) getRecentActivity(_ context.Context) []RecentActivity {
-	return []RecentActivity{
-		{
-			Type:      "comment",
-			UserID:    "user123",
-			BeerID:    "beer456",
-			Timestamp: time.Now().Add(-5 * time.Minute),
+// @Summary Get admin statistics
+// @Description Get full admin statistics panel (requires admin role)
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} AdminStatsResponse
+// @Router /admin/stats [get]
+func (c *MonitoringController) GetAdminStats(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	if !middleware.IsAdmin(ctx) {
+		response.SendProblem(w, errors.NewProblem(http.StatusForbidden, "forbidden", "É necessário privilégio de administrador."))
+		return
+	}
+
+	if c.beerRepo == nil || c.userRepo == nil {
+		response.SendProblem(w, errors.NewProblem(http.StatusServiceUnavailable, "service_unavailable", "Estatísticas indisponíveis."))
+		return
+	}
+
+	stats, err := c.beerRepo.GetAdminStats(ctx)
+	if err != nil {
+		c.logger.Error("Failed to get admin stats", slog.String("error", err.Error()))
+		response.SendProblem(w, errors.NewProblem(http.StatusInternalServerError, "internal_server_error", "Falha ao obter estatísticas."))
+		return
+	}
+
+	resp := AdminStatsResponse{
+		GeneratedAt: time.Now().UTC(),
+		Users: AdminUsers{
+			Total:       stats.TotalUsers,
+			NewThisWeek: stats.NewUsersWeek,
+			ByProvider:  stats.UsersByProvider,
+			AdminsCount: stats.AdminsCount,
 		},
-		{
-			Type:      "like",
-			UserID:    "user789",
-			BeerID:    "beer456",
-			Timestamp: time.Now().Add(-10 * time.Minute),
+		Beers: AdminBeers{
+			Total:             stats.TotalBeers,
+			TopStyles:         stats.TopStyles,
+			AddedLast30Days:   stats.AddedLast30Days,
+			CommunityContributions: CommunityBeerStats{
+				UserCreated:   stats.UserCreatedBeers,
+				SystemCreated: stats.SystemCreatedBeers,
+			},
+		},
+		Engagement: AdminEngagement{
+			TotalComments: stats.TotalComments,
+			Sentiment:     stats.Sentiment,
+			TotalLikes:    stats.TotalLikes,
+			MostCommentedBeer: stats.MostCommentedBeer,
+		},
+		System: AdminSystem{
+			LastBeerCreatedAt: stats.LastBeerCreatedAt,
+			LastDBUpdate:      stats.LastDBUpdate,
 		},
 	}
+
+	response.SendResponse(w, http.StatusOK, resp)
+}
+
+// @Summary Get user statistics
+// @Description Get authenticated user personal statistics
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} UserStatsResponse
+// @Router /users/me/stats [get]
+func (c *MonitoringController) GetUserStats(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	userID, ok := middleware.UserIDFromContext(ctx)
+	if !ok {
+		response.SendProblem(w, errors.NewProblem(http.StatusUnauthorized, "unauthorized", "Utilizador não autenticado."))
+		return
+	}
+
+	if c.beerRepo == nil || c.userRepo == nil {
+		response.SendProblem(w, errors.NewProblem(http.StatusServiceUnavailable, "service_unavailable", "Estatísticas indisponíveis."))
+		return
+	}
+
+	userStats, err := c.beerRepo.GetUserStats(ctx, userID)
+	if err != nil {
+		c.logger.Error("Failed to get user stats", slog.String("error", err.Error()), "user_id", userID)
+		response.SendProblem(w, errors.NewProblem(http.StatusInternalServerError, "internal_server_error", "Falha ao obter estatísticas."))
+		return
+	}
+	if userStats == nil {
+		c.logger.Error("Failed to get user stats: nil result", "user_id", userID)
+		response.SendProblem(w, errors.NewProblem(http.StatusInternalServerError, "internal_server_error", "Falha ao obter estatísticas."))
+		return
+	}
+
+	memberSince, err := c.userRepo.GetMemberSince(ctx, userID)
+	if err != nil {
+		c.logger.Error("Failed to get member since", slog.String("error", err.Error()), "user_id", userID)
+		response.SendProblem(w, errors.NewProblem(http.StatusInternalServerError, "internal_server_error", "Falha ao obter estatísticas."))
+		return
+	}
+
+	resp := UserStatsResponse{
+		UserID:      userID,
+		MemberSince: memberSince,
+		Activity: UserActivity{
+			BeersReviewed:  userStats.BeersReviewed,
+			TotalComments:  userStats.TotalComments,
+			LikesGiven:     userStats.LikesGiven,
+			LikesReceived:  userStats.LikesReceived,
+		},
+		Preferences: UserPreferences{
+			PositiveRatingRatio: userStats.PositiveRatio,
+			FavoriteStyles:      userStats.FavoriteStyles,
+			TopAromaNotes:       userStats.TopAromaNotes,
+		},
+		Contributions: UserContributions{
+			BeersAddedToCatalog: userStats.BeersAdded,
+		},
+	}
+
+	response.SendResponse(w, http.StatusOK, resp)
 }
 
 func (c *MonitoringController) checkDatabaseHealth(ctx context.Context) string {

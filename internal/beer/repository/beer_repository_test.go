@@ -120,6 +120,14 @@ func (r *InMemoryBeerRepository) SearchBeers(ctx context.Context, filters model.
 	return nil, 0, errors.NewAppError(501, "not implemented in memory repo", nil)
 }
 
+func (r *InMemoryBeerRepository) GetAdminStats(ctx context.Context) (*AdminStats, error) {
+	return &AdminStats{}, nil
+}
+
+func (r *InMemoryBeerRepository) GetUserStats(ctx context.Context, userID string) (*UserStats, error) {
+	return &UserStats{UserID: userID}, nil
+}
+
 
 
 // TestSetRatingAggregates valida a agregação de averageRating/totalReviews

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"beer-review-app/internal/user/model"
 	"beer-review-app/pkg/auth"
@@ -75,6 +76,11 @@ func (m *mockUserRepo) DeletePushSubscription(ctx context.Context, id string) er
 func (m *mockUserRepo) DeletePushSubscriptionByEndpoint(ctx context.Context, userID, endpoint string) error {
 	args := m.Called(ctx, userID, endpoint)
 	return args.Error(0)
+}
+
+func (m *mockUserRepo) GetMemberSince(ctx context.Context, userID string) (time.Time, error) {
+	args := m.Called(ctx, userID)
+	return args.Get(0).(time.Time), args.Error(1)
 }
 
 func newUserUsecase(repo *mockUserRepo) UserUsecase {

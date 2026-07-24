@@ -26,6 +26,8 @@ type BeerRepository interface {
 	AddComment(ctx context.Context, id string, comment model.Comment) error
 	DeleteComment(ctx context.Context, id string, commentID string) error
 	SearchBeers(ctx context.Context, filters model.BeerFilters) ([]model.Beer, int, error)
+	GetAdminStats(ctx context.Context) (*AdminStats, error)
+	GetUserStats(ctx context.Context, userID string) (*UserStats, error)
 }
 
 // PostgresBeerRepository is a PostgreSQL implementation of BeerRepository.

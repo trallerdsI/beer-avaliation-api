@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"time"
 
 	"beer-review-app/internal/user/model"
 	appErrors "beer-review-app/pkg/errors"
@@ -22,6 +23,7 @@ type UserRepository interface {
 	ListPushSubscriptions(ctx context.Context, userID string) ([]model.PushSubscription, error)
 	DeletePushSubscription(ctx context.Context, id string) error
 	DeletePushSubscriptionByEndpoint(ctx context.Context, userID, endpoint string) error
+	GetMemberSince(ctx context.Context, userID string) (time.Time, error)
 }
 
 type PostgresUserRepository struct {
