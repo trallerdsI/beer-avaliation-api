@@ -10,7 +10,7 @@ import (
 )
 
 // TestSendProblemRFC7807 valida o envelope RFC 7807: Content-Type
-// application/problem+json, campos type/title/status/code/message e ausência
+// application/problem+json, campos type/title/status/code/detail e ausência
 // de vazamento de causa interna.
 func TestSendProblemRFC7807(t *testing.T) {
 	rr := httptest.NewRecorder()
@@ -37,8 +37,8 @@ func TestSendProblemRFC7807(t *testing.T) {
 	if body.Title != http.StatusText(http.StatusUnauthorized) {
 		t.Fatalf("expected title %q, got %q", http.StatusText(http.StatusUnauthorized), body.Title)
 	}
-	if body.Message != "O cabeçalho de autorização é obrigatório." {
-		t.Fatalf("unexpected message: %q", body.Message)
+	if body.Detail != "O cabeçalho de autorização é obrigatório." {
+		t.Fatalf("unexpected detail: %q", body.Detail)
 	}
 	if body.Type != "/errors/unauthorized" {
 		t.Fatalf("expected type /errors/unauthorized, got %q", body.Type)
@@ -50,7 +50,7 @@ func TestSendProblemWithDetails(t *testing.T) {
 	rr := httptest.NewRecorder()
 	p := errors.NewProblem(http.StatusBadRequest, "validation_failed", "Erro de validação.")
 	p.Details = []errors.ProblemDetail{
-		{Field: "email", Code: "email_invalid", Message: "Email inválido."},
+		{Field: "email", Code: "email_invalid", Detail: "Email inválido."},
 	}
 	SendProblem(rr, p)
 
@@ -97,8 +97,8 @@ func TestSendErrorMinimal(t *testing.T) {
 	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
 		t.Fatalf("invalid JSON: %v", err)
 	}
-	if body.Message != "erro simples" {
-		t.Fatalf("unexpected message: %q", body.Message)
+	if body.Detail != "erro simples" {
+		t.Fatalf("unexpected detail: %q", body.Detail)
 	}
 	if body.TraceID != "" {
 		t.Fatalf("expected empty trace_id, got %q", body.TraceID)

@@ -51,11 +51,11 @@ func WithProblemAction(action *errors.ProblemAction) ProblemOption {
 	return func(p *errors.Problem) { p.Action = action }
 }
 
-// SendError escreve um erro RFC 7807 mínimo (apenas message + code opcional),
+// SendError escreve um erro RFC 7807 mínimo (apenas detail + code opcional),
 // mantido para chamadas simples. Para erros de domínio ricos, usar SendProblem
 // com um AppError.ToProblem().
-func SendError(w http.ResponseWriter, message string, statusCode int, opts ...ProblemOption) {
-	p := errors.NewProblem(statusCode, errors.HTTPStatusSlug(statusCode), message)
+func SendError(w http.ResponseWriter, detail string, statusCode int, opts ...ProblemOption) {
+	p := errors.NewProblem(statusCode, errors.HTTPStatusSlug(statusCode), detail)
 	for _, o := range opts {
 		o(p)
 	}

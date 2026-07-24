@@ -134,7 +134,7 @@ func TestGetBeer(t *testing.T) {
 		Title   string `json:"title"`
 		Status  int    `json:"status"`
 		Code    string `json:"code"`
-		Message string `json:"message"`
+		Detail  string `json:"detail"`
 	}
 	if err := json.Unmarshal(rr.Body.Bytes(), &notFoundBody); err != nil {
 		t.Errorf("404 body should be valid JSON, got %q: %v", rr.Body.String(), err)
@@ -145,8 +145,8 @@ func TestGetBeer(t *testing.T) {
 	if notFoundBody.Code != "not_found" {
 		t.Errorf("404 code mismatch: got %q", notFoundBody.Code)
 	}
-	if notFoundBody.Message != "not found" {
-		t.Errorf("404 message mismatch: got %q", notFoundBody.Message)
+	if notFoundBody.Detail != "not found" {
+		t.Errorf("404 detail mismatch: got %q", notFoundBody.Detail)
 	}
 }
 
@@ -399,7 +399,7 @@ func TestCreateBeerValidationFailure(t *testing.T) {
 		Title   string `json:"title"`
 		Status  int    `json:"status"`
 		Code    string `json:"code"`
-		Message string `json:"message"`
+		Detail  string `json:"detail"`
 	}
 	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("body should be JSON, got %q: %v", rr.Body.String(), err)
@@ -407,11 +407,11 @@ func TestCreateBeerValidationFailure(t *testing.T) {
 	if resp.Status != http.StatusBadRequest {
 		t.Fatalf("expected status 400, got %d", resp.Status)
 	}
-	if strings.Contains(resp.Message, "Error 400:") || strings.Contains(resp.Message, "invalid beer:") {
-		t.Fatalf("validation error leaked internal prefix: %q", resp.Message)
+	if strings.Contains(resp.Detail, "Error 400:") || strings.Contains(resp.Detail, "invalid beer:") {
+		t.Fatalf("validation error leaked internal prefix: %q", resp.Detail)
 	}
-	if !strings.Contains(resp.Message, "nome:") {
-		t.Fatalf("expected translated field label in error, got %q", resp.Message)
+	if !strings.Contains(resp.Detail, "nome:") {
+		t.Fatalf("expected translated field label in error, got %q", resp.Detail)
 	}
 }
 

@@ -29,21 +29,22 @@ func NewUnavailableError() *AppError {
 //   - `Details` descreve erros granulares (ex: validação de campos).
 //   - `Action` sugere um fluxo à UX (relogin/redirect/retry) sem a forçar.
 type Problem struct {
-	Type    string          `json:"type"`               // URI relativa do erro (ex: /errors/duplicate_beer)
-	Title   string          `json:"title"`              // Resumo legível (http.StatusText)
-	Status  int             `json:"status"`             // Cópia do HTTP status
-	Code    string          `json:"code,omitempty"`     // Chave i18n estável (snake_case)
-	Message string          `json:"message"`            // Mensagem fallback (não expõe causa)
-	TraceID string          `json:"trace_id,omitempty"` // ID de correlação (RequestIDMiddleware)
-	Details []ProblemDetail `json:"details,omitempty"`  // Erros granulares (ex: validação)
-	Action  *ProblemAction  `json:"action,omitempty"`   // Sugestão de fluxo para a UX
+	Type     string          `json:"type"`               // URI do erro (ex: /errors/duplicate_beer)
+	Title    string          `json:"title"`              // Resumo legível (http.StatusText)
+	Status   int             `json:"status"`             // Cópia do HTTP status
+	Code     string          `json:"code,omitempty"`     // Chave i18n estável snake_case para o cliente
+	Detail   string          `json:"detail"`             // Mensagem fallback (não expõe causa)
+	Instance string          `json:"instance,omitempty"` // Caminho da requisição que falhou
+	TraceID  string          `json:"trace_id,omitempty"` // ID de correlação (RequestIDMiddleware)
+	Details  []ProblemDetail `json:"details,omitempty"`  // Erros granulares (ex: validação)
+	Action   *ProblemAction  `json:"action,omitempty"`   // Sugestão de fluxo para a UX
 }
 
 // ProblemDetail descreve um erro granular (ex: um campo inválido).
 type ProblemDetail struct {
 	Field   string `json:"field,omitempty"`
 	Code    string `json:"code"`    // Código de erro do campo (ex: email_invalid)
-	Message string `json:"message"` // Mensagem legível do campo (i18n no cliente)
+	Detail  string `json:"detail"`  // Mensagem legível do campo (i18n no cliente)
 }
 
 // ProblemAction sugere à UX um fluxo a seguir (sem o obrigar).
@@ -59,10 +60,9 @@ type ProblemAction struct {
 // contexto seguro.
 type AppError struct {
 	Code      int             // HTTP status sugerido
-	Message   string          // Mensagem de erro (não expõe causa raiz)
+	Detail    string          // Mensagem de erro (não expõe causa raiz)
 	Err       error           // Causa interna (apenas para logs servidor)
 	ErrorCode string          // Código de erro estável para o cliente (ex: "DUPLICATE_BEER")
-	Detail    any             // Payload extra seguro (legado; preferir Details)
 	Details   []ProblemDetail // Erros granulares tipados (ex: validação)
 	Action    *ProblemAction  // Sugestão de fluxo para a UX
 	TraceID   string          // ID de correlação (RequestIDMiddleware)
@@ -70,9 +70,9 @@ type AppError struct {
 
 func (e *AppError) Error() string {
 	if e.Err != nil {
-		return fmt.Sprintf("Error %d: %s: %v", e.Code, e.Message, e.Err)
+		return fmt.Sprintf("Error %d: %s: %v", e.Code, e.Detail, e.Err)
 	}
-	return fmt.Sprintf("Error %d: %s", e.Code, e.Message)
+	return fmt.Sprintf("Error %d: %s", e.Code, e.Detail)
 }
 
 // Unwrap expõe o erro interno para errors.As/errors.Is (tratamento
@@ -90,19 +90,19 @@ func (e *AppError) Is(target error) bool {
 	return false
 }
 
-func NewAppError(code int, message string, err error) *AppError {
+func NewAppError(code int, detail string, err error) *AppError {
 	return &AppError{
 		Code:    code,
-		Message: message,
+		Detail:  detail,
 		Err:     err,
 	}
 }
 
 // NewAppErrorWithCode cria um AppError com código de erro estável (i18n).
-func NewAppErrorWithCode(code int, message, errorCode string) *AppError {
+func NewAppErrorWithCode(code int, detail, errorCode string) *AppError {
 	return &AppError{
 		Code:      code,
-		Message:   message,
+		Detail:    detail,
 		ErrorCode: errorCode,
 	}
 }
@@ -112,47 +112,45 @@ func NewAppErrorWithCode(code int, message, errorCode string) *AppError {
 //
 // Deprecated: preferir NewAppErrorWithDetails com Details tipados. Mantido
 // para compatibilidade com chamadas existentes (ex: sugestões de duplicado).
-func NewAppErrorWithDetail(code int, message, errorCode string, detail any) *AppError {
+func NewAppErrorWithDetail(code int, detailMsg, errorCode string, detailPayload any) *AppError {
 	return &AppError{
 		Code:      code,
-		Message:   message,
+		Detail:    detailMsg,
 		ErrorCode: errorCode,
-		Detail:    detail,
+		Details:   []ProblemDetail{{Code: errorCode, Detail: fmt.Sprintf("%v", detailPayload)}},
 	}
 }
 
 // NewAppErrorWithDetails cria um AppError com código estável e detalhes
 // granulares tipados (RFC 7807), seguro para o cliente (sem PII).
-func NewAppErrorWithDetails(code int, message, errorCode string, details []ProblemDetail) *AppError {
+func NewAppErrorWithDetails(code int, detail, errorCode string, details []ProblemDetail) *AppError {
 	return &AppError{
 		Code:      code,
-		Message:   message,
+		Detail:    detail,
 		ErrorCode: errorCode,
 		Details:   details,
 	}
 }
 
 // ToProblem converte o AppError num Problem (RFC 7807), pronto a serializar.
-// O type é derivado do ErrorCode (URI relativa) quando disponível.
-func (e *AppError) ToProblem() *Problem {
+// O type é derivado do ErrorCode (URI absoluta) quando disponível.
+func (e *AppError) ToProblem(instance string) *Problem {
 	code := e.ErrorCode
 	if code == "" {
 		code = HTTPStatusSlug(e.Code)
 	}
 	p := &Problem{
-		Type:    "/errors/" + code,
-		Title:   statusText(e.Code),
-		Status:  e.Code,
-		Code:    code,
-		Message: e.Message,
-		TraceID: e.TraceID,
-		Action:  e.Action,
+		Type:     ProblemType(code),
+		Title:    statusText(e.Code),
+		Status:   e.Code,
+		Code:     code,
+		Detail:   e.Detail,
+		Instance: instance,
+		TraceID:  e.TraceID,
+		Action:   e.Action,
 	}
 	if len(e.Details) > 0 {
 		p.Details = e.Details
-	} else if e.Detail != nil {
-		// Legado: detalhe livre mantido em Details como item genérico.
-		p.Details = []ProblemDetail{{Code: code, Message: fmt.Sprintf("%v", e.Detail)}}
 	}
 	return p
 }

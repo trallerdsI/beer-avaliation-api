@@ -64,7 +64,7 @@ func validationDetails(err error) []appErrors.ProblemDetail {
 		details = append(details, appErrors.ProblemDetail{
 			Field:   validation.FieldLabel(fe.Field()),
 			Code:    "invalid_" + fe.Tag(),
-			Message: validation.FieldLabel(fe.Field()) + ": " + validation.RuleMessage(fe),
+			Detail:  validation.FieldLabel(fe.Field()) + ": " + validation.RuleMessage(fe),
 		})
 	}
 	return details
@@ -107,7 +107,7 @@ func (c *UserController) Register(w http.ResponseWriter, r *http.Request) {
 
 	if err := c.usecase.Register(r.Context(), user); err != nil {
 		if appErr := (*appErrors.AppError)(nil); stdErrors.As(err, &appErr) {
-			c.respondError(w, r, err, appErr.Message, appErr.Code)
+			c.respondError(w, r, err, appErr.Detail, appErr.Code)
 			return
 		}
 		c.respondError(w, r, err, "Failed to register user", http.StatusInternalServerError)

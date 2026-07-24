@@ -60,8 +60,8 @@ func TestNewAppErrorWithDetail(t *testing.T) {
 	if appErr.ErrorCode != "DUPLICATE_BEER" {
 		t.Fatalf("expected DUPLICATE_BEER, got %q", appErr.ErrorCode)
 	}
-	if appErr.Detail == nil {
-		t.Fatal("expected detail to be set")
+	if appErr.Detail != "duplicado" {
+		t.Fatalf("expected detail 'duplicado', got %q", appErr.Detail)
 	}
 }
 

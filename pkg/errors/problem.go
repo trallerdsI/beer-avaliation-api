@@ -1,6 +1,28 @@
 package errors
 
-import "net/http"
+import (
+	"net/http"
+	"os"
+	"strings"
+)
+
+var problemTypeBase = getProblemTypeBase()
+
+func getProblemTypeBase() string {
+	base := os.Getenv("PROBLEM_TYPE_BASE")
+	if base == "" {
+		return "/errors"
+	}
+	return strings.TrimRight(base, "/")
+}
+
+func ProblemType(code string) string {
+	return problemTypeBase + "/" + code
+}
+
+func SetProblemTypeBase(base string) {
+	problemTypeBase = strings.TrimRight(base, "/")
+}
 
 // HTTPStatusSlug devolve um slug estável em snake_case para um HTTP status,
 // usado como fallback de `code`/`type` quando o AppError não define ErrorCode.
@@ -37,12 +59,12 @@ func statusText(status int) string {
 
 // NewProblem constrói um Problem mínimo e seguro (PT-BR) a partir de um
 // status HTTP, código estável e mensagem de fallback.
-func NewProblem(status int, code, message string) *Problem {
+func NewProblem(status int, code, detail string) *Problem {
 	return &Problem{
-		Type:    "/errors/" + code,
-		Title:   statusText(status),
-		Status:  status,
-		Code:    code,
-		Message: message,
+		Type:   ProblemType(code),
+		Title:  statusText(status),
+		Status: status,
+		Code:   code,
+		Detail: detail,
 	}
 }

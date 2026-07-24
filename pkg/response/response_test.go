@@ -9,7 +9,7 @@ import (
 )
 
 // TestSendErrorSemantics valida o envelope RFC 7807 produzido por SendError:
-// Content-Type application/problem+json e mensagem no campo "message".
+// Content-Type application/problem+json e mensagem no campo "detail".
 func TestSendErrorSemantics(t *testing.T) {
 	rr := httptest.NewRecorder()
 	SendError(rr, "invalid credentials", http.StatusUnauthorized)
@@ -22,16 +22,16 @@ func TestSendErrorSemantics(t *testing.T) {
 	}
 
 	var body struct {
-		Message string `json:"message"`
-		Code    string `json:"code"`
+		Detail string `json:"detail"`
+		Code   string `json:"code"`
 	}
 	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
 		t.Fatalf("invalid JSON body: %v", err)
 	}
-	if body.Message != "invalid credentials" {
-		t.Fatalf("expected message, got %q", body.Message)
+	if body.Detail != "invalid credentials" {
+		t.Fatalf("expected detail, got %q", body.Detail)
 	}
-	if !strings.Contains(rr.Body.String(), `"message":"invalid credentials"`) {
+	if !strings.Contains(rr.Body.String(), `"detail":"invalid credentials"`) {
 		t.Fatalf("unexpected body: %s", rr.Body.String())
 	}
 }

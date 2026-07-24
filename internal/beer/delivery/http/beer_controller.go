@@ -142,7 +142,7 @@ func handleError(w http.ResponseWriter, ctx context.Context, logger *slog.Logger
 // expor a causa interna (OWASP A05). O TraceID é injetado pelo
 // RequestIDMiddleware via contexto, se disponível.
 func sendAppError(w http.ResponseWriter, r *http.Request, appErr *appErrors.AppError) {
-	problem := appErr.ToProblem()
+	problem := appErr.ToProblem(r.URL.Path)
 	if trace := middleware.TraceIDFromContext(r.Context()); trace != "" {
 		problem.TraceID = trace
 	}
@@ -352,7 +352,7 @@ func (c *BeerController) GetBeerByID(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		var appErr *appErrors.AppError
 		// CORRIGIDO: Uso moderno de errors.As para segurança e compatibilidade com wrapping
-		if stdErrors.As(err, &appErr) && (appErr.Code == http.StatusNotFound || strings.Contains(strings.ToLower(appErr.Message), "not found")) {
+		if stdErrors.As(err, &appErr) && (appErr.Code == http.StatusNotFound || strings.Contains(strings.ToLower(appErr.Detail), "not found")) {
 			// PADRONIZADO: envelope JSON consistente com os restantes erros
 			// do controller (response.SendError), em vez de texto plano.
 			sendAppError(w, r, appErr)
