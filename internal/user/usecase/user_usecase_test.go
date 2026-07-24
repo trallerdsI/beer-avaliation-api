@@ -57,6 +57,26 @@ func (m *mockUserRepo) List(ctx context.Context, page, pageSize int) ([]model.Us
 	return args.Get(0).([]model.User), args.Int(1), args.Error(2)
 }
 
+func (m *mockUserRepo) CreatePushSubscription(ctx context.Context, sub model.PushSubscription) error {
+	args := m.Called(ctx, sub)
+	return args.Error(0)
+}
+
+func (m *mockUserRepo) ListPushSubscriptions(ctx context.Context, userID string) ([]model.PushSubscription, error) {
+	args := m.Called(ctx, userID)
+	return args.Get(0).([]model.PushSubscription), args.Error(1)
+}
+
+func (m *mockUserRepo) DeletePushSubscription(ctx context.Context, id string) error {
+	args := m.Called(ctx, id)
+	return args.Error(0)
+}
+
+func (m *mockUserRepo) DeletePushSubscriptionByEndpoint(ctx context.Context, userID, endpoint string) error {
+	args := m.Called(ctx, userID, endpoint)
+	return args.Error(0)
+}
+
 func newUserUsecase(repo *mockUserRepo) UserUsecase {
 	return NewUserUsecase(repo)
 }

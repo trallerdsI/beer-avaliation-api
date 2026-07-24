@@ -18,6 +18,10 @@ type UserRepository interface {
 	Update(ctx context.Context, id string, user model.User) error
 	Delete(ctx context.Context, id string) error
 	List(ctx context.Context, page, pageSize int) ([]model.User, int, error)
+	CreatePushSubscription(ctx context.Context, sub model.PushSubscription) error
+	ListPushSubscriptions(ctx context.Context, userID string) ([]model.PushSubscription, error)
+	DeletePushSubscription(ctx context.Context, id string) error
+	DeletePushSubscriptionByEndpoint(ctx context.Context, userID, endpoint string) error
 }
 
 type PostgresUserRepository struct {
@@ -247,6 +251,99 @@ func (r *PostgresUserRepository) List(ctx context.Context, page, pageSize int) (
 	return users, total, nil
 }
 
+func (r *PostgresUserRepository) CreatePushSubscription(ctx context.Context, sub model.PushSubscription) error {
+	query := `
+		INSERT INTO push_subscriptions (user_id, endpoint, p256dh, auth, user_agent)
+		VALUES ($1, $2, $3, $4, $5)
+		ON CONFLICT (user_id, endpoint) DO UPDATE SET
+			p256dh = EXCLUDED.p256dh,
+			auth = EXCLUDED.auth,
+			user_agent = EXCLUDED.user_agent,
+			updated_at = now()`
+
+	_, err := r.db.ExecContext(ctx, query,
+		sub.UserID,
+		sub.Endpoint,
+		sub.P256DH,
+		sub.Auth,
+		sub.UserAgent,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to create push subscription: %w", err)
+	}
+	return nil
+}
+
+func (r *PostgresUserRepository) ListPushSubscriptions(ctx context.Context, userID string) ([]model.PushSubscription, error) {
+	query := `
+		SELECT id, user_id, endpoint, p256dh, auth, user_agent, created_at, updated_at, last_used_at
+		FROM push_subscriptions
+		WHERE user_id = $1`
+
+	rows, err := r.db.QueryContext(ctx, query, userID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list push subscriptions: %w", err)
+	}
+	defer rows.Close()
+
+	var subs []model.PushSubscription
+	for rows.Next() {
+		var sub model.PushSubscription
+		var userAgent, lastUsedAt sql.NullString
+		if err := rows.Scan(
+			&sub.ID,
+			&sub.UserID,
+			&sub.Endpoint,
+			&sub.P256DH,
+			&sub.Auth,
+			&userAgent,
+			&sub.CreatedAt,
+			&sub.UpdatedAt,
+			&lastUsedAt,
+		); err != nil {
+			return nil, fmt.Errorf("failed to scan push subscription: %w", err)
+		}
+		sub.UserAgent = userAgent.String
+		sub.LastUsedAt = lastUsedAt.String
+		subs = append(subs, sub)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating push subscriptions: %w", err)
+	}
+	return subs, nil
+}
+
+func (r *PostgresUserRepository) DeletePushSubscription(ctx context.Context, id string) error {
+	result, err := r.db.ExecContext(ctx, "DELETE FROM push_subscriptions WHERE id = $1", id)
+	if err != nil {
+		return fmt.Errorf("failed to delete push subscription: %w", err)
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to get affected rows: %w", err)
+	}
+	if rows == 0 {
+		return fmt.Errorf("push subscription not found")
+	}
+	return nil
+}
+
+func (r *PostgresUserRepository) DeletePushSubscriptionByEndpoint(ctx context.Context, userID, endpoint string) error {
+	result, err := r.db.ExecContext(ctx, "DELETE FROM push_subscriptions WHERE user_id = $1 AND endpoint = $2", userID, endpoint)
+	if err != nil {
+		return fmt.Errorf("failed to delete push subscription by endpoint: %w", err)
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to get affected rows: %w", err)
+	}
+	if rows == 0 {
+		return fmt.Errorf("push subscription not found")
+	}
+	return nil
+}
+
 // UnavailableUserRepository é o fallback offline quando a base de dados não
 // está acessível. Todas as operações retornam ErrDatabaseUnavailable (503).
 type UnavailableUserRepository struct{}
@@ -279,4 +376,20 @@ func (r *UnavailableUserRepository) Delete(ctx context.Context, id string) error
 }
 func (r *UnavailableUserRepository) List(ctx context.Context, page, pageSize int) ([]model.User, int, error) {
 	return nil, 0, appErrors.NewUnavailableError()
+}
+
+func (r *UnavailableUserRepository) CreatePushSubscription(ctx context.Context, sub model.PushSubscription) error {
+	return appErrors.NewUnavailableError()
+}
+
+func (r *UnavailableUserRepository) ListPushSubscriptions(ctx context.Context, userID string) ([]model.PushSubscription, error) {
+	return nil, appErrors.NewUnavailableError()
+}
+
+func (r *UnavailableUserRepository) DeletePushSubscription(ctx context.Context, id string) error {
+	return appErrors.NewUnavailableError()
+}
+
+func (r *UnavailableUserRepository) DeletePushSubscriptionByEndpoint(ctx context.Context, userID, endpoint string) error {
+	return appErrors.NewUnavailableError()
 }

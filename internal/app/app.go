@@ -93,6 +93,9 @@ func BuildRouterWithDBErr(db *sql.DB, dbErr error, logger *slog.Logger) http.Han
 	mux.HandleFunc("GET /api/v1/users/{id}", middleware.Auth(userController.GetProfile))
 	mux.HandleFunc("PUT /api/v1/users/{id}", middleware.Auth(userController.UpdateProfile))
 	mux.HandleFunc("DELETE /api/v1/users/{id}", middleware.Auth(userController.DeleteAccount))
+	mux.HandleFunc("POST /api/v1/users/{id}/push/subscribe", middleware.Auth(userController.SubscribePush))
+	mux.HandleFunc("POST /api/v1/users/{id}/push/unsubscribe", middleware.Auth(userController.UnsubscribePush))
+	mux.HandleFunc("GET /api/v1/users/{id}/push", middleware.Auth(userController.ListPushSubscriptions))
 	mux.HandleFunc("GET /api/v1/stats", monitoringController.GetStats)
 	mux.HandleFunc("GET /api/v1/health", monitoringController.HealthCheck)
 	mux.HandleFunc("GET /docs", docsHandler())
@@ -106,6 +109,7 @@ func BuildRouterWithDBErr(db *sql.DB, dbErr error, logger *slog.Logger) http.Han
 	handler = middleware.MetricsMiddleware(handler)
 	handler = middleware.RequestIDMiddleware(handler)
 	handler = middleware.CompressionMiddleware(handler)
+	handler = middleware.RateLimitMiddleware(handler)
 
 	return handler
 }
@@ -382,6 +386,7 @@ func migrateDB(db *sql.DB) error {
 		"migrations/extend_media.sql",
 		"migrations/drop_legacy_comments_table.sql",
 		"migrations/enable_rls.sql",
+		"migrations/create_push_subscriptions.sql",
 	)
 
 	for _, file := range sqlFiles {

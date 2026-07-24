@@ -24,6 +24,9 @@ type UserUsecase interface {
 	UpdateProfile(ctx context.Context, id string, user model.User) error
 	DeleteAccount(ctx context.Context, id string) error
 	SeedAdmin(ctx context.Context) error
+	SubscribePush(ctx context.Context, userID string, sub model.PushSubscription) error
+	UnsubscribePush(ctx context.Context, userID, endpoint string) error
+	ListPushSubscriptions(ctx context.Context, userID string) ([]model.PushSubscription, error)
 }
 
 type userUsecase struct {
@@ -190,6 +193,35 @@ func (u *userUsecase) DeleteAccount(ctx context.Context, id string) error {
 
 	slog.InfoContext(ctx, "account deleted", "user_id", id)
 	return nil
+}
+
+func (u *userUsecase) SubscribePush(ctx context.Context, userID string, sub model.PushSubscription) error {
+	slog.InfoContext(ctx, "subscribe push", "user_id", userID, "endpoint", sub.Endpoint)
+	sub.UserID = userID
+	if err := u.repo.CreatePushSubscription(ctx, sub); err != nil {
+		slog.ErrorContext(ctx, "failed to subscribe push", "err", err)
+		return errors.NewAppError(500, "failed to subscribe push", err)
+	}
+	return nil
+}
+
+func (u *userUsecase) UnsubscribePush(ctx context.Context, userID, endpoint string) error {
+	slog.InfoContext(ctx, "unsubscribe push", "user_id", userID, "endpoint", endpoint)
+	if err := u.repo.DeletePushSubscriptionByEndpoint(ctx, userID, endpoint); err != nil {
+		slog.ErrorContext(ctx, "failed to unsubscribe push", "err", err)
+		return errors.NewAppError(500, "failed to unsubscribe push", err)
+	}
+	return nil
+}
+
+func (u *userUsecase) ListPushSubscriptions(ctx context.Context, userID string) ([]model.PushSubscription, error) {
+	slog.InfoContext(ctx, "list push subscriptions", "user_id", userID)
+	subs, err := u.repo.ListPushSubscriptions(ctx, userID)
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to list push subscriptions", "err", err)
+		return nil, errors.NewAppError(500, "failed to list push subscriptions", err)
+	}
+	return subs, nil
 }
 
 // SeedAdmin cria um utilizador administrador global no arranque quando

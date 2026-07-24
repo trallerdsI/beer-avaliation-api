@@ -318,3 +318,98 @@ func (c *UserController) DeleteAccount(w http.ResponseWriter, r *http.Request) {
 		"message": "Account deleted successfully",
 	})
 }
+
+func (c *UserController) SubscribePush(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if id == "" {
+		response.SendProblem(w, response.NewProblem(http.StatusBadRequest, "bad_request", "O ID do utilizador é obrigatório."))
+		return
+	}
+
+	if r.Body == nil {
+		response.SendProblem(w, response.NewProblem(http.StatusBadRequest, "invalid_request_body", "O corpo da requisição é inválido."))
+		return
+	}
+
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+
+	var sub model.PushSubscription
+	if err := json.NewDecoder(r.Body).Decode(&sub); err != nil {
+		c.respondError(w, r, err, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if sub.Endpoint == "" || sub.P256DH == "" || sub.Auth == "" {
+		response.SendProblem(w, response.NewProblem(http.StatusBadRequest, "invalid_push_subscription",
+			"endpoint, p256dh e auth são obrigatórios."))
+		return
+	}
+
+	if err := c.usecase.SubscribePush(r.Context(), id, sub); err != nil {
+		c.respondError(w, r, err, "Failed to subscribe push", http.StatusInternalServerError)
+		return
+	}
+
+	response.SendResponse(w, http.StatusCreated, map[string]string{
+		"message": "Push subscription created",
+	})
+}
+
+func (c *UserController) UnsubscribePush(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if id == "" {
+		response.SendProblem(w, response.NewProblem(http.StatusBadRequest, "bad_request", "O ID do utilizador é obrigatório."))
+		return
+	}
+
+	if r.Body == nil {
+		response.SendProblem(w, response.NewProblem(http.StatusBadRequest, "invalid_request_body", "O corpo da requisição é inválido."))
+		return
+	}
+
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+
+	var body struct {
+		Endpoint string `json:"endpoint"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		c.respondError(w, r, err, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if body.Endpoint == "" {
+		response.SendProblem(w, response.NewProblem(http.StatusBadRequest, "invalid_request_body",
+			"endpoint é obrigatório."))
+		return
+	}
+
+	if err := c.usecase.UnsubscribePush(r.Context(), id, body.Endpoint); err != nil {
+		c.respondError(w, r, err, "Failed to unsubscribe push", http.StatusInternalServerError)
+		return
+	}
+
+	response.SendResponse(w, http.StatusOK, map[string]string{
+		"message": "Push subscription removed",
+	})
+}
+
+func (c *UserController) ListPushSubscriptions(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if id == "" {
+		response.SendProblem(w, response.NewProblem(http.StatusBadRequest, "bad_request", "O ID do utilizador é obrigatório."))
+		return
+	}
+
+	subs, err := c.usecase.ListPushSubscriptions(r.Context(), id)
+	if err != nil {
+		c.respondError(w, r, err, "Failed to list push subscriptions", http.StatusInternalServerError)
+		return
+	}
+
+	if subs == nil {
+		subs = []model.PushSubscription{}
+	}
+	response.SendResponse(w, http.StatusOK, map[string]interface{}{
+		"subscriptions": subs,
+	})
+}

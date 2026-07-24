@@ -55,6 +55,21 @@ func (m *MockUserUsecase) SeedAdmin(ctx context.Context) error {
 	return args.Error(0)
 }
 
+func (m *MockUserUsecase) SubscribePush(ctx context.Context, userID string, sub model.PushSubscription) error {
+	args := m.Called(ctx, userID, sub)
+	return args.Error(0)
+}
+
+func (m *MockUserUsecase) UnsubscribePush(ctx context.Context, userID, endpoint string) error {
+	args := m.Called(ctx, userID, endpoint)
+	return args.Error(0)
+}
+
+func (m *MockUserUsecase) ListPushSubscriptions(ctx context.Context, userID string) ([]model.PushSubscription, error) {
+	args := m.Called(ctx, userID)
+	return args.Get(0).([]model.PushSubscription), args.Error(1)
+}
+
 func newUserController(mu *MockUserUsecase) *UserController {
 	return NewUserController(mu, nil)
 }
