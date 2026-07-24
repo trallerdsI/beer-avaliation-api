@@ -6,11 +6,14 @@ A modern, scalable REST API for managing beer reviews and ratings built with Go.
 
 - 🍺 Comprehensive beer catalog management
 - 💬 User comments and ratings (persisted as JSONB embedded in the beer)
-- 🔍 Advanced search with filters
-- 📊 Monitoring and metrics
-- 🔐 Authentication and authorization (JWT, env-configured secret)
+- 🔍 Advanced search with filters and 409 similarity prevention
+- 📊 Admin analytics (`/admin/stats`) and user personal stats (`/users/me/stats`)
+- 🔐 Authentication and authorization (JWT HS256 + OAuth2/OIDC RS256)
 - 📝 Swagger documentation
 - ⚡ Go 1.26 native `net/http` routing (no external router dependency)
+- 🛡️ Rate limiting (429), CORS, gzip/brotli compression, request ID tracing
+- 🔔 Push subscriptions (Web Push / Push API)
+- 📤 Media upload via multipart/form-data (RFC 7578) to Supabase Storage
 
 ## Architecture
 
@@ -28,23 +31,32 @@ beer-review-app/
 │   │   ├── usecase/     # Business logic
 │   │   └── model/       # Domain models
 │   ├── user/            # User domain
-│   └── monitoring/      # Monitoring components
+│   │   ├── delivery/
+│   │   ├── repository/
+│   │   ├── usecase/
+│   │   └── model/
+│   └── monitoring/      # Health + stats controllers
 ├── pkg/
-│   ├── middleware/      # HTTP middleware (auth, metrics, request-id)
-│   ├── auth/            # JWT helpers
-│   ├── errors/          # Error handling
-│   └── response/        # HTTP response helpers
+│   ├── middleware/      # HTTP middleware (auth, metrics, request-id, CORS, compression, rate-limit)
+│   ├── auth/            # JWT helpers (HS256 session + RS256 OIDC validation)
+│   ├── errors/          # RFC 7807 Problem Details
+│   ├── response/        # HTTP response helpers
+│   ├── metrics/         # Prometheus metrics + serverless detection
+│   ├── storage/         # Supabase Storage upload adapter (RFC 7578)
+│   ├── uuid/            # UUIDv7 generator (stdlib, RFC 9562)
+│   ├── validation/      # Custom validators (flavor, aroma, color, etc.)
+│   └── vercel/          # IPv4 DSN resolution for Supabase pooler
 ```
 
 ## Tech Stack
 
-- **Go 1.26.5** — `net/http` native routing (`log/slog`, `testing/synctest`); **zero-dependency** onde possível (UUIDv7 e Supabase Storage implementados em stdlib)
-- **PostgreSQL (Supabase)** com `lib/pq`
-- **Prometheus** metrics (`client_golang`)
-- **golang-jwt** (HS256, stdlib `crypto/hmac`) + bcrypt para auth
-- **bluemonday** HTML sanitization (XSS)
-- **Viper** configuration
-- **Supabase Storage** para upload de mídia (RFC 7578) via `net/http`
+- **Go 1.26.5** — `net/http` native routing (`log/slog`); **zero-dependency** where possible (UUIDv7 stdlib)
+- **PostgreSQL 17+ (Supabase)** com `lib/pq`
+- **golang-jwt/v5** — HS256 session tokens + RS256 OIDC validation (exceção à regra Zero-Dependency)
+- **go-playground/validator/v10** — validação de domínio
+- **bluemonday** — sanitização HTML (XSS)
+- **Prometheus client_golang** — métricas
+- **testify** — mocks e assertions em testes
 
 ## Conformidade RFC
 
@@ -65,72 +77,23 @@ A API segue estes RFCs (12 de 12 implementados):
 | 6749 | OAuth2 / OIDC (login social Google/Apple via id_token RS256+JWKS) | ✅ |
 | 8030 | Web Push | ✅ |
 
-## Decisões de Arquitetura (decisões desta fase)
+## Modelo de Dados
 
-- **Banco como fonte de verdade:** A API recria o esquema a cada arranque
-  (`migrations/000_reset.sql` faz `DROP TABLE IF EXISTS ... CASCADE` antes de
-  recriar). Migrações destrutivas são aceitáveis — não há front dependiente nem
-  dados definitivos. Controlado por `DB_RESET_SCHEMA` (default `true`):
-  defina `false`/`0`/`no` na Vercel quando o banco tiver dados reais para
-  desativar o reset destrutivo e aplicar apenas migrations incrementais.
-- **Login social (RFC 6749 / OIDC):** `POST /api/v1/users/oauth` recebe
-  `provider` + `id_token` (JWT RS256 do Google/Apple). A API valida a
-  assinatura e as claims (`iss`, `aud`, `exp`, `alg=RS256`) contra o JWKS
-  do IdP (cache em memória com respeito por `Cache-Control: max-age`, suporta
-  rotação de chaves) usando `golang-jwt/v5`. Em seguida faz upsert do
-  utilizador em `beerUsers` ligado por `(provider, external_sub)` e devolve o
-  **nosso** JWT HS256 de sessão — o middleware `Auth` existente não muda.
-  Providers configurados via `OAUTH_GOOGLE_AUDIENCE` / `OAUTH_APPLE_AUDIENCE`
-  (e opcionalmente `*_JWKS_URL`). Sem providers configurados, o endpoint
-  responde 400. Decisão: usar lib de mercado (`golang-jwt/v5`) para OIDC,
-  exceção à regra Zero-Dependency, dado o risco criptográfico de RS256/JWKS
-  escrito à mão.
-- **Migrações embutidas (`go:embed`):** os ficheiros SQL vivem em
-  `internal/app/migrations/` e são embutidos no binário (necessário na Vercel,
-  onde o filesystem do lambda não tem a pasta). O `vercel.json` builda apenas
-  `api/index.go`.
-- **Ligação ao Supabase na Vercel (IPv4):** o host direto `db.<ref>.supabase.co`
-  só resolve para IPv6 (AAAA) e o Vercel não roteia IPv6 ("cannot assign
-  requested address"). A resolução de DSN reescreve automaticamente para o
-  pooler IPv4 `aws-0-<region>.pooler.supabase.com` e força
-  `default_query_exec_mode=simple_protocol` (compatível com PgBouncer).
-- **RLS no Supabase:** `enable_rls.sql` ativa Row Level Security em `beers`/
-  `beerUsers` (leitura pública, escrita restrita a dono/admin) para fechar os
-  issues do Supabase Advisor (LGPD/OWASP A05). O backend usa a service-role key
-  (bypass RLS), logo a API não é afetada.
-- **SSE sobre WebSocket (RFC 6455):** tempo real via Server-Sent Events
-  (multiplexa sobre HTTP/2, reconexão nativa do EventSource). WebSocket só seria
-  necessário para chat bidirecional privado, fora de escopo.
-- **Contrato de lista vazia:** respostas paginadas serializam `[]` (nunca
-  `null`) em `beers`.
+- **`beers`** — Catálogo de cervejas com `style`, `taste`, `aroma`, `color`, `body`, `carbonation`, `finish`
+- **`comments`** — JSONB embutido em `beers` (modelo documento, não tabela separada)
+- **`beerUsers`** — Utilizadores com `role` (`user`/`admin`), `provider` (local/google/apple), `external_sub`
+- **`push_subscriptions`** — Subscrições Web Push por utilizador
 
-## Prerequisites
+## Decisões de Arquitetura
 
-- Go 1.26.5+
-- PostgreSQL 17+
-- Docker (optional)
-
-## Getting Started
-
-1. Clone the repository:
-
-```bash
-git clone https://github.com/yourusername/beer-review-app.git
-cd beer-review-app
-```
-
-1. Set up environment variables:
-
-```bash
-cp .env.example .env
-# Edit .env with your configuration
-```
-
-1. Run the application:
-
-```bash
-go run cmd/server/main.go
-```
+- **Banco como fonte de verdade:** `DB_RESET_SCHEMA=true` (default) recria o esquema a cada arranque via `migrations/000_reset.sql`. Defina `false`/`0`/`no` na Vercel para preservar dados e aplicar apenas migrations incrementais.
+- **Login social (RFC 6749 / OIDC):** `POST /api/v1/users/oauth` recebe `provider` + `id_token` (JWT RS256 do Google/Apple). Valida contra JWKS do IdP com cache e faz upsert em `beerUsers` por `(provider, external_sub)`. Devolve JWT HS256 de sessão.
+- **Migrações embutidas (`go:embed`):** os ficheiros SQL vivem em `internal/app/migrations/` e são embutidos no binário (necessário na Vercel, onde o filesystem do lambda não tem a pasta).
+- **Ligação ao Supabase na Vercel (IPv4):** o host direto `db.<ref>.supabase.co` só resolve para IPv6. A resolução de DSN reescreve automaticamente para o pooler IPv4 `aws-0-<region>.pooler.supabase.com` e força `default_query_exec_mode=simple_protocol`.
+- **RLS no Supabase:** `enable_rls.sql` ativa Row Level Security em `beers`/`beerUsers`. O backend usa service-role key (bypass RLS).
+- **SSE sobre WebSocket (RFC 6455):** tempo real via Server-Sent Events (multiplexa sobre HTTP/2). WebSocket só para chat bidirecional privado, fora de escopo.
+- **Rate Limiter:** cleanup lazy de chaves expiradas no map `hits` para evitar OOM em serverless.
+- **Contrato de erro RFC 7807:** `code` estável (snake_case) + `detail` + `instance` (caminho da rota). O Flutter mapeia `code` para `DSLanguageError` / `DSLanguageFeedback`.
 
 ## API Endpoints
 
@@ -142,31 +105,32 @@ go run cmd/server/main.go
 - `PUT /api/v1/beers/{id}` - Update beer
 - `DELETE /api/v1/beers/{id}` - Delete beer
 - `GET /api/v1/beers/search` - Search beers with filters
-
-### Comments
-
 - `POST /api/v1/beers/{id}/comments` - Add comment
 - `DELETE /api/v1/beers/{id}/comments/{commentId}` - Delete comment
 - `POST /api/v1/beers/{id}/comments/{commentId}/like` - Like comment
+- `POST /api/v1/beers/{id}/media` - Upload media (RFC 7578)
 
 ### User Operations
 
 - `POST /api/v1/users/register` - Register new user
 - `POST /api/v1/users/login` - User login
+- `POST /api/v1/users/oauth` - OAuth2/OIDC login (Google/Apple)
 - `GET /api/v1/users/{id}` - Get user profile
 - `PUT /api/v1/users/{id}` - Update profile
 - `DELETE /api/v1/users/{id}` - Delete account
+- `POST /api/v1/users/{id}/push/subscribe` - Subscribe to push
+- `POST /api/v1/users/{id}/push/unsubscribe` - Unsubscribe from push
+- `GET /api/v1/users/{id}/push` - List push subscriptions
 
 ### Monitoring
 
 - `GET /api/v1/health` - Health check
-- `GET /api/v1/stats` - Application statistics
-- `GET /metrics` - Prometheus metrics
+- `GET /api/v1/stats` - Public statistics (total beers + top styles)
+- `GET /api/v1/admin/stats` - Admin statistics panel (requires admin role)
+- `GET /api/v1/users/me/stats` - Authenticated user personal statistics
+- `GET /metrics` - Prometheus metrics (non-serverless only)
 
 ## Testing
-
-A suíte segue a filosofia Go "standard library first": testes table-driven com
-`net/http/httptest`, mocks via interfaces implícitas e deteção de corridas.
 
 ```bash
 # Formatação (o CI quebra se não estiver gofmt)
@@ -176,15 +140,12 @@ gofmt -l $(go list -f '{{.Dir}}' ./...) && git diff --exit-code
 go vet ./...
 go test -race -cover ./...
 
-# Auditoria de cobertura
-go test -coverprofile=coverage.out ./... && go tool cover -html=coverage.out
+# Auditoria de vulnerabilidades
+govulncheck ./...
 
 # Benchmark (serverless: alocações importam)
 go test -bench=. -benchmem ./...
 ```
-
-O `github/workflows/ci.yml` corre `go mod tidy`, `gofmt`, `go vet`, `go build`,
-`go test -race -cover` e `govulncheck` em matrix Go `1.26.5` / `stable`.
 
 ## Deployment
 
@@ -196,7 +157,6 @@ A aplicação corre na Vercel como função serverless e usa PostgreSQL no Supab
 
 - Projeto Supabase (Free Plan ok). O esquema é recriado automaticamente a cada
   deploy via `migrateDB` (migrações embutidas em `internal/app/migrations/`).
-  **Não é necessário correr SQL manualmente.**
 - Recomenda-se ativar **Deployment Protection** nas definições da Vercel para
   não expor os endpoints publicamente.
 
@@ -214,61 +174,19 @@ resolve para IPv6 e falha no Vercel.
 Variáveis adicionais:
 
 - `JWT_SECRET` — secreto para assinar/validar JWT (obrigatório)
+- `DB_RESET_SCHEMA` — `true`/`false` para controlar reset do schema no arranque
 - `CORS_ALLOWED_ORIGINS` — origens permitidas (ex.: `https://app.vercel.app`)
 - `CORS_ALLOWED_REGEX` — regex opcional para subdomínios
 - `SUPABASE_STORAGE_BUCKET` — bucket de imagens (ex.: `beer-media`)
-- `OAUTH_GOOGLE_AUDIENCE` — client ID da app Flutter no Google (valor esperado em `aud` do id_token). Defina para ativar login Google.
+- `OAUTH_GOOGLE_AUDIENCE` — client ID da app Flutter no Google. Defina para ativar login Google.
 - `OAUTH_GOOGLE_JWKS_URL` — **opcional**; default `https://www.googleapis.com/oauth2/v3/certs`.
 - `OAUTH_APPLE_AUDIENCE` — Service ID da app no Apple Developer. Defina para ativar login Apple.
 - `OAUTH_APPLE_JWKS_URL` — **opcional**; default `https://appleid.apple.com/auth/keys`.
 
-##### Login social (OAuth2 / OIDC — RFC 6749)
-
-O endpoint `POST /api/v1/users/oauth` recebe `{ provider, id_token }`,
-onde `id_token` é o JWT RS256 emitido pelo Google/Apple após o fluxo
-PKCE no cliente (Flutter). A API:
-
-1. Valida `iss`, `aud` (== `*_AUDIENCE`), `exp` e `alg=RS256` do token
-   contra o JWKS do IdP (cache em memória que respeita `Cache-Control:
-   max-age`, suportando rotação de chaves sem rede por login).
-2. Faz **upsert** do utilizador em `beerUsers` ligado por
-   `(provider, external_sub)` — contas sociais não têm `password`.
-3. Devolve o **nosso** JWT HS256 de sessão (`JWT_SECRET`). O middleware
-   `Auth` existente não muda: o resto da API aceita apenas esse token.
-
-Sem nenhuma `*_AUDIENCE` definida, o endpoint responde `400`
-(`unsupported provider`). Nenhum segredo do IdP é necessário no backend —
-apenas os client IDs (públicos) e os endpoints JWKS públicos por issuer.
-
 #### 3. Deploy
 
 O repo já inclui [vercel.json](vercel.json) e [api/index.go](api/index.go).
-Ao importar na Vercel, as rotas `/api/*` são servidas pelo handler Go. O
-GitHub Actions (`.github/workflows/ci.yml`) corre `gofmt`, `go vet`,
-`go test -race` e `govulncheck`.
-
-### Local (fora da Vercel)
-
-```bash
-cp .env.example .env   # ajuste DBConnString / JWT_SECRET
-go run cmd/server/main.go
-```
-
-## Monitoring
-
-The application exposes metrics for Prometheus at `/metrics` and includes:
-
-- Response times
-- Error counts
-- Request counts
-
-## Contributing
-
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
+Ao importar na Vercel, as rotas `/api/*` são servidas pelo handler Go.
 
 ## License
 
