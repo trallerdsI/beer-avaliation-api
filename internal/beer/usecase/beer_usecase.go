@@ -48,8 +48,18 @@ func (u *beerUsecase) publish(ev realtime.Event) {
 	}
 }
 
+func (u *beerUsecase) unavailable() error {
+	if u.repo == nil {
+		return errors.NewUnavailableError()
+	}
+	return nil
+}
+
 // GetAll retrieves beers from repository.
 func (u *beerUsecase) GetAll(ctx context.Context) ([]model.Beer, error) {
+	if err := u.unavailable(); err != nil {
+		return nil, err
+	}
 	// Retrieve beers from the repository
 	beers, err := u.repo.GetAll(ctx)
 	if err != nil {
@@ -61,6 +71,9 @@ func (u *beerUsecase) GetAll(ctx context.Context) ([]model.Beer, error) {
 
 // Create adds a new beer.
 func (u *beerUsecase) Create(ctx context.Context, beer *model.Beer) error {
+	if err := u.unavailable(); err != nil {
+		return err
+	}
 	// UUIDv7 (RFC 9562): id time-ordered gerado na app, antes do repo.
 	if beer.ID == "" {
 		beer.ID = uuid.MustNewV7()
@@ -106,11 +119,17 @@ func (u *beerUsecase) Create(ctx context.Context, beer *model.Beer) error {
 
 // GetByID retrieves a beer by its ID.
 func (u *beerUsecase) GetByID(ctx context.Context, id string) (model.Beer, error) {
+	if err := u.unavailable(); err != nil {
+		return model.Beer{}, err
+	}
 	return u.repo.GetByID(ctx, id)
 }
 
 // GetPaginated retrieves paginated beers.
 func (u *beerUsecase) GetPaginated(ctx context.Context, page, pageSize int) ([]model.Beer, int, error) {
+	if err := u.unavailable(); err != nil {
+		return nil, 0, err
+	}
 	beers, total, err := u.repo.GetPaginated(ctx, page, pageSize)
 	if err != nil {
 		return nil, 0, errors.NewAppError(500, "Failed to retrieve paginated beers", err)
@@ -121,6 +140,9 @@ func (u *beerUsecase) GetPaginated(ctx context.Context, page, pageSize int) ([]m
 // Update updates an existing beer. AuthZ: só o criador ou um admin podem
 // editar. created_by NULL (cervejas seedadas por scrap) só pode ser editado por admin.
 func (u *beerUsecase) Update(ctx context.Context, id string, beer model.Beer) error {
+	if err := u.unavailable(); err != nil {
+		return err
+	}
 	existing, err := u.repo.GetByID(ctx, id)
 	if err != nil {
 		return err
@@ -137,6 +159,9 @@ func (u *beerUsecase) Update(ctx context.Context, id string, beer model.Beer) er
 
 // Delete removes a beer. AuthZ: só o criador ou um admin podem apagar.
 func (u *beerUsecase) Delete(ctx context.Context, id string) error {
+	if err := u.unavailable(); err != nil {
+		return err
+	}
 	existing, err := u.repo.GetByID(ctx, id)
 	if err != nil {
 		return err
@@ -166,6 +191,9 @@ func canModify(ctx context.Context, ownerID string) bool {
 }
 
 func (u *beerUsecase) AddComment(ctx context.Context, id string, comment model.Comment) error {
+	if err := u.unavailable(); err != nil {
+		return err
+	}
 	beer, err := u.repo.GetByID(ctx, id)
 	if err != nil {
 		return errors.NewAppError(404, "Beer not found", err)
@@ -186,6 +214,9 @@ func (u *beerUsecase) AddComment(ctx context.Context, id string, comment model.C
 }
 
 func (u *beerUsecase) DeleteComment(ctx context.Context, id string, commentID string) error {
+	if err := u.unavailable(); err != nil {
+		return err
+	}
 	beer, err := u.repo.GetByID(ctx, id)
 	if err != nil {
 		return errors.NewAppError(404, "Beer not found", err)
@@ -223,6 +254,9 @@ func (u *beerUsecase) DeleteComment(ctx context.Context, id string, commentID st
 // dispositivo e permite toggling consistente). Para utilizadores anónimos (sem
 // login), usa o deviceID como fallback, mantendo o comportamento anterior.
 func (u *beerUsecase) LikeComment(ctx context.Context, beerID, commentID, userID, deviceID string) error {
+	if err := u.unavailable(); err != nil {
+		return err
+	}
 	beer, err := u.repo.GetByID(ctx, beerID)
 	if err != nil {
 		return errors.NewAppError(404, "Beer not found", err)
@@ -268,6 +302,9 @@ func (u *beerUsecase) LikeComment(ctx context.Context, beerID, commentID, userID
 // AuthZ: só o criador ou um admin podem anexar (mesma regra de edição).
 // Devolve a lista atualizada de mídias para o controller responder.
 func (u *beerUsecase) AddMedia(ctx context.Context, id string, item model.MediaItem) ([]model.MediaItem, error) {
+	if err := u.unavailable(); err != nil {
+		return nil, err
+	}
 	beer, err := u.repo.GetByID(ctx, id)
 	if err != nil {
 		return nil, err
@@ -297,6 +334,9 @@ func (u *beerUsecase) AddMedia(ctx context.Context, id string, item model.MediaI
 
 // SearchBeers searches for beers using the provided filters
 func (u *beerUsecase) SearchBeers(ctx context.Context, filters model.BeerFilters) ([]model.Beer, int, error) {
+	if err := u.unavailable(); err != nil {
+		return nil, 0, err
+	}
 	// get from repository
 	beers, total, err := u.repo.SearchBeers(ctx, filters)
 	if err != nil {

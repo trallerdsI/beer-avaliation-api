@@ -37,7 +37,17 @@ func NewUserUsecase(repo repository.UserRepository) UserUsecase {
 	return &userUsecase{repo: repo}
 }
 
+func (u *userUsecase) unavailable() error {
+	if u.repo == nil {
+		return errors.NewUnavailableError()
+	}
+	return nil
+}
+
 func (u *userUsecase) Register(ctx context.Context, user model.User) error {
+	if err := u.unavailable(); err != nil {
+		return err
+	}
 	slog.InfoContext(ctx, "register attempt", "username", user.Username)
 
 	// Check if email already exists
@@ -80,6 +90,9 @@ func (u *userUsecase) Register(ctx context.Context, user model.User) error {
 }
 
 func (u *userUsecase) Login(ctx context.Context, email, password string) (string, error) {
+	if err := u.unavailable(); err != nil {
+		return "", err
+	}
 	slog.InfoContext(ctx, "login attempt")
 
 	// Defesa: limita o tamanho da senha antes do bcrypt.
@@ -117,6 +130,9 @@ func (u *userUsecase) Login(ctx context.Context, email, password string) (string
 // ligado por (provider, external_sub) e devolve o nosso JWT HS256 de sessão.
 // O resto da API continua a aceitar apenas o nosso token via middleware Auth.
 func (u *userUsecase) OAuthLogin(ctx context.Context, provider, idToken string) (string, error) {
+	if err := u.unavailable(); err != nil {
+		return "", err
+	}
 	slog.InfoContext(ctx, "oauth login attempt", "provider", provider)
 
 	verifier := auth.OIDC().Verifier(provider)
@@ -156,6 +172,9 @@ func (u *userUsecase) OAuthLogin(ctx context.Context, provider, idToken string) 
 }
 
 func (u *userUsecase) GetProfile(ctx context.Context, id string) (model.User, error) {
+	if err := u.unavailable(); err != nil {
+		return model.User{}, err
+	}
 	slog.InfoContext(ctx, "fetch profile", "user_id", id)
 
 	// Get user by ID
@@ -170,6 +189,9 @@ func (u *userUsecase) GetProfile(ctx context.Context, id string) (model.User, er
 }
 
 func (u *userUsecase) UpdateProfile(ctx context.Context, id string, user model.User) error {
+	if err := u.unavailable(); err != nil {
+		return err
+	}
 	slog.InfoContext(ctx, "update profile attempt", "user_id", id)
 
 	// Update user profile
@@ -183,6 +205,9 @@ func (u *userUsecase) UpdateProfile(ctx context.Context, id string, user model.U
 }
 
 func (u *userUsecase) DeleteAccount(ctx context.Context, id string) error {
+	if err := u.unavailable(); err != nil {
+		return err
+	}
 	slog.InfoContext(ctx, "delete account attempt", "user_id", id)
 
 	// Delete user account
@@ -196,6 +221,9 @@ func (u *userUsecase) DeleteAccount(ctx context.Context, id string) error {
 }
 
 func (u *userUsecase) SubscribePush(ctx context.Context, userID string, sub model.PushSubscription) error {
+	if err := u.unavailable(); err != nil {
+		return err
+	}
 	slog.InfoContext(ctx, "subscribe push", "user_id", userID, "endpoint", sub.Endpoint)
 	sub.UserID = userID
 	if err := u.repo.CreatePushSubscription(ctx, sub); err != nil {
@@ -206,6 +234,9 @@ func (u *userUsecase) SubscribePush(ctx context.Context, userID string, sub mode
 }
 
 func (u *userUsecase) UnsubscribePush(ctx context.Context, userID, endpoint string) error {
+	if err := u.unavailable(); err != nil {
+		return err
+	}
 	slog.InfoContext(ctx, "unsubscribe push", "user_id", userID, "endpoint", endpoint)
 	if err := u.repo.DeletePushSubscriptionByEndpoint(ctx, userID, endpoint); err != nil {
 		slog.ErrorContext(ctx, "failed to unsubscribe push", "err", err)
@@ -215,6 +246,9 @@ func (u *userUsecase) UnsubscribePush(ctx context.Context, userID, endpoint stri
 }
 
 func (u *userUsecase) ListPushSubscriptions(ctx context.Context, userID string) ([]model.PushSubscription, error) {
+	if err := u.unavailable(); err != nil {
+		return nil, err
+	}
 	slog.InfoContext(ctx, "list push subscriptions", "user_id", userID)
 	subs, err := u.repo.ListPushSubscriptions(ctx, userID)
 	if err != nil {
@@ -229,6 +263,9 @@ func (u *userUsecase) ListPushSubscriptions(ctx context.Context, userID string) 
 // existir, promove o utilizador existente a admin (idempotente). O seed é
 // opcional: em ausência das env vars, nenhum admin é criado automaticamente.
 func (u *userUsecase) SeedAdmin(ctx context.Context) error {
+	if err := u.unavailable(); err != nil {
+		return err
+	}
 	email := os.Getenv("ADMIN_EMAIL")
 	password := os.Getenv("ADMIN_PASSWORD")
 	if email == "" || password == "" {

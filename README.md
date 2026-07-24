@@ -48,7 +48,7 @@ beer-review-app/
 
 ## Conformidade RFC
 
-A API segue estes RFCs (9 de 12 implementados):
+A API segue estes RFCs (12 de 12 implementados):
 
 | RFC | Tópico | Estado |
 |-----|--------|--------|
@@ -63,7 +63,7 @@ A API segue estes RFCs (9 de 12 implementados):
 | 6455 | SSE (tempo real; WebSocket rejeitado — ver Decisões) | ✅ |
 | 8288 | Web Linking (`Link` header em listas paginadas) | ✅ |
 | 6749 | OAuth2 / OIDC (login social Google/Apple via id_token RS256+JWKS) | ✅ |
-| 8030 | Web Push | ⏳ pendente |
+| 8030 | Web Push | ✅ |
 
 ## Decisões de Arquitetura (decisões desta fase)
 

@@ -113,19 +113,25 @@ func BuildRouterWithDBErr(db *sql.DB, dbErr error, logger *slog.Logger) http.Han
 }
 
 func newBeerRepo(db *sql.DB) beerRepository.BeerRepository {
+	if db == nil {
+		return nil
+	}
 	repo, err := beerRepository.NewPostgresBeerRepository(db)
 	if err != nil {
 		slog.Error("repositório de cervejas indisponível; rotas de dados retornarão 503", "err", err)
-		return beerRepository.NewUnavailableBeerRepository()
+		return nil
 	}
 	return repo
 }
 
 func newUserRepo(db *sql.DB) userRepository.UserRepository {
+	if db == nil {
+		return nil
+	}
 	repo, err := userRepository.NewPostgresUserRepository(db)
 	if err != nil {
 		slog.Error("repositório de utilizadores indisponível; rotas de dados retornarão 503", "err", err)
-		return userRepository.NewUnavailableUserRepository()
+		return nil
 	}
 	return repo
 }
@@ -149,7 +155,7 @@ func InitDB(dsn string) (*sql.DB, error) {
 	db.SetMaxIdleConns(maxIdleConns())
 	db.SetConnMaxLifetime(5 * time.Minute)
 
-	if isServerlessRuntime() {
+	if appMetrics.IsServerlessRuntime() {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		if err = db.PingContext(ctx); err != nil {
@@ -180,10 +186,6 @@ func InitDB(dsn string) (*sql.DB, error) {
 		return nil, fmt.Errorf("migrations failed: %w", err)
 	}
 	return db, nil
-}
-
-func isServerlessRuntime() bool {
-	return os.Getenv("VERCEL") != "" || os.Getenv("NOW_REGION") != "" || os.Getenv("AWS_LAMBDA_FUNCTION_NAME") != ""
 }
 
 func maskPassword(connString string) string {
@@ -315,12 +317,7 @@ func executeSQLFile(db *sql.DB, filePath string) error {
 }
 
 func readMigrationSQL(filePath string) ([]byte, error) {
-	if data, err := embeddedMigrations.ReadFile(filepath.ToSlash(filepath.Join("migrations", filepath.Base(filePath)))); err == nil {
-		return data, nil
-	}
-
-	path := filepath.Join(".", "migrations", filepath.Base(filePath))
-	return os.ReadFile(path)
+	return embeddedMigrations.ReadFile(filepath.ToSlash(filepath.Join("migrations", filepath.Base(filePath))))
 }
 
 func docsHandler() http.HandlerFunc {

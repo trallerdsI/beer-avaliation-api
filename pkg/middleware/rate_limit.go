@@ -31,6 +31,21 @@ func (rl *rateLimiter) allow(key string) bool {
 
 	now := time.Now()
 	cutoff := now.Add(-writeRateLimitWindow)
+
+	for k, times := range rl.hits {
+		filtered := make([]time.Time, 0, len(times))
+		for _, t := range times {
+			if t.After(cutoff) {
+				filtered = append(filtered, t)
+			}
+		}
+		if len(filtered) == 0 {
+			delete(rl.hits, k)
+		} else {
+			rl.hits[k] = filtered
+		}
+	}
+
 	times := rl.hits[key]
 	filtered := make([]time.Time, 0, len(times))
 	for _, t := range times {
