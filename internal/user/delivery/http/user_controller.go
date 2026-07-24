@@ -3,17 +3,15 @@ package http
 import (
 	"encoding/json"
 	stdErrors "errors" // Renomeado para evitar conflito com o pacote de erros do projeto
-	"fmt"
 	"log/slog"
 	"net/http"
-	"reflect"
-	"strings"
 
 	"beer-review-app/internal/user/model"
 	"beer-review-app/internal/user/usecase"
 	appErrors "beer-review-app/pkg/errors"
 	"beer-review-app/pkg/middleware"
 	"beer-review-app/pkg/response"
+	"beer-review-app/pkg/validation"
 
 	"github.com/go-playground/validator/v10"
 )
@@ -42,8 +40,11 @@ func NewUserController(u usecase.UserUsecase, logger *slog.Logger) *UserControll
 // Segurança (OWASP A05): não expõe a causa raiz ao cliente.
 func (c *UserController) respondError(w http.ResponseWriter, r *http.Request, err error, message string, statusCode int) {
 	c.logger.ErrorContext(r.Context(), message, "err", err)
-	// RFC 7807: erro genérico (sem causa interna) com trace_id para suporte.
-	p := response.NewProblem(statusCode, appErrors.HTTPStatusSlug(statusCode), message)
+	status := statusCode
+	if appErr := (*appErrors.AppError)(nil); stdErrors.As(err, &appErr) {
+		status = appErr.Code
+	}
+	p := appErrors.NewProblem(status, appErrors.HTTPStatusSlug(status), message)
 	if trace := middleware.TraceIDFromContext(r.Context()); trace != "" {
 		p.TraceID = trace
 	}
@@ -61,9 +62,9 @@ func validationDetails(err error) []appErrors.ProblemDetail {
 	details := make([]appErrors.ProblemDetail, 0, len(verrs))
 	for _, fe := range verrs {
 		details = append(details, appErrors.ProblemDetail{
-			Field:   fieldLabel(fe.Field()),
+			Field:   validation.FieldLabel(fe.Field()),
 			Code:    "invalid_" + fe.Tag(),
-			Message: fmt.Sprintf("%s: %s", fieldLabel(fe.Field()), ruleMessage(fe)),
+			Message: validation.FieldLabel(fe.Field()) + ": " + validation.RuleMessage(fe),
 		})
 	}
 	return details
@@ -73,7 +74,7 @@ func validationDetails(err error) []appErrors.ProblemDetail {
 // "validation_failed") com detalhes granulares tipados e trace_id.
 func (c *UserController) sendValidationProblem(w http.ResponseWriter, r *http.Request, err error) {
 	c.logger.ErrorContext(r.Context(), "validation failed", "err", err)
-	p := response.NewProblem(http.StatusBadRequest, "validation_failed",
+	p := appErrors.NewProblem(http.StatusBadRequest, "validation_failed",
 		"Os dados enviados contêm erros de validação.")
 	p.Details = validationDetails(err)
 	if trace := middleware.TraceIDFromContext(r.Context()); trace != "" {
@@ -82,53 +83,11 @@ func (c *UserController) sendValidationProblem(w http.ResponseWriter, r *http.Re
 	response.SendProblem(w, p)
 }
 
-func fieldLabel(field string) string {
-	labels := map[string]string{
-		"Username": "nome de utilizador",
-		"Email":    "email",
-		"Password": "palavra-passe",
-		"Role":     "perfil",
-	}
-	if l, ok := labels[field]; ok {
-		return l
-	}
-	return strings.ToLower(field)
-}
 
-func ruleMessage(fe validator.FieldError) string {
-	param := fe.Param()
-	switch fe.Tag() {
-	case "required":
-		return "é obrigatório"
-	case "min":
-		if isNumericKind(fe.Kind()) {
-			return fmt.Sprintf("deve ter no mínimo %s", param)
-		}
-		return fmt.Sprintf("deve ter pelo menos %s caracteres", param)
-	case "max":
-		if isNumericKind(fe.Kind()) {
-			return fmt.Sprintf("deve ter no máximo %s", param)
-		}
-		return fmt.Sprintf("deve ter no máximo %s caracteres", param)
-	case "email":
-		return "deve ser um email válido"
-	default:
-		return "valor inválido"
-	}
-}
-
-func isNumericKind(k reflect.Kind) bool {
-	switch k {
-	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
-		reflect.Float32, reflect.Float64:
-		return true
-	}
-	return false
-}
 
 func (c *UserController) Register(w http.ResponseWriter, r *http.Request) {
 	if r.Body == nil {
-		response.SendProblem(w, response.NewProblem(http.StatusBadRequest, "invalid_request_body", "O corpo da requisição é inválido."))
+		response.SendProblem(w, appErrors.NewProblem(http.StatusBadRequest, "invalid_request_body", "O corpo da requisição é inválido."))
 		return
 	}
 
@@ -162,7 +121,7 @@ func (c *UserController) Register(w http.ResponseWriter, r *http.Request) {
 
 func (c *UserController) Login(w http.ResponseWriter, r *http.Request) {
 	if r.Body == nil {
-		response.SendProblem(w, response.NewProblem(http.StatusBadRequest, "invalid_request_body", "O corpo da requisição é inválido."))
+		response.SendProblem(w, appErrors.NewProblem(http.StatusBadRequest, "invalid_request_body", "O corpo da requisição é inválido."))
 		return
 	}
 
@@ -198,7 +157,7 @@ func (c *UserController) Login(w http.ResponseWriter, r *http.Request) {
 
 func (c *UserController) OAuth(w http.ResponseWriter, r *http.Request) {
 	if r.Body == nil {
-		response.SendProblem(w, response.NewProblem(http.StatusBadRequest, "invalid_request_body", "O corpo da requisição é inválido."))
+		response.SendProblem(w, appErrors.NewProblem(http.StatusBadRequest, "invalid_request_body", "O corpo da requisição é inválido."))
 		return
 	}
 
@@ -233,7 +192,7 @@ func (c *UserController) OAuth(w http.ResponseWriter, r *http.Request) {
 func (c *UserController) GetProfile(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if id == "" {
-		response.SendProblem(w, response.NewProblem(http.StatusBadRequest, "bad_request", "O ID do utilizador é obrigatório."))
+		response.SendProblem(w, appErrors.NewProblem(http.StatusBadRequest, "bad_request", "O ID do utilizador é obrigatório."))
 		return
 	}
 
@@ -243,7 +202,7 @@ func (c *UserController) GetProfile(w http.ResponseWriter, r *http.Request) {
 		// Uso idiomático de errors.As (agora com Unwrap suportado) para
 		// erros envelopados, preservando a causa original.
 		if stdErrors.As(err, &appErr) && (appErr.Code == http.StatusNotFound || appErr.Is(err)) {
-			response.SendProblem(w, response.NewProblem(http.StatusNotFound, "not_found", "Utilizador não encontrado."))
+			response.SendProblem(w, appErrors.NewProblem(http.StatusNotFound, "not_found", "Utilizador não encontrado."))
 			return
 		}
 		c.respondError(w, r, err, "Failed to get profile", http.StatusInternalServerError)
@@ -264,12 +223,12 @@ func (c *UserController) GetProfile(w http.ResponseWriter, r *http.Request) {
 func (c *UserController) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if id == "" {
-		response.SendProblem(w, response.NewProblem(http.StatusBadRequest, "bad_request", "O ID do utilizador é obrigatório."))
+		response.SendProblem(w, appErrors.NewProblem(http.StatusBadRequest, "bad_request", "O ID do utilizador é obrigatório."))
 		return
 	}
 
 	if r.Body == nil {
-		response.SendProblem(w, response.NewProblem(http.StatusBadRequest, "invalid_request_body", "O corpo da requisição é inválido."))
+		response.SendProblem(w, appErrors.NewProblem(http.StatusBadRequest, "invalid_request_body", "O corpo da requisição é inválido."))
 		return
 	}
 
@@ -305,7 +264,7 @@ func (c *UserController) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 func (c *UserController) DeleteAccount(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if id == "" {
-		response.SendProblem(w, response.NewProblem(http.StatusBadRequest, "bad_request", "O ID do utilizador é obrigatório."))
+		response.SendProblem(w, appErrors.NewProblem(http.StatusBadRequest, "bad_request", "O ID do utilizador é obrigatório."))
 		return
 	}
 
@@ -322,12 +281,12 @@ func (c *UserController) DeleteAccount(w http.ResponseWriter, r *http.Request) {
 func (c *UserController) SubscribePush(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if id == "" {
-		response.SendProblem(w, response.NewProblem(http.StatusBadRequest, "bad_request", "O ID do utilizador é obrigatório."))
+		response.SendProblem(w, appErrors.NewProblem(http.StatusBadRequest, "bad_request", "O ID do utilizador é obrigatório."))
 		return
 	}
 
 	if r.Body == nil {
-		response.SendProblem(w, response.NewProblem(http.StatusBadRequest, "invalid_request_body", "O corpo da requisição é inválido."))
+		response.SendProblem(w, appErrors.NewProblem(http.StatusBadRequest, "invalid_request_body", "O corpo da requisição é inválido."))
 		return
 	}
 
@@ -340,7 +299,7 @@ func (c *UserController) SubscribePush(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if sub.Endpoint == "" || sub.P256DH == "" || sub.Auth == "" {
-		response.SendProblem(w, response.NewProblem(http.StatusBadRequest, "invalid_push_subscription",
+		response.SendProblem(w, appErrors.NewProblem(http.StatusBadRequest, "invalid_push_subscription",
 			"endpoint, p256dh e auth são obrigatórios."))
 		return
 	}
@@ -358,12 +317,12 @@ func (c *UserController) SubscribePush(w http.ResponseWriter, r *http.Request) {
 func (c *UserController) UnsubscribePush(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if id == "" {
-		response.SendProblem(w, response.NewProblem(http.StatusBadRequest, "bad_request", "O ID do utilizador é obrigatório."))
+		response.SendProblem(w, appErrors.NewProblem(http.StatusBadRequest, "bad_request", "O ID do utilizador é obrigatório."))
 		return
 	}
 
 	if r.Body == nil {
-		response.SendProblem(w, response.NewProblem(http.StatusBadRequest, "invalid_request_body", "O corpo da requisição é inválido."))
+		response.SendProblem(w, appErrors.NewProblem(http.StatusBadRequest, "invalid_request_body", "O corpo da requisição é inválido."))
 		return
 	}
 
@@ -378,7 +337,7 @@ func (c *UserController) UnsubscribePush(w http.ResponseWriter, r *http.Request)
 	}
 
 	if body.Endpoint == "" {
-		response.SendProblem(w, response.NewProblem(http.StatusBadRequest, "invalid_request_body",
+		response.SendProblem(w, appErrors.NewProblem(http.StatusBadRequest, "invalid_request_body",
 			"endpoint é obrigatório."))
 		return
 	}
@@ -396,7 +355,7 @@ func (c *UserController) UnsubscribePush(w http.ResponseWriter, r *http.Request)
 func (c *UserController) ListPushSubscriptions(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if id == "" {
-		response.SendProblem(w, response.NewProblem(http.StatusBadRequest, "bad_request", "O ID do utilizador é obrigatório."))
+		response.SendProblem(w, appErrors.NewProblem(http.StatusBadRequest, "bad_request", "O ID do utilizador é obrigatório."))
 		return
 	}
 

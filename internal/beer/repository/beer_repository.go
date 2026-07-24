@@ -8,7 +8,6 @@ import (
 	"log/slog"
 	"math"
 	"strings"
-	"sync"
 
 	"beer-review-app/internal/beer/model"
 	"beer-review-app/pkg/errors"
@@ -17,7 +16,6 @@ import (
 )
 
 // BeerRepository defines the interface for beer storage.
-// In your repository package (repository/beer_repository.go)
 type BeerRepository interface {
 	GetAll(context.Context) ([]model.Beer, error)
 	Create(ctx context.Context, beer *model.Beer) error
@@ -28,135 +26,6 @@ type BeerRepository interface {
 	AddComment(ctx context.Context, id string, comment model.Comment) error
 	DeleteComment(ctx context.Context, id string, commentID string) error
 	SearchBeers(ctx context.Context, filters model.BeerFilters) ([]model.Beer, int, error)
-}
-
-// InMemoryBeerRepository is an in-memory implementation of BeerRepository.
-type InMemoryBeerRepository struct {
-	beers []model.Beer
-	mutex sync.RWMutex
-}
-
-// NewInMemoryBeerRepository creates a new in-memory beer repository.
-func NewInMemoryBeerRepository() *InMemoryBeerRepository {
-	return &InMemoryBeerRepository{beers: []model.Beer{}}
-}
-
-// Create adds a new beer to the in-memory repository.
-func (r *InMemoryBeerRepository) Create(ctx context.Context, beer *model.Beer) error {
-	r.mutex.Lock()
-	defer r.mutex.Unlock()
-	r.beers = append(r.beers, *beer)
-	return nil
-}
-
-// GetByID retrieves a beer by its ID from the in-memory repository.
-func (r *InMemoryBeerRepository) GetByID(ctx context.Context, id string) (model.Beer, error) {
-	r.mutex.RLock()
-	defer r.mutex.RUnlock()
-	for _, beer := range r.beers {
-		if beer.ID == id {
-			return beer, nil
-		}
-	}
-	return model.Beer{}, errors.NewAppError(404, "beer not found", nil)
-}
-
-// GetAll retrieves all beers from the in-memory repository.
-// Devolve uma CÓPIA defensiva: o caller não pode mutar o slice interno nem
-// causar race concorrente (Pilar 4 / Pilar 3).
-func (r *InMemoryBeerRepository) GetAll(ctx context.Context) ([]model.Beer, error) {
-	r.mutex.RLock()
-	defer r.mutex.RUnlock()
-
-	out := make([]model.Beer, len(r.beers))
-	copy(out, r.beers)
-	return out, nil
-}
-
-// GetPaginated retrieves paginated beers from the in-memory repository
-func (r *InMemoryBeerRepository) GetPaginated(ctx context.Context, page, pageSize int) ([]model.Beer, int, error) {
-	r.mutex.RLock()
-	defer r.mutex.RUnlock()
-
-	start := (page - 1) * pageSize
-	total := len(r.beers)
-
-	if start >= total || pageSize <= 0 {
-		return []model.Beer{}, total, nil
-	}
-
-	end := start + pageSize
-	if end > total {
-		end = total
-	}
-
-	// Cópia do segmento: evita expor o slice interno (sub-slice partilhada).
-	seg := r.beers[start:end]
-	out := make([]model.Beer, len(seg))
-	copy(out, seg)
-	return out, total, nil
-}
-
-// Update updates a beer in the in-memory repository.
-func (r *InMemoryBeerRepository) Update(ctx context.Context, id string, beer model.Beer) error {
-	r.mutex.Lock()
-	defer r.mutex.Unlock()
-
-	for i, b := range r.beers {
-		if b.ID == id {
-			beer.ID = id // Ensure ID remains the same
-			r.beers[i] = beer
-			return nil
-		}
-	}
-	return errors.NewAppError(404, "beer not found", nil)
-}
-
-// Delete removes a beer from the in-memory repository.
-func (r *InMemoryBeerRepository) Delete(ctx context.Context, id string) error {
-	r.mutex.Lock()
-	defer r.mutex.Unlock()
-
-	for i, b := range r.beers {
-		if b.ID == id {
-			r.beers = append(r.beers[:i], r.beers[i+1:]...)
-			return nil
-		}
-	}
-	return errors.NewAppError(404, "beer not found", nil)
-}
-
-// AddComment adds a comment to a beer in the in-memory repository.
-func (r *InMemoryBeerRepository) AddComment(ctx context.Context, id string, comment model.Comment) error {
-	r.mutex.Lock()
-	defer r.mutex.Unlock()
-
-	for i, beer := range r.beers {
-		if beer.ID == id {
-			r.beers[i].Comments = append(r.beers[i].Comments, comment)
-			return nil
-		}
-	}
-	return errors.NewAppError(404, "beer not found", nil)
-}
-
-// DeleteComment removes a comment from a beer in the in-memory repository.
-func (r *InMemoryBeerRepository) DeleteComment(ctx context.Context, id string, commentID string) error {
-	r.mutex.Lock()
-	defer r.mutex.Unlock()
-
-	for i, beer := range r.beers {
-		if beer.ID == id {
-			for j, c := range beer.Comments {
-				if c.ID == commentID {
-					r.beers[i].Comments = append(beer.Comments[:j], beer.Comments[j+1:]...)
-					return nil
-				}
-			}
-			return errors.NewAppError(404, "comment not found", nil)
-		}
-	}
-	return errors.NewAppError(404, "beer not found", nil)
 }
 
 // PostgresBeerRepository is a PostgreSQL implementation of BeerRepository.

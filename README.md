@@ -9,7 +9,6 @@ A modern, scalable REST API for managing beer reviews and ratings built with Go.
 - 🔍 Advanced search with filters
 - 📊 Monitoring and metrics
 - 🔐 Authentication and authorization (JWT, env-configured secret)
-- 🔄 Circuit breaker pattern
 - 📝 Swagger documentation
 - ⚡ Go 1.26 native `net/http` routing (no external router dependency)
 
@@ -44,7 +43,6 @@ beer-review-app/
 - **Prometheus** metrics (`client_golang`)
 - **golang-jwt** (HS256, stdlib `crypto/hmac`) + bcrypt para auth
 - **bluemonday** HTML sanitization (XSS)
-- **sony/gobreaker** circuit breaker (apenas fora de serverless)
 - **Viper** configuration
 - **Supabase Storage** para upload de mídia (RFC 7578) via `net/http`
 

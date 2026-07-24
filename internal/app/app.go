@@ -6,12 +6,10 @@ import (
 	"embed"
 	"fmt"
 	"log/slog"
-	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -71,7 +69,7 @@ func BuildRouterWithDBErr(db *sql.DB, dbErr error, logger *slog.Logger) http.Han
 
 	beerController := beerHttp.NewBeerController(beerUsecase, logger, uploader)
 	userController := userHttp.NewUserController(userUsecase, logger)
-	monitoringController := monitoring.NewMonitoringController(beerUsecase, userUsecase, logger, db, dbErr)
+	monitoringController := monitoring.NewMonitoringController(beerUsecase, logger, db, dbErr)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/v1/beers/enums", beerController.GetEnums)
@@ -188,92 +186,6 @@ func isServerlessRuntime() bool {
 	return os.Getenv("VERCEL") != "" || os.Getenv("NOW_REGION") != "" || os.Getenv("AWS_LAMBDA_FUNCTION_NAME") != ""
 }
 
-// forceIPv4 reescreve o host do DSN para o seu endereço IPv4 literal... REMOVIDO:
-// o host direto do Supabase (db.<ref>.supabase.co) NÃO tem registo A nenhum,
-// apenas AAAA (IPv6). Por isso a resolução para IPv4 falha sempre. A única via
-// IPv4 no Vercel é o pooler (aws-0-*.pooler.supabase.com), que já vem nas vars
-// POSTGRES_URL / POSTGRES_URL_NON_POOLING. Mantemos esse host e forçamos o
-// protocolo simples do lib/pq para funcionar através do PgBouncer.
-
-// normalizeSupabaseDSN normaliza uma connection string do Supabase para o
-// Vercel: garante os parâmetros necessários ao lib/pq:
-//   - sslmode=require (obrigatório no Supabase)
-//   - default_query_exec_mode=simple_protocol: desativa prepared statements,
-//     que quebram sob o transaction pooling do PgBouncer (erro "prepared
-//     statement already exists / portal"). Com o protocolo simples o driver
-//     manda a query direta e o pooler funciona.
-//
-// Além disso, se o host resolver APENAS para IPv6 (caso do host direto
-// db.<ref>.supabase.co no Vercel, que não roteia IPv6 -> "cannot assign
-// requested address"), reescreve o host para o pooler IPv4 (aws-0-*.pooler.
-// supabase.com), que é o único alvo IPv4-reachável. Isto torna o código imune
-// à configuração de ambiente: funciona quer a Vercel passe o host direto ou o
-// pooler.
-func normalizeSupabaseDSN(dsn string) string {
-	u, err := url.Parse(dsn)
-	if err != nil {
-		return dsn
-	}
-	host := u.Hostname()
-	if strings.Contains(host, "supabase.co") && !hostIsIPv4Reachable(host) {
-		if pooler := poolerHostFor(host); pooler != "" {
-			port := u.Port()
-			if port == "" {
-				port = "5432"
-			}
-			u.Host = net.JoinHostPort(pooler, port)
-			slog.Warn("host supabase resolve só para IPv6 no Vercel; a reescrever para o pooler IPv4",
-				"original", maskPassword(dsn), "pooler", pooler)
-		}
-	}
-
-	q := u.Query()
-	q.Set("sslmode", "require")
-	q.Set("default_query_exec_mode", "simple_protocol")
-	// Remove parâmetros incompatíveis com o pooler em protocolo simples.
-	q.Del("pgbouncer")
-	q.Del("supa")
-	u.RawQuery = q.Encode()
-	return u.String()
-}
-
-// hostIsIPv4Reachable devolve true se o host resolver para pelo menos um
-// registo A (IPv4). No Vercel o host direto do Supabase só tem AAAA, logo isto
-// devolve false e aciona a reescrita para o pooler.
-func hostIsIPv4Reachable(host string) bool {
-	if ip := net.ParseIP(host); ip != nil {
-		return ip.To4() != nil
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-	ips, err := net.DefaultResolver.LookupIP(ctx, "ip4", host)
-	if err != nil || len(ips) == 0 {
-		return false
-	}
-	return true
-}
-
-// poolerHostFor deriva o host do pooler Supabase IPv4 a partir de um host
-// direto db.<ref>.supabase.co. O pooler segue o padrão
-// aws-<region>-<az>.pooler.supabase.co; como não conhecemos a região do host
-// direto, usamos a região explícita em POSTGRES_URL / POSTGRES_URL_NON_POOLING
-// quando disponível; em último caso caímos no padrão us-east-1.
-func poolerHostFor(directHost string) string {
-	// Tenta extrair a região de uma URL de pooler já presente no ambiente.
-	for _, key := range []string{"POSTGRES_URL_NON_POOLING", "POSTGRES_URL", "POSTGRES_PRISMA_URL"} {
-		if raw := os.Getenv(key); raw != "" {
-			if u, err := url.Parse(raw); err == nil {
-				h := u.Hostname()
-				if strings.Contains(h, "pooler.supabase.co") {
-					return h
-				}
-			}
-		}
-	}
-	// Fallback: padrão us-east-1 (região do projeto corrente).
-	return "aws-0-us-east-1.pooler.supabase.com"
-}
-
 func maskPassword(connString string) string {
 	if i := strings.Index(connString, "://"); i >= 0 {
 		prefix := connString[:i+3]
@@ -288,25 +200,19 @@ func maskPassword(connString string) string {
 func resolveDBConnString() string {
 	for _, key := range []string{"DB_CONN_STRING", "DBConnString"} {
 		if v := os.Getenv(key); v != "" {
-			return normalizeSupabaseDSN(v)
+			return v
 		}
 		if v := viper.GetString(key); v != "" {
-			return normalizeSupabaseDSN(v)
+			return v
 		}
 	}
 
-	// NOTA: POSTGRES_URL_NON_POOLING vem PRIMEIRO. Tanto POSTGRES_URL quanto
-	// NON_POOLING apontam ao pooler Supabase (aws-0-*.pooler.supabase.com), que
-	// é o ÚNICO host que resolve para IPv4 no Vercel. O host direto
-	// db.<ref>.supabase.co só tem AAAA (IPv6) e o Vercel não roteia -> "cannot
-	// assign requested address". Por isso NUNCA reconstruímos a string com
-	// POSTGRES_HOST (que é o host v6); mantemos o host do pooler intacto.
 	for _, key := range []string{"POSTGRES_URL_NON_POOLING", "POSTGRES_URL"} {
 		if v := os.Getenv(key); v != "" {
-			return normalizeSupabaseDSN(v)
+			return v
 		}
 		if v := viper.GetString(key); v != "" {
-			return normalizeSupabaseDSN(v)
+			return v
 		}
 	}
 
@@ -320,8 +226,8 @@ func resolveDBConnString() string {
 	if user == "" || name == "" {
 		return ""
 	}
-	return normalizeSupabaseDSN(fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=%s",
-		url.QueryEscape(user), url.QueryEscape(pass), host, port, name, sslmode))
+	return fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=%s",
+		url.QueryEscape(user), url.QueryEscape(pass), host, port, name, sslmode)
 }
 
 func firstNonEmpty(vals ...string) string {
@@ -413,66 +319,8 @@ func readMigrationSQL(filePath string) ([]byte, error) {
 		return data, nil
 	}
 
-	resolvedPath, err := resolveMigrationPath(filePath)
-	if err != nil {
-		return nil, err
-	}
-
-	sqlBytes, err := os.ReadFile(resolvedPath)
-	if err != nil {
-		return nil, fmt.Errorf("erro ao ler arquivo SQL: %v", err)
-	}
-	return sqlBytes, nil
-}
-
-func resolveMigrationPath(filePath string) (string, error) {
-	cleanPath := filepath.Clean(filePath)
-	if filepath.IsAbs(cleanPath) {
-		if _, err := os.Stat(cleanPath); err == nil {
-			return cleanPath, nil
-		}
-		return "", fmt.Errorf("migration file not found: %s", cleanPath)
-	}
-
-	candidates := []string{
-		cleanPath,
-		filepath.Join(".", cleanPath),
-		filepath.Join("..", cleanPath),
-		filepath.Join("..", "..", cleanPath),
-	}
-
-	for _, candidate := range candidates {
-		if _, err := os.Stat(candidate); err == nil {
-			return candidate, nil
-		}
-	}
-
-	if _, file, _, ok := runtime.Caller(0); ok {
-		baseDir := filepath.Dir(file)
-		for _, candidate := range []string{
-			filepath.Join(baseDir, "..", "..", cleanPath),
-			filepath.Join(baseDir, "..", cleanPath),
-			filepath.Join(baseDir, cleanPath),
-		} {
-			if _, err := os.Stat(candidate); err == nil {
-				return candidate, nil
-			}
-		}
-	}
-
-	workingDir, err := os.Getwd()
-	if err != nil {
-		return "", fmt.Errorf("failed to resolve migration path: %w", err)
-	}
-
-	if strings.Contains(workingDir, "/api") || strings.Contains(workingDir, "\\api") {
-		rootCandidate := filepath.Join(workingDir, "..", cleanPath)
-		if _, err := os.Stat(rootCandidate); err == nil {
-			return rootCandidate, nil
-		}
-	}
-
-	return "", fmt.Errorf("migration file not found: %s", cleanPath)
+	path := filepath.Join(".", "migrations", filepath.Base(filePath))
+	return os.ReadFile(path)
 }
 
 func docsHandler() http.HandlerFunc {

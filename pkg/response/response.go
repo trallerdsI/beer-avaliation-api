@@ -3,8 +3,6 @@ package response
 import (
 	"encoding/json"
 	"net/http"
-	"reflect"
-	"strings"
 
 	"beer-review-app/pkg/errors"
 )
@@ -27,17 +25,6 @@ func SendProblem(w http.ResponseWriter, p *errors.Problem) {
 	w.Header().Set("Content-Type", "application/problem+json")
 	w.WriteHeader(p.Status)
 	_ = json.NewEncoder(w).Encode(p)
-}
-
-// NewProblem é um helper para construir um Problem mínimo e seguro (PT-BR).
-func NewProblem(status int, code, message string) *errors.Problem {
-	return &errors.Problem{
-		Type:    "/errors/" + code,
-		Title:   http.StatusText(status),
-		Status:  status,
-		Code:    code,
-		Message: message,
-	}
 }
 
 // ProblemOption configura campos do Problem (functional options, zero-alloc
@@ -68,85 +55,9 @@ func WithProblemAction(action *errors.ProblemAction) ProblemOption {
 // mantido para chamadas simples. Para erros de domínio ricos, usar SendProblem
 // com um AppError.ToProblem().
 func SendError(w http.ResponseWriter, message string, statusCode int, opts ...ProblemOption) {
-	p := NewProblem(statusCode, errors.HTTPStatusSlug(statusCode), message)
+	p := errors.NewProblem(statusCode, errors.HTTPStatusSlug(statusCode), message)
 	for _, o := range opts {
 		o(p)
 	}
 	SendProblem(w, p)
-}
-
-// SelectFields projeta apenas os campos solicitados de cada elemento de uma
-// fatia, reduzindo o tamanho do JSON enviado ao cliente móvel em telas de
-// listagem (ex: evita trafegar descrições longas). Se fields estiver vazio,
-// retorna o payload original (sem alocação extra de projeção).
-//
-// Uso: /api/v1/beers?fields=id,name,image_url
-//
-// Defesa (Pilar 4): limita o número de campos pedidos para evitar abuse de
-// CPU/reflexão e cardinalidade de projeção (cap de 32 campos).
-func SelectFields(payload any, fields string) any {
-	fields = strings.TrimSpace(fields)
-	if fields == "" {
-		return payload
-	}
-
-	const maxFields = 32
-	want := make(map[string]struct{}, 8)
-	for _, f := range strings.Split(fields, ",") {
-		if f = strings.TrimSpace(f); f == "" {
-			continue
-		}
-		if len(want) >= maxFields {
-			break
-		}
-		want[strings.ToLower(f)] = struct{}{}
-	}
-	if len(want) == 0 {
-		return payload
-	}
-
-	rv := reflect.ValueOf(payload)
-	if rv.Kind() != reflect.Slice {
-		return payload
-	}
-
-	out := make([]any, 0, rv.Len())
-	for i := 0; i < rv.Len(); i++ {
-		elem := rv.Index(i)
-		if elem.Kind() == reflect.Ptr {
-			elem = elem.Elem()
-		}
-		if elem.Kind() != reflect.Struct {
-			// Elemento não-estrutura: mantém como está.
-			out = append(out, elem.Interface())
-			continue
-		}
-		proj := make(map[string]any, len(want))
-		t := elem.Type()
-		for j := 0; j < t.NumField(); j++ {
-			f := t.Field(j)
-			// Respeita o nome JSON (ou o nome do campo) para casar com o cliente.
-			name := jsonName(f)
-			if _, ok := want[strings.ToLower(name)]; ok {
-				proj[name] = elem.Field(j).Interface()
-			}
-		}
-		out = append(out, proj)
-	}
-	return out
-}
-
-// jsonName extrai o nome do campo conforme a tag `json`, sem opções de omit.
-func jsonName(f reflect.StructField) string {
-	tag := f.Tag.Get("json")
-	if tag == "" {
-		return f.Name
-	}
-	if idx := strings.IndexByte(tag, ','); idx >= 0 {
-		tag = tag[:idx]
-	}
-	if tag == "" {
-		return f.Name
-	}
-	return tag
 }

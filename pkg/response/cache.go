@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"net/http"
+	"strconv"
 )
 
 // Pacote response/cache: helpers de HTTP Caching (RFC 9111) para reduzir o
@@ -85,7 +86,7 @@ func trimSpace(s string) string {
 func SetCacheHeaders(w http.ResponseWriter, etag string, maxAge int, mustRevalidate bool) {
 	w.Header().Set("ETag", etag)
 	w.Header().Add("Vary", "Accept-Encoding")
-	cc := "public, max-age=" + itoa(maxAge)
+	cc := "public, max-age=" + strconv.Itoa(maxAge)
 	if mustRevalidate {
 		cc += ", must-revalidate"
 	}
@@ -102,24 +103,4 @@ func SendNotModified(w http.ResponseWriter, etag string) {
 	w.WriteHeader(http.StatusNotModified)
 }
 
-func itoa(n int) string {
-	if n == 0 {
-		return "0"
-	}
-	neg := n < 0
-	if neg {
-		n = -n
-	}
-	var buf [20]byte
-	i := len(buf)
-	for n > 0 {
-		i--
-		buf[i] = byte('0' + n%10)
-		n /= 10
-	}
-	if neg {
-		i--
-		buf[i] = '-'
-	}
-	return string(buf[i:])
-}
+

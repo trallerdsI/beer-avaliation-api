@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"beer-review-app/internal/beer/usecase"
-	userCase "beer-review-app/internal/user/usecase"
+	"beer-review-app/pkg/errors"
 	"beer-review-app/pkg/response"
 )
 
@@ -45,20 +45,18 @@ type HealthResponse struct {
 
 type MonitoringController struct {
 	beerUsecase usecase.BeerUsecase
-	userUsecase userCase.UserUsecase // Mantido para compatibilidade, mas atualmente sem uso
 	logger      *slog.Logger
 	startTime   time.Time
 	db          *sql.DB // opcional: nil em runtime offline/serverless desativa o ping de DB
 	dbErr       error   // erro de inicialização da BD (ex: sem DB_CONN_STRING); exposto em /health
 }
 
-func NewMonitoringController(bu usecase.BeerUsecase, uu userCase.UserUsecase, logger *slog.Logger, db *sql.DB, dbErr error) *MonitoringController {
+func NewMonitoringController(bu usecase.BeerUsecase, logger *slog.Logger, db *sql.DB, dbErr error) *MonitoringController {
 	if logger == nil {
 		logger = slog.Default()
 	}
 	return &MonitoringController{
 		beerUsecase: bu,
-		userUsecase: uu,
 		logger:      logger,
 		startTime:   time.Now(),
 		db:          db,
@@ -79,7 +77,7 @@ func (c *MonitoringController) GetStats(w http.ResponseWriter, r *http.Request) 
 	beers, totalBeers, err := c.beerUsecase.GetPaginated(ctx, 1, 5)
 	if err != nil {
 		c.logger.Error("Failed to get beers for stats", slog.String("error", err.Error()))
-		response.SendProblem(w, response.NewProblem(http.StatusInternalServerError, "internal_server_error", "Falha ao obter estatísticas."))
+		response.SendProblem(w, errors.NewProblem(http.StatusInternalServerError, "internal_server_error", "Falha ao obter estatísticas."))
 		return
 	}
 

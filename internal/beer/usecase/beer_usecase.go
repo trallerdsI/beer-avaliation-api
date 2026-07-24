@@ -2,7 +2,6 @@ package usecase
 
 import (
 	"context"
-	"os"
 	"time"
 
 	"beer-review-app/internal/beer/model"
@@ -11,8 +10,6 @@ import (
 	"beer-review-app/pkg/middleware"
 	"beer-review-app/pkg/realtime"
 	"beer-review-app/pkg/uuid"
-
-	"github.com/sony/gobreaker"
 )
 
 type BeerUsecase interface {
@@ -31,30 +28,14 @@ type BeerUsecase interface {
 
 type beerUsecase struct {
 	repo repository.BeerRepository
-	cb   *gobreaker.CircuitBreaker
 	hub  *realtime.Hub // opcional: nil em testes/serverless desativa eventos SSE
 }
 
 // NewBeerUsecase creates a new instance of BeerUsecase.
 // hub pode ser nil (ex: testes, serverless) — neste caso nenhum evento SSE é emitido.
 func NewBeerUsecase(repo repository.BeerRepository, hub *realtime.Hub) BeerUsecase {
-	var cb *gobreaker.CircuitBreaker
-	if !isServerlessRuntime() {
-		cb = gobreaker.NewCircuitBreaker(gobreaker.Settings{
-			Name:        "beer-service",
-			MaxRequests: 5,
-			Interval:    10 * time.Second,
-			Timeout:     30 * time.Second,
-			ReadyToTrip: func(counts gobreaker.Counts) bool {
-				failureRatio := float64(counts.TotalFailures) / float64(counts.Requests)
-				return counts.Requests >= 3 && failureRatio >= 0.6
-			},
-		})
-	}
-
 	return &beerUsecase{
 		repo: repo,
-		cb:   cb,
 		hub:  hub,
 	}
 }
@@ -123,32 +104,9 @@ func (u *beerUsecase) Create(ctx context.Context, beer *model.Beer) error {
 	return nil
 }
 
-// GetByID retrieves a beer by its ID using circuit breaker pattern.
+// GetByID retrieves a beer by its ID.
 func (u *beerUsecase) GetByID(ctx context.Context, id string) (model.Beer, error) {
-	if u.cb == nil {
-		return u.repo.GetByID(ctx, id)
-	}
-
-	result, err := u.cb.Execute(func() (interface{}, error) {
-		return u.repo.GetByID(ctx, id)
-	})
-	if err != nil {
-		// Preserva a causa raiz (ex: AppError 404 do repositório) via erro
-		// embrulhado, mantendo a cadeia inspecionável por errors.As/Is.
-		return model.Beer{}, errors.NewAppError(500, "Failed to retrieve beer by ID", err)
-	}
-
-	// Type assertion segura: o breaker só devolve o valor em sucesso; nunca
-	// fazemos panic se, por qualquer razão, o tipo não bater.
-	beer, ok := result.(model.Beer)
-	if !ok {
-		return model.Beer{}, errors.NewAppError(500, "Failed to retrieve beer by ID", nil)
-	}
-	return beer, nil
-}
-
-func isServerlessRuntime() bool {
-	return os.Getenv("VERCEL") != "" || os.Getenv("NOW_REGION") != "" || os.Getenv("AWS_LAMBDA_FUNCTION_NAME") != ""
+	return u.repo.GetByID(ctx, id)
 }
 
 // GetPaginated retrieves paginated beers.

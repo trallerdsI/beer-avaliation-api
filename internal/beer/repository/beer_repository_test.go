@@ -3,11 +3,123 @@ package repository
 import (
 	"context"
 	stderrors "errors"
+	"sync"
 	"testing"
 
 	"beer-review-app/internal/beer/model"
 	"beer-review-app/pkg/errors"
 )
+
+// InMemoryBeerRepository é uma implementação em memória para testes.
+type InMemoryBeerRepository struct {
+	beers []model.Beer
+	mutex sync.RWMutex
+}
+
+func NewInMemoryBeerRepository() *InMemoryBeerRepository {
+	return &InMemoryBeerRepository{beers: []model.Beer{}}
+}
+
+func (r *InMemoryBeerRepository) Create(ctx context.Context, beer *model.Beer) error {
+	r.mutex.Lock()
+	defer r.mutex.Unlock()
+	r.beers = append(r.beers, *beer)
+	return nil
+}
+
+func (r *InMemoryBeerRepository) GetByID(ctx context.Context, id string) (model.Beer, error) {
+	r.mutex.RLock()
+	defer r.mutex.RUnlock()
+	for _, beer := range r.beers {
+		if beer.ID == id {
+			return beer, nil
+		}
+	}
+	return model.Beer{}, errors.NewAppError(404, "beer not found", nil)
+}
+
+func (r *InMemoryBeerRepository) GetAll(ctx context.Context) ([]model.Beer, error) {
+	r.mutex.RLock()
+	defer r.mutex.RUnlock()
+	out := make([]model.Beer, len(r.beers))
+	copy(out, r.beers)
+	return out, nil
+}
+
+func (r *InMemoryBeerRepository) GetPaginated(ctx context.Context, page, pageSize int) ([]model.Beer, int, error) {
+	r.mutex.RLock()
+	defer r.mutex.RUnlock()
+	start := (page - 1) * pageSize
+	total := len(r.beers)
+	if start >= total || pageSize <= 0 {
+		return []model.Beer{}, total, nil
+	}
+	end := start + pageSize
+	if end > total {
+		end = total
+	}
+	seg := r.beers[start:end]
+	out := make([]model.Beer, len(seg))
+	copy(out, seg)
+	return out, total, nil
+}
+
+func (r *InMemoryBeerRepository) Update(ctx context.Context, id string, beer model.Beer) error {
+	r.mutex.Lock()
+	defer r.mutex.Unlock()
+	for i, b := range r.beers {
+		if b.ID == id {
+			r.beers[i] = beer
+			return nil
+		}
+	}
+	return errors.NewAppError(404, "beer not found", nil)
+}
+
+func (r *InMemoryBeerRepository) Delete(ctx context.Context, id string) error {
+	r.mutex.Lock()
+	defer r.mutex.Unlock()
+	for i, b := range r.beers {
+		if b.ID == id {
+			r.beers = append(r.beers[:i], r.beers[i+1:]...)
+			return nil
+		}
+	}
+	return errors.NewAppError(404, "beer not found", nil)
+}
+
+func (r *InMemoryBeerRepository) AddComment(ctx context.Context, id string, comment model.Comment) error {
+	r.mutex.Lock()
+	defer r.mutex.Unlock()
+	for i, beer := range r.beers {
+		if beer.ID == id {
+			r.beers[i].Comments = append(r.beers[i].Comments, comment)
+			return nil
+		}
+	}
+	return errors.NewAppError(404, "beer not found", nil)
+}
+
+func (r *InMemoryBeerRepository) DeleteComment(ctx context.Context, id string, commentID string) error {
+	r.mutex.Lock()
+	defer r.mutex.Unlock()
+	for i, beer := range r.beers {
+		if beer.ID == id {
+			for j, c := range beer.Comments {
+				if c.ID == commentID {
+					r.beers[i].Comments = append(beer.Comments[:j], beer.Comments[j+1:]...)
+					return nil
+				}
+			}
+			return errors.NewAppError(404, "comment not found", nil)
+		}
+	}
+	return errors.NewAppError(404, "beer not found", nil)
+}
+
+func (r *InMemoryBeerRepository) SearchBeers(ctx context.Context, filters model.BeerFilters) ([]model.Beer, int, error) {
+	return nil, 0, errors.NewAppError(501, "not implemented in memory repo", nil)
+}
 
 // TestUnavailableBeerRepository garante que o fallback offline retorna
 // ErrDatabaseUnavailable (503) em todas as operações, mantendo o servidor

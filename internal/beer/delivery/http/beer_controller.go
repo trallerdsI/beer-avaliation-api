@@ -9,7 +9,6 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
-	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -25,6 +24,7 @@ import (
 	"beer-review-app/pkg/middleware"
 	"beer-review-app/pkg/response"
 	"beer-review-app/pkg/storage"
+	"beer-review-app/pkg/validation"
 )
 
 // validate é um validador de structs de stack (zero-allocation por request no
@@ -130,7 +130,7 @@ func handleError(w http.ResponseWriter, ctx context.Context, logger *slog.Logger
 	if appErr := (*appErrors.AppError)(nil); stdErrors.As(err, &appErr) {
 		status = appErr.Code
 	}
-	p := response.NewProblem(status, appErrors.HTTPStatusSlug(status), message)
+	p := appErrors.NewProblem(status, appErrors.HTTPStatusSlug(status), message)
 	if trace := middleware.TraceIDFromContext(ctx); trace != "" {
 		p.TraceID = trace
 	}
@@ -159,74 +159,11 @@ func validationMessage(err error) string {
 	if stdErrors.As(err, &verrs) {
 		msgs := make([]string, 0, len(verrs))
 		for _, fe := range verrs {
-			msgs = append(msgs, fmt.Sprintf("%s: %s", fieldLabel(fe.Field()), ruleMessage(fe)))
+			msgs = append(msgs, validation.FieldLabel(fe.Field())+": "+validation.RuleMessage(fe))
 		}
 		return strings.Join(msgs, "; ")
 	}
 	return err.Error()
-}
-
-// fieldLabel traduz o nome do campo Go para um rótulo legível em PT.
-func fieldLabel(field string) string {
-	labels := map[string]string{
-		"Name":        "nome",
-		"Style":       "estilo",
-		"Description": "descrição",
-		"ImageUrl":    "imagem",
-		"Alcohol":     "teor alcoólico",
-		"Taste":       "sabor",
-		"Aroma":       "aroma",
-		"Color":       "cor",
-		"Body":        "corpo",
-		"Carbonation": "carbonatação",
-		"Finish":      "finalização",
-		"Text":        "texto",
-		"Rating":      "avaliação",
-		"Comments":    "comentários",
-	}
-	if l, ok := labels[field]; ok {
-		return l
-	}
-	return strings.ToLower(field)
-}
-
-// ruleMessage gera uma frase clara para a regra violada, incluindo o valor
-// esperado (fe.Param) quando aplicável.
-func ruleMessage(fe validator.FieldError) string {
-	param := fe.Param()
-	switch fe.Tag() {
-	case "required":
-		return "é obrigatório"
-	case "min":
-		if isNumericKind(fe.Kind()) {
-			return fmt.Sprintf("deve ser no mínimo %s", param)
-		}
-		return fmt.Sprintf("deve ter pelo menos %s caracteres", param)
-	case "max":
-		if isNumericKind(fe.Kind()) {
-			return fmt.Sprintf("deve ser no máximo %s", param)
-		}
-		return fmt.Sprintf("deve ter no máximo %s caracteres", param)
-	case "https_url":
-		return "deve ser um URL https válido"
-	case "email":
-		return "deve ser um email válido"
-	default:
-		// Regras custom de enum (flavor, aroma, color, body, carbonation, finish):
-		// não expõem a tag técnica, apenas indicam valor inválido.
-		return "valor inválido"
-	}
-}
-
-// isNumericKind indica se o kind do campo é inteiro ou float (para distinguir
-// "caracteres" de "valor numérico" nas regras min/max).
-func isNumericKind(k reflect.Kind) bool {
-	switch k {
-	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
-		reflect.Float32, reflect.Float64:
-		return true
-	}
-	return false
 }
 
 // validateBeer valida o modelo completo (name, style, alcohol, url, enums)
@@ -267,7 +204,7 @@ func (c *BeerController) GetAllBeers(w http.ResponseWriter, r *http.Request) {
 	}
 
 	payload := map[string]interface{}{
-		"beers":    response.SelectFields(beers, query.Get("fields")),
+		"beers":    beers,
 		"total":    total,
 		"page":     page,
 		"pageSize": pageSize,
@@ -600,7 +537,7 @@ const maxUploadBytes = 10 << 20
 // file.Filename do cliente (defesa contra path traversal).
 func (c *BeerController) UploadBeerMedia(w http.ResponseWriter, r *http.Request) {
 	if c.uploader == nil {
-		response.SendProblem(w, response.NewProblem(http.StatusNotImplemented, "media_disabled",
+		response.SendProblem(w, appErrors.NewProblem(http.StatusNotImplemented, "media_disabled",
 			"Upload de mídia não está configurado no servidor."))
 		return
 	}
@@ -610,14 +547,14 @@ func (c *BeerController) UploadBeerMedia(w http.ResponseWriter, r *http.Request)
 	// Limita o tamanho total do body multipart antes de fazer parse.
 	r.Body = http.MaxBytesReader(w, r.Body, maxUploadBytes+1<<16)
 	if err := r.ParseMultipartForm(maxUploadBytes); err != nil {
-		response.SendProblem(w, response.NewProblem(http.StatusBadRequest, "invalid_multipart",
+		response.SendProblem(w, appErrors.NewProblem(http.StatusBadRequest, "invalid_multipart",
 			"Formulário multipart inválido ou ficheiro excede o limite."))
 		return
 	}
 
 	file, _, err := r.FormFile("file")
 	if err != nil {
-		response.SendProblem(w, response.NewProblem(http.StatusBadRequest, "missing_file",
+		response.SendProblem(w, appErrors.NewProblem(http.StatusBadRequest, "missing_file",
 			"Nenhum ficheiro enviado no campo 'file'."))
 		return
 	}
@@ -631,7 +568,7 @@ func (c *BeerController) UploadBeerMedia(w http.ResponseWriter, r *http.Request)
 
 	contentType, err := detectImageType(data)
 	if err != nil {
-		response.SendProblem(w, response.NewProblem(http.StatusUnsupportedMediaType, "unsupported_media",
+		response.SendProblem(w, appErrors.NewProblem(http.StatusUnsupportedMediaType, "unsupported_media",
 			"Apenas imagens JPEG, PNG ou WebP são aceites."))
 		return
 	}
@@ -643,7 +580,7 @@ func (c *BeerController) UploadBeerMedia(w http.ResponseWriter, r *http.Request)
 	url, err := c.uploader.Upload(r.Context(), objectName, contentType, data)
 	if err != nil {
 		c.logger.ErrorContext(r.Context(), "falha no upload de mídia", "err", err, "beer_id", beerID)
-		response.SendProblem(w, response.NewProblem(http.StatusBadGateway, "upload_failed",
+		response.SendProblem(w, appErrors.NewProblem(http.StatusBadGateway, "upload_failed",
 			"Falha ao guardar a imagem no storage."))
 		return
 	}

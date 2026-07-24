@@ -8,7 +8,6 @@ require (
 	github.com/lib/pq v1.10.9
 	github.com/microcosm-cc/bluemonday v1.0.27
 	github.com/prometheus/client_golang v1.22.0
-	github.com/sony/gobreaker v1.0.0
 	github.com/stretchr/testify v1.10.0
 )
 

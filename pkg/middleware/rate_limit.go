@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"beer-review-app/pkg/errors"
 	"beer-review-app/pkg/response"
 )
 
@@ -16,46 +17,12 @@ const (
 )
 
 type rateLimiter struct {
-	mu      sync.Mutex
-	hits    map[string][]time.Time
-	window  time.Duration
-	limit   int
-	cleanup time.Duration
-	last    time.Time
+	mu   sync.Mutex
+	hits map[string][]time.Time
 }
 
-func newRateLimiter(limit int, window time.Duration) *rateLimiter {
-	rl := &rateLimiter{
-		hits:    make(map[string][]time.Time),
-		limit:   limit,
-		window:  window,
-		cleanup: window * 2,
-	}
-	go rl.gc()
-	return rl
-}
-
-func (rl *rateLimiter) gc() {
-	ticker := time.NewTicker(rl.cleanup)
-	defer ticker.Stop()
-	for range ticker.C {
-		rl.mu.Lock()
-		cutoff := time.Now().Add(-rl.cleanup)
-		for key, times := range rl.hits {
-			filtered := make([]time.Time, 0, len(times))
-			for _, t := range times {
-				if t.After(cutoff) {
-					filtered = append(filtered, t)
-				}
-			}
-			if len(filtered) == 0 {
-				delete(rl.hits, key)
-			} else {
-				rl.hits[key] = filtered
-			}
-		}
-		rl.mu.Unlock()
-	}
+func newRateLimiter() *rateLimiter {
+	return &rateLimiter{hits: make(map[string][]time.Time)}
 }
 
 func (rl *rateLimiter) allow(key string) bool {
@@ -63,7 +30,7 @@ func (rl *rateLimiter) allow(key string) bool {
 	defer rl.mu.Unlock()
 
 	now := time.Now()
-	cutoff := now.Add(-rl.window)
+	cutoff := now.Add(-writeRateLimitWindow)
 	times := rl.hits[key]
 	filtered := make([]time.Time, 0, len(times))
 	for _, t := range times {
@@ -71,7 +38,7 @@ func (rl *rateLimiter) allow(key string) bool {
 			filtered = append(filtered, t)
 		}
 	}
-	if len(filtered) >= rl.limit {
+	if len(filtered) >= writeRateLimit {
 		rl.hits[key] = filtered
 		return false
 	}
@@ -91,7 +58,7 @@ func clientKey(r *http.Request) string {
 	return "i:" + ip
 }
 
-var writeLimiter = newRateLimiter(writeRateLimit, writeRateLimitWindow)
+var writeLimiter = newRateLimiter()
 
 func isWriteMethod(method string) bool {
 	switch method {
@@ -110,7 +77,7 @@ func RateLimitMiddleware(next http.Handler) http.Handler {
 		key := clientKey(r)
 		if !writeLimiter.allow(key) {
 			w.Header().Set("Retry-After", "60")
-			response.SendProblem(w, response.NewProblem(http.StatusTooManyRequests, "rate_limit_exceeded",
+			response.SendProblem(w, errors.NewProblem(http.StatusTooManyRequests, "rate_limit_exceeded",
 				"Muitas requisições. Tente novamente dentro de 60 segundos."))
 			slog.WarnContext(r.Context(), "rate limit exceeded", "key", key, "method", r.Method, "path", r.URL.Path)
 			return
