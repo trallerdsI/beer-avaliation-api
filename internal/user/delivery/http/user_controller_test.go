@@ -459,3 +459,142 @@ func TestUserOAuthBadRequest(t *testing.T) {
 		t.Fatalf("expected 400, got %d", rr.Code)
 	}
 }
+
+// --- Push Subscriptions ---
+
+func TestUserSubscribePushSuccess(t *testing.T) {
+	mu := new(MockUserUsecase)
+	c := newUserController(mu)
+
+	mu.On("SubscribePush", mock.Anything, "u1", model.PushSubscription{
+		Endpoint: "https://push.example.com",
+		P256DH:   "p256dh",
+		Auth:     "auth",
+	}).Return(nil)
+
+	body, _ := json.Marshal(model.PushSubscription{
+		Endpoint: "https://push.example.com",
+		P256DH:   "p256dh",
+		Auth:     "auth",
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/users/u1/push/subscribe", bytes.NewBuffer(body))
+	req.SetPathValue("id", "u1")
+	rr := httptest.NewRecorder()
+
+	c.SubscribePush(rr, req)
+
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d (body=%s)", rr.Code, rr.Body.String())
+	}
+}
+
+func TestUserSubscribePushMissingID(t *testing.T) {
+	mu := new(MockUserUsecase)
+	c := newUserController(mu)
+
+	body, _ := json.Marshal(model.PushSubscription{
+		Endpoint: "https://push.example.com",
+		P256DH:   "p256dh",
+		Auth:     "auth",
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/users//push/subscribe", bytes.NewBuffer(body))
+	rr := httptest.NewRecorder()
+
+	c.SubscribePush(rr, req)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", rr.Code)
+	}
+}
+
+func TestUserSubscribePushInvalidBody(t *testing.T) {
+	mu := new(MockUserUsecase)
+	c := newUserController(mu)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/users/u1/push/subscribe", bytes.NewBufferString("not json"))
+	req.SetPathValue("id", "u1")
+	rr := httptest.NewRecorder()
+
+	c.SubscribePush(rr, req)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", rr.Code)
+	}
+}
+
+func TestUserUnsubscribePushSuccess(t *testing.T) {
+	mu := new(MockUserUsecase)
+	c := newUserController(mu)
+
+	mu.On("UnsubscribePush", mock.Anything, "u1", "https://push.example.com").Return(nil)
+
+	body, _ := json.Marshal(map[string]string{"endpoint": "https://push.example.com"})
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/users/u1/push/unsubscribe", bytes.NewBuffer(body))
+	req.SetPathValue("id", "u1")
+	rr := httptest.NewRecorder()
+
+	c.UnsubscribePush(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d (body=%s)", rr.Code, rr.Body.String())
+	}
+}
+
+func TestUserUnsubscribePushMissingID(t *testing.T) {
+	mu := new(MockUserUsecase)
+	c := newUserController(mu)
+
+	body, _ := json.Marshal(map[string]string{"endpoint": "https://push.example.com"})
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/users//push/unsubscribe", bytes.NewBuffer(body))
+	rr := httptest.NewRecorder()
+
+	c.UnsubscribePush(rr, req)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", rr.Code)
+	}
+}
+
+func TestUserListPushSubscriptionsSuccess(t *testing.T) {
+	mu := new(MockUserUsecase)
+	c := newUserController(mu)
+
+	subs := []model.PushSubscription{
+		{Endpoint: "https://push.example.com", P256DH: "p256dh", Auth: "auth"},
+	}
+	mu.On("ListPushSubscriptions", mock.Anything, "u1").Return(subs, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/users/u1/push/subscriptions", nil)
+	req.SetPathValue("id", "u1")
+	rr := httptest.NewRecorder()
+
+	c.ListPushSubscriptions(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d (body=%s)", rr.Code, rr.Body.String())
+	}
+
+	var resp struct {
+		Subscriptions []model.PushSubscription `json:"subscriptions"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if len(resp.Subscriptions) != 1 {
+		t.Fatalf("expected 1 subscription, got %d", len(resp.Subscriptions))
+	}
+}
+
+func TestUserListPushSubscriptionsMissingID(t *testing.T) {
+	mu := new(MockUserUsecase)
+	c := newUserController(mu)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/users//push/subscriptions", nil)
+	rr := httptest.NewRecorder()
+
+	c.ListPushSubscriptions(rr, req)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", rr.Code)
+	}
+}
