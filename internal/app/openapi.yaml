@@ -1,29 +1,110 @@
 openapi: 3.0.3
 info:
   title: Beer Avaliation API
-  version: 1.1.0
+  version: 1.0.0
   description: >
-    API de rede social de cerveja. A cerveja é o "post" do feed; o feed é a
-    listagem de cervejas e as interações (comentários com nota, likes) orbitam
-    à volta dela. Visualização é pública; criar cerveja, comentar e dar like
-    exigem login (Bearer JWT).
-  x-sync: Fiel ao código (internal/app/app.go + modelos). Manter alinhado a cada mudança de contrato.
+    API REST para gestão de cervejas, avaliações e utilizadores.
+    Conformidade: RFC 7807 (Problem Details), RFC 9111 (ETag/Cache),
+    RFC 7578 (multipart upload), RFC 6749 (OAuth2/OIDC), RFC 9562 (UUIDv7).
+
 servers:
   - url: https://beer-avaliation-api.vercel.app
-  - url: http://localhost:8082
+
+security:
+  - bearerAuth: []
+
 paths:
   /api/v1/health:
     get:
       summary: Health check
+      security: []
       responses:
         '200':
           description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
         '503':
-          description: Database unavailable
+          description: Service unavailable (database down)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+
+  /api/v1/stats:
+    get:
+      summary: Public statistics (total beers + top styles)
+      security: []
+      responses:
+        '200':
+          description: Statistics payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatsResponse'
+        '503':
+          description: Service unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+
+  /api/v1/admin/stats:
+    get:
+      summary: Admin statistics panel (requires admin role)
+      responses:
+        '200':
+          description: Full admin analytics payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminStatsResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '403':
+          description: Forbidden (not admin)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+
+  /api/v1/users/me/stats:
+    get:
+      summary: Authenticated user personal statistics
+      responses:
+        '200':
+          description: User personal stats payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserStatsResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
 
   /api/v1/beers:
     get:
-      summary: List beers (feed global / catálogo) with pagination
+      summary: List beers with pagination
       parameters:
         - in: query
           name: page
@@ -36,24 +117,41 @@ paths:
           schema:
             type: integer
             minimum: 1
-            maximum: 50
             default: 10
         - in: query
           name: fields
+          description: Comma-separated field projection (e.g. id,name,imageUrl)
           schema:
             type: string
-          description: "Projeção de campos separados por vírgula (ex id,name,imageUrl,averageRating)"
       responses:
         '200':
-          description: Paginated list of beers (with aggregates)
+          description: Paginated list of beers
+          headers:
+            ETag:
+              description: ETag forte derivado do conteúdo da página (RFC 9111)
+              schema:
+                type: string
+            Cache-Control:
+              description: Cache-Control curto (RFC 9111)
+              schema:
+                type: string
+            Link:
+              description: >
+                Web Linking (RFC 8288) para paginação.
+              schema:
+                type: string
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/BeerListResponse'
+        '304':
+          description: Not Modified (RFC 9111)
+          headers:
+            ETag:
+              schema:
+                type: string
     post:
-      summary: Create a beer (requires auth)
-      security:
-        - bearerAuth: []
+      summary: Create a beer
       requestBody:
         required: true
         content:
@@ -68,27 +166,44 @@ paths:
               schema:
                 $ref: '#/components/schemas/Beer'
         '400':
-          description: Invalid request payload (validation error)
+          description: Invalid request payload
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '401':
-          description: Missing or invalid token
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/Problem'
         '409':
-          description: Duplicate beer detected (name collision)
+          description: Conflict — similar beer already exists
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/DuplicateBeerError'
+                $ref: '#/components/schemas/Problem'
+
+  /api/v1/beers/enums:
+    get:
+      summary: Domain enum values allowlist
+      security: []
+      responses:
+        '200':
+          description: Enum allowlist
+          headers:
+            ETag:
+              description: ETag forte derivado do conteúdo (RFC 9111)
+              schema:
+                type: string
+            Cache-Control:
+              description: Cache-Control longo (~1h, RFC 9111)
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnumsResponse'
+        '304':
+          description: Not Modified (RFC 9111)
 
   /api/v1/beers/search:
     get:
-      summary: Search beers by filters (used to suggest existing beers before creating)
+      summary: Search beers by filters
       parameters:
         - in: query
           name: query
@@ -107,14 +222,6 @@ paths:
           schema:
             type: string
         - in: query
-          name: minAlcohol
-          schema:
-            type: number
-        - in: query
-          name: maxAlcohol
-          schema:
-            type: number
-        - in: query
           name: page
           schema:
             type: integer
@@ -125,7 +232,6 @@ paths:
           schema:
             type: integer
             minimum: 1
-            maximum: 50
             default: 10
       responses:
         '200':
@@ -144,29 +250,40 @@ paths:
           required: true
           schema:
             type: string
+            format: uuid
       responses:
         '200':
-          description: Beer details (includes comments + aggregates)
+          description: Beer details
+          headers:
+            ETag:
+              description: ETag forte derivado de updated_at (RFC 9111)
+              schema:
+                type: string
+            Cache-Control:
+              description: Cache-Control (RFC 9111)
+              schema:
+                type: string
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Beer'
+        '304':
+          description: Not Modified (RFC 9111)
         '404':
           description: Beer not found
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/Problem'
     put:
-      summary: Update a beer (requires auth; owner or admin)
-      security:
-        - bearerAuth: []
+      summary: Update a beer
       parameters:
         - in: path
           name: id
           required: true
           schema:
             type: string
+            format: uuid
       requestBody:
         required: true
         content:
@@ -180,47 +297,90 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Beer'
-        '401':
-          description: Unauthorized
-        '403':
-          description: Not allowed to update this beer
+        '404':
+          description: Beer not found
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '404':
-          description: Beer not found
+                $ref: '#/components/schemas/Problem'
     delete:
-      summary: Delete a beer (requires auth; owner or admin)
-      security:
-        - bearerAuth: []
+      summary: Delete a beer
       parameters:
         - in: path
           name: id
           required: true
           schema:
             type: string
+            format: uuid
       responses:
         '204':
           description: Beer deleted successfully
-        '401':
-          description: Unauthorized
-        '403':
-          description: Not allowed to delete this beer
         '404':
           description: Beer not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
 
-  /api/v1/beers/{id}/comments:
+  /api/v1/beers/{id}/media:
     post:
-      summary: Add a comment + rating to a beer (requires auth)
-      security:
-        - bearerAuth: []
+      summary: Upload beer image (RFC 7578 Multipart Form Data)
       parameters:
         - in: path
           name: id
           required: true
           schema:
             type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: Imagem (JPEG, PNG ou WebP), máx 10MB
+      responses:
+        '200':
+          description: Media updated
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/MediaItem'
+        '415':
+          description: Unsupported media type
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '403':
+          description: Forbidden (not owner/admin)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+
+  /api/v1/beers/{id}/comments:
+    post:
+      summary: Add a comment to a beer
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
       requestBody:
         required: true
         content:
@@ -228,86 +388,85 @@ paths:
             schema:
               $ref: '#/components/schemas/CommentInput'
       responses:
-        '200':
-          description: Comment added successfully
+        '201':
+          description: Comment added
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/CommentCreated'
+                $ref: '#/components/schemas/Beer'
         '400':
-          description: Invalid input (text empty or rating out of 1-5)
+          description: Invalid comment payload
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '401':
-          description: Unauthorized
+                $ref: '#/components/schemas/Problem'
         '404':
           description: Beer not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
 
   /api/v1/beers/{id}/comments/{commentId}:
     delete:
-      summary: Delete a comment (requires auth; author or beer owner)
-      security:
-        - bearerAuth: []
+      summary: Delete a comment
       parameters:
         - in: path
           name: id
           required: true
           schema:
             type: string
+            format: uuid
         - in: path
           name: commentId
           required: true
           schema:
             type: string
+            format: uuid
       responses:
-        '200':
-          description: Comment deleted successfully
-        '401':
-          description: Unauthorized
-        '403':
-          description: Not allowed to delete this comment
+        '204':
+          description: Comment deleted
+        '404':
+          description: Comment or beer not found
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '404':
-          description: Comment or beer not found
+                $ref: '#/components/schemas/Problem'
 
   /api/v1/beers/{id}/comments/{commentId}/like:
     post:
-      summary: Toggle like on a comment (requires auth)
-      security:
-        - bearerAuth: []
+      summary: Like a comment
       parameters:
         - in: path
           name: id
           required: true
           schema:
             type: string
+            format: uuid
         - in: path
           name: commentId
           required: true
           schema:
             type: string
+            format: uuid
       responses:
         '200':
-          description: Comment liked (idempotent by user; second call removes)
-        '401':
-          description: Unauthorized
-        '400':
-          description: Already liked (should not normally happen with toggle)
+          description: Comment liked
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/Beer'
         '404':
           description: Comment or beer not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
 
   /api/v1/users/register:
     post:
       summary: Register a new user
+      security: []
       requestBody:
         required: true
         content:
@@ -320,13 +479,24 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/UserRegistered'
+                $ref: '#/components/schemas/User'
         '400':
           description: Invalid registration payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '409':
+          description: Email already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
 
   /api/v1/users/login:
     post:
       summary: Login a user
+      security: []
       requestBody:
         required: true
         content:
@@ -335,40 +505,115 @@ paths:
               $ref: '#/components/schemas/UserLoginInput'
       responses:
         '200':
-          description: Login successful (returns JWT token)
+          description: Login successful — returns JWT HS256 session token
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/UserRegistered'
+                type: object
+                properties:
+                  token:
+                    type: string
+                    description: "JWT HS256 de sessão (usar em Authorization: Bearer <token>)"
         '401':
           description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+
+  /api/v1/users/oauth:
+    post:
+      summary: OAuth2/OIDC social login (RFC 6749)
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - provider
+                - id_token
+              properties:
+                provider:
+                  type: string
+                  enum: [google, apple]
+                id_token:
+                  type: string
+                  description: JWT RS256 emitido pelo IdP (Google/Apple)
+      responses:
+        '200':
+          description: OAuth login successful — returns app session JWT
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    type: string
+                    description: JWT HS256 de sessão
+        '400':
+          description: Unsupported provider or invalid body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '401':
+          description: Invalid or expired id_token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
 
   /api/v1/users/{id}:
     get:
       summary: Get user profile
-      security:
-        - bearerAuth: []
       parameters:
         - in: path
           name: id
           required: true
           schema:
             type: string
+            format: uuid
       responses:
         '200':
           description: User profile
+          headers:
+            ETag:
+              description: ETag forte derivado de updated_at (RFC 9111)
+              schema:
+                type: string
+            Cache-Control:
+              description: Cache-Control (RFC 9111)
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '304':
+          description: Not Modified (RFC 9111)
         '401':
           description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '404':
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
     put:
       summary: Update user profile
-      security:
-        - bearerAuth: []
       parameters:
         - in: path
           name: id
           required: true
           schema:
             type: string
+            format: uuid
       requestBody:
         required: true
         content:
@@ -378,26 +623,136 @@ paths:
       responses:
         '200':
           description: User profile updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '404':
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
     delete:
       summary: Delete user account
-      security:
-        - bearerAuth: []
       parameters:
         - in: path
           name: id
           required: true
           schema:
             type: string
+            format: uuid
       responses:
         '204':
           description: User account deleted
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '404':
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
 
-  /api/v1/stats:
+  /api/v1/users/{id}/push/subscribe:
+    post:
+      summary: Subscribe to push notifications
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PushSubscriptionInput'
+      responses:
+        '201':
+          description: Push subscription created
+        '400':
+          description: Invalid subscription payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+
+  /api/v1/users/{id}/push/unsubscribe:
+    post:
+      summary: Unsubscribe from push notifications
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - endpoint
+              properties:
+                endpoint:
+                  type: string
+                  format: uri
+      responses:
+        '204':
+          description: Push subscription removed
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+
+  /api/v1/users/{id}/push:
     get:
-      summary: Get monitoring statistics
+      summary: List push subscriptions for user
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
       responses:
         '200':
-          description: Statistics payload
+          description: List of push subscriptions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PushSubscription'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
 
 components:
   securitySchemes:
@@ -405,29 +760,318 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
+
   schemas:
+    Problem:
+      type: object
+      required:
+        - type
+        - title
+        - status
+        - detail
+      properties:
+        type:
+          type: string
+          description: "URI do erro (ex: /errors/unauthorized)"
+        title:
+          type: string
+          description: Resumo legível (HTTP status text)
+        status:
+          type: integer
+          description: HTTP status code
+        code:
+          type: string
+          description: Chave i18n estável snake_case para o cliente
+        detail:
+          type: string
+          description: Mensagem fallback (não expõe causa interna)
+        instance:
+          type: string
+          description: Caminho da requisição que falhou
+        trace_id:
+          type: string
+          description: ID de correlação (RequestIDMiddleware)
+        details:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProblemDetail'
+        action:
+          $ref: '#/components/schemas/ProblemAction'
+
+    ProblemDetail:
+      type: object
+      required:
+        - code
+      properties:
+        field:
+          type: string
+          description: Campo do payload que falhou
+        code:
+          type: string
+          description: "Código do erro do campo (ex: email_invalid)"
+        detail:
+          type: string
+          description: Mensagem legível do campo (i18n no cliente)
+
+    ProblemAction:
+      type: object
+      properties:
+        type:
+          type: string
+          description: "Tipo de ação sugerida (ex: relogin, retry)"
+        uri:
+          type: string
+          description: URI ou deep link para a ação
+        meta:
+          type: object
+          additionalProperties: true
+          description: Metadados adicionais para a UX
+
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [healthy, degraded]
+        version:
+          type: string
+        uptime:
+          type: string
+        memory:
+          $ref: '#/components/schemas/MemoryStats'
+        dependencies:
+          type: object
+          additionalProperties:
+            type: string
+
+    MemoryStats:
+      type: object
+      properties:
+        alloc:
+          type: integer
+        totalAlloc:
+          type: integer
+        sys:
+          type: integer
+        numGC:
+          type: integer
+
+    StatsResponse:
+      type: object
+      properties:
+        totalBeers:
+          type: integer
+        topStyles:
+          type: array
+          items:
+            $ref: '#/components/schemas/StyleCount'
+
+    AdminStatsResponse:
+      type: object
+      required:
+        - generated_at
+        - users
+        - beers
+        - engagement
+        - system
+      properties:
+        generated_at:
+          type: string
+          format: date-time
+        users:
+          $ref: '#/components/schemas/AdminUsers'
+        beers:
+          $ref: '#/components/schemas/AdminBeers'
+        engagement:
+          $ref: '#/components/schemas/AdminEngagement'
+        system:
+          $ref: '#/components/schemas/AdminSystem'
+
+    AdminUsers:
+      type: object
+      properties:
+        total:
+          type: integer
+        new_this_week:
+          type: integer
+        by_provider:
+          type: object
+          additionalProperties:
+            type: integer
+        admins_count:
+          type: integer
+
+    AdminBeers:
+      type: object
+      properties:
+        total:
+          type: integer
+        top_styles:
+          type: array
+          items:
+            $ref: '#/components/schemas/StyleCount'
+        added_last_30_days:
+          type: integer
+        community_contributions:
+          $ref: '#/components/schemas/CommunityBeerStats'
+
+    CommunityBeerStats:
+      type: object
+      properties:
+        user_created:
+          type: integer
+        system_created:
+          type: integer
+
+    AdminEngagement:
+      type: object
+      properties:
+        total_comments:
+          type: integer
+        sentiment:
+          $ref: '#/components/schemas/SentimentStats'
+        total_likes:
+          type: integer
+        most_commented_beer:
+          $ref: '#/components/schemas/MostCommentedBeer'
+
+    SentimentStats:
+      type: object
+      properties:
+        positive:
+          type: integer
+        negative:
+          type: integer
+        satisfaction_rate:
+          type: number
+          format: float
+
+    MostCommentedBeer:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        comments:
+          type: integer
+
+    AdminSystem:
+      type: object
+      properties:
+        last_beer_created_at:
+          type: string
+          format: date-time
+        last_db_update:
+          type: string
+          format: date-time
+
+    UserStatsResponse:
+      type: object
+      required:
+        - user_id
+        - member_since
+        - activity
+        - preferences
+        - contributions
+      properties:
+        user_id:
+          type: string
+          format: uuid
+        member_since:
+          type: string
+          format: date-time
+        activity:
+          $ref: '#/components/schemas/UserActivity'
+        preferences:
+          $ref: '#/components/schemas/UserPreferences'
+        contributions:
+          $ref: '#/components/schemas/UserContributions'
+
+    UserActivity:
+      type: object
+      properties:
+        beers_reviewed:
+          type: integer
+        total_comments:
+          type: integer
+        likes_given:
+          type: integer
+        likes_received:
+          type: integer
+
+    UserPreferences:
+      type: object
+      properties:
+        positive_rating_ratio:
+          type: number
+          format: float
+        favorite_styles:
+          type: array
+          items:
+            $ref: '#/components/schemas/StyleCount'
+        top_aroma_notes:
+          type: string
+
+    UserContributions:
+      type: object
+      properties:
+        beers_added_to_catalog:
+          type: integer
+
+    StyleCount:
+      type: object
+      properties:
+        style:
+          type: string
+        count:
+          type: integer
+
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        username:
+          type: string
+        email:
+          type: string
+          format: email
+        role:
+          type: string
+          enum: [user, admin]
+        provider:
+          type: string
+          enum: [local, google, apple]
+        external_sub:
+          type: string
+          nullable: true
+        updated_at:
+          type: string
+          format: date-time
+
     Beer:
       type: object
       properties:
         id:
           type: string
+          format: uuid
         name:
           type: string
         style:
           type: string
-          description: Opcional (iniciante pode omitir)
         description:
           type: string
         imageUrl:
           type: string
-          description: Apenas HTTPS (validado no backend)
+          format: uri
         alcohol:
           type: number
-          minimum: 0
-          maximum: 100
+          format: float
         taste:
           type: string
-          description: Opcional (enum de sabor)
         aroma:
           type: string
         color:
@@ -442,24 +1086,36 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/Comment'
+        media:
+          type: array
+          items:
+            $ref: '#/components/schemas/MediaItem'
         createdBy:
           type: string
-          description: user_id do criador (AuthZ)
+          format: uuid
         createdAt:
           type: string
           format: date-time
-          description: Timestamp ISO8601 de criação (ordenação do feed)
+        updatedAt:
+          type: string
+          format: date-time
         averageRating:
           type: number
           format: float
-          description: Média dos ratings dos comentários (calculado)
         totalReviews:
           type: integer
-          description: Nº de comentários com rating (calculado)
+
     BeerInput:
       type: object
       required:
         - name
+        - style
+        - taste
+        - aroma
+        - color
+        - body
+        - carbonation
+        - finish
       properties:
         name:
           type: string
@@ -467,20 +1123,19 @@ components:
           maxLength: 100
         style:
           type: string
-          description: Opcional
         description:
           type: string
           maxLength: 500
         imageUrl:
           type: string
-          description: Opcional, apenas HTTPS
+          format: uri
         alcohol:
           type: number
+          format: float
           minimum: 0
-          maximum: 100
+          maximum: 70
         taste:
           type: string
-          description: Opcional
         aroma:
           type: string
         color:
@@ -491,11 +1146,19 @@ components:
           type: string
         finish:
           type: string
+
     Comment:
       type: object
       properties:
         id:
           type: string
+          format: uuid
+        beer_id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+          format: uuid
         text:
           type: string
           maxLength: 2000
@@ -503,20 +1166,21 @@ components:
           type: integer
           minimum: 1
           maximum: 5
-          description: Nota individual do utilizador (1-5)
         likes:
           type: integer
         likedBy:
           type: array
           items:
             type: string
-          description: user_ids que deram like
+        positive:
+          type: boolean
         createdBy:
           type: string
-          description: user_id do autor (AuthZ)
+          format: uuid
         createdAt:
           type: string
           format: date-time
+
     CommentInput:
       type: object
       required:
@@ -525,20 +1189,14 @@ components:
       properties:
         text:
           type: string
-          minLength: 1
           maxLength: 2000
         rating:
           type: integer
           minimum: 1
           maximum: 5
-          description: Obrigatório (1-5)
-    CommentCreated:
-      type: object
-      properties:
-        message:
-          type: string
-        commentId:
-          type: string
+        positive:
+          type: boolean
+
     BeerListResponse:
       type: object
       properties:
@@ -552,37 +1210,89 @@ components:
           type: integer
         pageSize:
           type: integer
-    ErrorResponse:
+
+    EnumsResponse:
       type: object
       properties:
-        error:
-          type: string
-        code:
-          type: string
-          description: "Código de erro estável para o cliente (ex: DUPLICATE_BEER)"
-        detail:
-          type: string
-          description: Payload extra seguro (nunca expõe causa interna/DB)
-    DuplicateBeerError:
-      type: object
-      properties:
-        error:
-          type: string
-          example: Uma cerveja com nome semelhante já existe
-        code:
-          type: string
-          example: DUPLICATE_BEER
-        suggestions:
+        flavor:
           type: array
           items:
-            type: object
-            properties:
-              id:
-                type: string
-                example: "12"
-              name:
-                type: string
-                example: Heineken Long Neck
+            type: string
+        aroma:
+          type: array
+          items:
+            type: string
+        color:
+          type: array
+          items:
+            type: string
+        body:
+          type: array
+          items:
+            type: string
+        carbonation:
+          type: array
+          items:
+            type: string
+        finish:
+          type: array
+          items:
+            type: string
+
+    MediaItem:
+      type: object
+      properties:
+        url:
+          type: string
+          format: uri
+        type:
+          type: string
+          enum: [image/jpeg, image/png, image/webp]
+        size:
+          type: integer
+
+    PushSubscription:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        userId:
+          type: string
+          format: uuid
+        endpoint:
+          type: string
+          format: uri
+        p256dh:
+          type: string
+        auth:
+          type: string
+        userAgent:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    PushSubscriptionInput:
+      type: object
+      required:
+        - endpoint
+        - p256dh
+        - auth
+      properties:
+        endpoint:
+          type: string
+          format: uri
+        p256dh:
+          type: string
+        auth:
+          type: string
+        user_agent:
+          type: string
+
     UserRegisterInput:
       type: object
       required:
@@ -601,8 +1311,7 @@ components:
           type: string
           format: password
           minLength: 6
-        name:
-          type: string
+
     UserLoginInput:
       type: object
       required:
@@ -615,33 +1324,18 @@ components:
         password:
           type: string
           format: password
-    UserRegistered:
-      type: object
-      properties:
-        message:
-          type: string
-        token:
-          type: string
-          description: JWT Bearer token
-        user:
-          type: object
-          properties:
-            id:
-              type: string
-            username:
-              type: string
-            email:
-              type: string
-            role:
-              type: string
+
     UserUpdateInput:
       type: object
       properties:
         username:
           type: string
+          minLength: 3
+          maxLength: 50
         email:
           type: string
           format: email
         password:
           type: string
           format: password
+          minLength: 6

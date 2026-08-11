@@ -107,21 +107,7 @@ func NewAppErrorWithCode(code int, detail, errorCode string) *AppError {
 	}
 }
 
-// NewAppErrorWithDetail cria um AppError com código de erro estável e um
-// payload extra seguro (não expõe causa interna) para o cliente.
-//
-// Deprecated: preferir NewAppErrorWithDetails com Details tipados. Mantido
-// para compatibilidade com chamadas existentes (ex: sugestões de duplicado).
-func NewAppErrorWithDetail(code int, detailMsg, errorCode string, detailPayload any) *AppError {
-	return &AppError{
-		Code:      code,
-		Detail:    detailMsg,
-		ErrorCode: errorCode,
-		Details:   []ProblemDetail{{Code: errorCode, Detail: fmt.Sprintf("%v", detailPayload)}},
-	}
-}
 
-// NewAppErrorWithDetails cria um AppError com código estável e detalhes
 // granulares tipados (RFC 7807), seguro para o cliente (sem PII).
 func NewAppErrorWithDetails(code int, detail, errorCode string, details []ProblemDetail) *AppError {
 	return &AppError{

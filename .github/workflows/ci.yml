@@ -46,8 +46,7 @@ jobs:
       - name: Build
         run: go build ./...
 
-      # -race garante a Pilar 3 (concorrência sem race conditions); a suíte
-      # usa testing/synctest para temporalidade determinística (sem flaky).
+      # -race garante a Pilar 3 (concorrência sem race conditions).
       - name: Test (race + coverage)
         run: go test -race -coverprofile=coverage.out -covermode=atomic ./...
 

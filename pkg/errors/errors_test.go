@@ -9,12 +9,10 @@ func TestAppErrorUnwrapAndIs(t *testing.T) {
 	cause := errors.New("db connection refused")
 	appErr := NewAppError(500, "failed to create beer", cause)
 
-	// Unwrap expõe a causa para errors.Is.
 	if !errors.Is(appErr, cause) {
 		t.Fatal("expected errors.Is to match the wrapped cause")
 	}
 
-	// errors.As extrai o *AppError da cadeia.
 	var got *AppError
 	if !errors.As(appErr, &got) {
 		t.Fatal("expected errors.As to extract *AppError")
@@ -23,20 +21,17 @@ func TestAppErrorUnwrapAndIs(t *testing.T) {
 		t.Fatalf("expected code 500, got %d", got.Code)
 	}
 
-	// Is casa por Code (AppError.Is).
 	target := NewAppError(500, "other message", nil)
 	if !errors.Is(appErr, target) {
 		t.Fatal("expected errors.Is to match by Code via AppError.Is")
 	}
 
-	// AppError com mesmo Code mas causa diferente ainda casa por Code.
 	other := NewAppError(500, "x", errors.New("y"))
 	if !appErr.Is(other) {
 		t.Fatal("expected AppError.Is to match by code")
 	}
 }
 
-// TestAppErrorError verifies the Error() string formatting with and without a cause.
 func TestAppErrorError(t *testing.T) {
 	withCause := NewAppError(500, "boom", errors.New("root"))
 	if got := withCause.Error(); got != "Error 500: boom: root" {
@@ -49,11 +44,18 @@ func TestAppErrorError(t *testing.T) {
 	}
 }
 
-// TestNewAppErrorWithDetail verifies code + detail are stored for client-safe payloads.
-func TestNewAppErrorWithDetail(t *testing.T) {
-	detail := []map[string]any{{"id": "12"}}
-	appErr := NewAppErrorWithDetail(409, "duplicado", "DUPLICATE_BEER", detail)
+func TestNewUnavailableError(t *testing.T) {
+	appErr := NewUnavailableError()
+	if appErr.Code != 503 {
+		t.Fatalf("expected 503, got %d", appErr.Code)
+	}
+	if !errors.Is(appErr, ErrDatabaseUnavailable) {
+		t.Fatal("expected ErrDatabaseUnavailable to be the cause")
+	}
+}
 
+func TestNewAppErrorWithCode(t *testing.T) {
+	appErr := NewAppErrorWithCode(409, "duplicado", "DUPLICATE_BEER")
 	if appErr.Code != 409 {
 		t.Fatalf("expected 409, got %d", appErr.Code)
 	}
@@ -65,13 +67,43 @@ func TestNewAppErrorWithDetail(t *testing.T) {
 	}
 }
 
-// TestNewUnavailableError verifies the 503 fallback error.
-func TestNewUnavailableError(t *testing.T) {
-	appErr := NewUnavailableError()
-	if appErr.Code != 503 {
-		t.Fatalf("expected 503, got %d", appErr.Code)
+func TestNewAppErrorWithDetails(t *testing.T) {
+	details := []ProblemDetail{{Field: "name", Code: "too_long", Detail: "max 50 chars"}}
+	appErr := NewAppErrorWithDetails(400, "validation failed", "VALIDATION_ERROR", details)
+	if appErr.Code != 400 {
+		t.Fatalf("expected 400, got %d", appErr.Code)
 	}
-	if !errors.Is(appErr, ErrDatabaseUnavailable) {
-		t.Fatal("expected ErrDatabaseUnavailable to be the cause")
+	if len(appErr.Details) != 1 {
+		t.Fatalf("expected 1 detail, got %d", len(appErr.Details))
+	}
+	if appErr.Details[0].Code != "too_long" {
+		t.Fatalf("expected detail code 'too_long', got %q", appErr.Details[0].Code)
 	}
 }
+
+func TestToProblem(t *testing.T) {
+	appErr := NewAppErrorWithCode(404, "beer not found", "BEER_NOT_FOUND")
+	p := appErr.ToProblem("/api/v1/beers/99")
+	if p.Status != 404 {
+		t.Fatalf("expected status 404, got %d", p.Status)
+	}
+	if p.Code != "BEER_NOT_FOUND" {
+		t.Fatalf("expected code BEER_NOT_FOUND, got %q", p.Code)
+	}
+	if p.Instance != "/api/v1/beers/99" {
+		t.Fatalf("expected instance /api/v1/beers/99, got %q", p.Instance)
+	}
+	if p.Type == "" {
+		t.Fatal("expected non-empty type")
+	}
+	if p.Title == "" {
+		t.Fatal("expected non-empty title")
+	}
+
+	appErr2 := NewAppError(500, "boom", nil)
+	p2 := appErr2.ToProblem("/api/v1/x")
+	if p2.Code != "internal_server_error" {
+		t.Fatalf("expected fallback code internal_server_error, got %q", p2.Code)
+	}
+}
+

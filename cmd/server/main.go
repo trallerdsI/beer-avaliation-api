@@ -7,30 +7,17 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 	"time"
-
-	"github.com/spf13/viper"
 
 	"beer-review-app/internal/app"
 )
 
 func main() {
-	viper.AutomaticEnv()
-	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
-	viper.SetConfigFile(".env")
-	if err := viper.ReadInConfig(); err != nil {
-		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
-			slog.Warn("não foi possível ler .env", "err", err)
-		}
-	}
-
-	// Go 1.26: log estruturado nativo via log/slog.
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	slog.SetDefault(logger)
 
-	serverPort := viper.GetString("SERVER_PORT")
+	serverPort := os.Getenv("SERVER_PORT")
 	if serverPort == "" {
 		serverPort = "8082"
 	}

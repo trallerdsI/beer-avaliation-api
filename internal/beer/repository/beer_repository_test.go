@@ -273,3 +273,40 @@ func TestUnmarshalComments(t *testing.T) {
 		t.Fatalf("unexpected parsed comments: %#v", got)
 	}
 }
+
+// TestUnmarshalMedia valida o fallback seguro para JSON inválido/vazio.
+func TestUnmarshalMedia(t *testing.T) {
+	if got := unmarshalMedia(nil); len(got) != 0 {
+		t.Fatalf("expected empty for nil, got %d", len(got))
+	}
+	if got := unmarshalMedia([]byte("[]")); len(got) != 0 {
+		t.Fatalf("expected empty for empty array, got %d", len(got))
+	}
+	if got := unmarshalMedia([]byte("not-json")); len(got) != 0 {
+		t.Fatalf("expected empty for invalid json, got %d", len(got))
+	}
+	valid := []byte(`[{"url":"http://img","type":"image/jpeg"}]`)
+	got := unmarshalMedia(valid)
+	if len(got) != 1 || got[0].URL != "http://img" {
+		t.Fatalf("unexpected parsed media: %#v", got)
+	}
+}
+
+// TestInMemoryGetAll valida a listagem completa.
+func TestInMemoryGetAll(t *testing.T) {
+	ctx := context.Background()
+	repo := NewInMemoryBeerRepository()
+	if err := repo.Create(ctx, &model.Beer{ID: "1", Name: "A"}); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if err := repo.Create(ctx, &model.Beer{ID: "2", Name: "B"}); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	all, err := repo.GetAll(ctx)
+	if err != nil {
+		t.Fatalf("GetAll: %v", err)
+	}
+	if len(all) != 2 {
+		t.Fatalf("GetAll len: got %d, want 2", len(all))
+	}
+}

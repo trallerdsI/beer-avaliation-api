@@ -23,9 +23,9 @@ func TestCreateBeerDuplicate409(t *testing.T) {
 	mockBeerUsecase := new(MockBeerUsecase)
 	controller := NewBeerController(mockBeerUsecase, mockLogger, nil)
 
-	suggestions := []map[string]any{{"id": "12", "name": "Heineken Long Neck"}}
+	suggestions := []errors.ProblemDetail{{Code: "BEER_SUGGESTION", Detail: "Heineken Long Neck", Field: "name"}}
 	mockBeerUsecase.On("Create", context.Background(), mock.Anything).
-		Return(errors.NewAppErrorWithDetail(409, "Uma cerveja com nome semelhante já existe", "DUPLICATE_BEER", suggestions)).Once()
+		Return(errors.NewAppErrorWithDetails(409, "Uma cerveja com nome semelhante já existe", "DUPLICATE_BEER", suggestions)).Once()
 
 	beer := model.Beer{Name: "Heineken"}
 	body, _ := json.Marshal(beer)

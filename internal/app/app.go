@@ -16,7 +16,6 @@ import (
 
 	_ "github.com/lib/pq"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"github.com/spf13/viper"
 
 	beerHttp "beer-review-app/internal/beer/delivery/http"
 	beerRepository "beer-review-app/internal/beer/repository"
@@ -206,26 +205,20 @@ func resolveDBConnString() string {
 		if v := os.Getenv(key); v != "" {
 			return v
 		}
-		if v := viper.GetString(key); v != "" {
-			return v
-		}
 	}
 
 	for _, key := range []string{"POSTGRES_URL_NON_POOLING", "POSTGRES_URL"} {
 		if v := os.Getenv(key); v != "" {
 			return v
 		}
-		if v := viper.GetString(key); v != "" {
-			return v
-		}
 	}
 
-	user := firstNonEmpty(os.Getenv("DB_USER"), viper.GetString("DB_USER"), os.Getenv("POSTGRES_USER"))
-	pass := firstNonEmpty(os.Getenv("DB_PASSWORD"), viper.GetString("DB_PASSWORD"), os.Getenv("POSTGRES_PASSWORD"))
-	host := firstNonEmpty(os.Getenv("DB_HOST"), viper.GetString("DB_HOST"), os.Getenv("POSTGRES_HOST"), "localhost")
-	port := firstNonEmpty(os.Getenv("DB_PORT"), viper.GetString("DB_PORT"), "5432")
-	name := firstNonEmpty(os.Getenv("DB_NAME"), viper.GetString("DB_NAME"), os.Getenv("POSTGRES_DATABASE"), "postgres")
-	sslmode := firstNonEmpty(os.Getenv("DB_SSLMODE"), viper.GetString("DB_SSLMODE"), os.Getenv("DB_SSL_MODE"), viper.GetString("DB_SSL_MODE"), "require")
+	user := firstNonEmpty(os.Getenv("DB_USER"), os.Getenv("POSTGRES_USER"))
+	pass := firstNonEmpty(os.Getenv("DB_PASSWORD"), os.Getenv("POSTGRES_PASSWORD"))
+	host := firstNonEmpty(os.Getenv("DB_HOST"), os.Getenv("POSTGRES_HOST"), "localhost")
+	port := firstNonEmpty(os.Getenv("DB_PORT"), "5432")
+	name := firstNonEmpty(os.Getenv("DB_NAME"), os.Getenv("POSTGRES_DATABASE"), "postgres")
+	sslmode := firstNonEmpty(os.Getenv("DB_SSLMODE"), os.Getenv("DB_SSL_MODE"), "require")
 
 	if user == "" || name == "" {
 		return ""
