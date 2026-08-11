@@ -16,26 +16,16 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- Cria triggers apenas se não existirem (evita deadlock em produção).
-DO $$
-BEGIN
-    IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'trg_beers_updated_at') THEN
-        CREATE TRIGGER trg_beers_updated_at
-          BEFORE UPDATE ON beers
-          FOR EACH ROW EXECUTE FUNCTION set_updated_at();
-    END IF;
-END;
-$$;
+-- Cria triggers de forma idempotente (DROP + CREATE evita deadlock/race condition).
+DROP TRIGGER IF EXISTS trg_beers_updated_at ON beers;
+CREATE TRIGGER trg_beers_updated_at
+  BEFORE UPDATE ON beers
+  FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
-DO $$
-BEGIN
-    IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'trg_beerUsers_updated_at') THEN
-        CREATE TRIGGER trg_beerUsers_updated_at
-          BEFORE UPDATE ON beerUsers
-          FOR EACH ROW EXECUTE FUNCTION set_updated_at();
-    END IF;
-END;
-$$;
+DROP TRIGGER IF EXISTS trg_beerUsers_updated_at ON beerUsers;
+CREATE TRIGGER trg_beerUsers_updated_at
+  BEFORE UPDATE ON beerUsers
+  FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
 -- ROLLBACK (Gap C):
 -- DROP TRIGGER IF EXISTS trg_beers_updated_at ON beers;
