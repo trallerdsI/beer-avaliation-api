@@ -47,10 +47,21 @@ jobs:
         run: go build ./...
 
       # -race garante a Pilar 3 (concorrência sem race conditions).
-      - name: Test (race + coverage)
-        run: go test -race -coverprofile=coverage.out -covermode=atomic ./...
+      - name: Test (race + atomic coverage)
+        run: go test -race -covermode=atomic -coverprofile=coverage.out ./...
 
-      - name: Upload coverage
+      - name: Coverage HTML
+        if: matrix.go == '1.26.5'
+        run: go tool cover -html=coverage.out -o coverage.html
+
+      - name: Upload coverage HTML
+        if: matrix.go == '1.26.5'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-html
+          path: coverage.html
+
+      - name: Upload coverage profile
         if: matrix.go == '1.26.5'
         uses: actions/upload-artifact@v4
         with:
