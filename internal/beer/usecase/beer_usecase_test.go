@@ -330,3 +330,135 @@ func TestDeleteCommentAdminOverride(t *testing.T) {
 	err := uc.DeleteComment(ctx, "1", "c1")
 	assert.NoError(t, err)
 }
+
+func TestGetPaginated(t *testing.T) {
+	mockRepo := new(MockBeerRepository)
+	uc := NewBeerUsecase(mockRepo, nil)
+
+	beers := []model.Beer{{ID: "1", Name: "Beer1"}}
+	mockRepo.On("GetPaginated", mock.Anything, 1, 10).Return(beers, 1, nil)
+
+	result, total, err := uc.GetPaginated(context.Background(), 1, 10)
+
+	assert.NoError(t, err)
+	assert.Equal(t, beers, result)
+	assert.Equal(t, 1, total)
+	mockRepo.AssertExpectations(t)
+}
+
+func TestGetPaginatedPropagatesError(t *testing.T) {
+	mockRepo := new(MockBeerRepository)
+	uc := NewBeerUsecase(mockRepo, nil)
+
+	mockRepo.On("GetPaginated", mock.Anything, 1, 10).Return([]model.Beer{}, 0, stderrors.New("db boom"))
+
+	_, _, err := uc.GetPaginated(context.Background(), 1, 10)
+	assert.Error(t, err)
+	var appErr *appErrors.AppError
+	assert.ErrorAs(t, err, &appErr)
+	assert.Equal(t, 500, appErr.Code)
+}
+
+func TestUpdateAdminOverride(t *testing.T) {
+	mockRepo := new(MockBeerRepository)
+	uc := NewBeerUsecase(mockRepo, nil)
+
+	existing := model.Beer{ID: "1", Name: "Old", CreatedBy: "owner-1"}
+	updated := model.Beer{ID: "1", Name: "New"}
+
+	mockRepo.On("GetByID", mock.Anything, "1").Return(existing, nil)
+	mockRepo.On("Update", mock.Anything, "1", updated).Return(nil)
+
+	ctx := middleware.WithUserID(context.Background(), "admin-1", usermodel.RoleAdmin)
+	err := uc.Update(ctx, "1", updated)
+	assert.NoError(t, err)
+	mockRepo.AssertExpectations(t)
+}
+
+func TestUpdateForbidden(t *testing.T) {
+	mockRepo := new(MockBeerRepository)
+	uc := NewBeerUsecase(mockRepo, nil)
+
+	existing := model.Beer{ID: "1", Name: "Old", CreatedBy: "owner-1"}
+
+	mockRepo.On("GetByID", mock.Anything, "1").Return(existing, nil)
+
+	ctx := middleware.WithUserID(context.Background(), "intruder-2", "")
+	err := uc.Update(ctx, "1", model.Beer{Name: "New"})
+	assert.Error(t, err)
+	var appErr *appErrors.AppError
+	assert.ErrorAs(t, err, &appErr)
+	assert.Equal(t, 403, appErr.Code)
+}
+
+func TestDeleteAdminOverride(t *testing.T) {
+	mockRepo := new(MockBeerRepository)
+	uc := NewBeerUsecase(mockRepo, nil)
+
+	existing := model.Beer{ID: "1", Name: "Beer1", CreatedBy: "owner-1"}
+
+	mockRepo.On("GetByID", mock.Anything, "1").Return(existing, nil)
+	mockRepo.On("Delete", mock.Anything, "1").Return(nil)
+
+	ctx := middleware.WithUserID(context.Background(), "admin-1", usermodel.RoleAdmin)
+	err := uc.Delete(ctx, "1")
+	assert.NoError(t, err)
+	mockRepo.AssertExpectations(t)
+}
+
+func TestAddMedia(t *testing.T) {
+	mockRepo := new(MockBeerRepository)
+	uc := NewBeerUsecase(mockRepo, nil)
+
+	beer := model.Beer{ID: "1", Name: "Beer1", CreatedBy: "owner-1", Media: []model.MediaItem{}}
+	item := model.MediaItem{URL: "http://img", Type: "image"}
+
+	mockRepo.On("GetByID", mock.Anything, "1").Return(beer, nil)
+	mockRepo.On("Update", mock.Anything, "1", mock.Anything).Return(nil)
+
+	ctx := middleware.WithUserID(context.Background(), "owner-1", "")
+	media, err := uc.AddMedia(ctx, "1", item)
+
+	assert.NoError(t, err)
+	assert.Equal(t, []model.MediaItem{{URL: "http://img", Type: "image"}}, media)
+	mockRepo.AssertExpectations(t)
+}
+
+func TestAddMediaForbidden(t *testing.T) {
+	mockRepo := new(MockBeerRepository)
+	uc := NewBeerUsecase(mockRepo, nil)
+
+	beer := model.Beer{ID: "1", Name: "Beer1", CreatedBy: "owner-1"}
+
+	mockRepo.On("GetByID", mock.Anything, "1").Return(beer, nil)
+
+	ctx := middleware.WithUserID(context.Background(), "intruder-2", "")
+	_, err := uc.AddMedia(ctx, "1", model.MediaItem{URL: "http://img", Type: "image"})
+	assert.Error(t, err)
+	var appErr *appErrors.AppError
+	assert.ErrorAs(t, err, &appErr)
+	assert.Equal(t, 403, appErr.Code)
+}
+
+func TestGetByIDPropagatesError(t *testing.T) {
+	mockRepo := new(MockBeerRepository)
+	uc := NewBeerUsecase(mockRepo, nil)
+
+	mockRepo.On("GetByID", mock.Anything, "1").Return(model.Beer{}, stderrors.New("db boom"))
+
+	_, err := uc.GetByID(context.Background(), "1")
+	assert.Error(t, err)
+	assert.Equal(t, "db boom", err.Error())
+}
+
+func TestUpdateBeerNotFound(t *testing.T) {
+	mockRepo := new(MockBeerRepository)
+	uc := NewBeerUsecase(mockRepo, nil)
+
+	mockRepo.On("GetByID", mock.Anything, "1").Return(model.Beer{}, stderrors.New("not found"))
+
+	ctx := middleware.WithUserID(context.Background(), "owner-1", "")
+	err := uc.Update(ctx, "1", model.Beer{Name: "New"})
+	assert.Error(t, err)
+}
+
