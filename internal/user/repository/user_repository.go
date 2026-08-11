@@ -8,6 +8,8 @@ import (
 
 	"beer-review-app/internal/user/model"
 	appErrors "beer-review-app/pkg/errors"
+
+	_ "github.com/lib/pq"
 )
 
 type UserRepository interface {

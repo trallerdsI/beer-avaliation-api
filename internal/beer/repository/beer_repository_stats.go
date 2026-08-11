@@ -72,7 +72,7 @@ func (r *PostgresBeerRepository) GetAdminStats(ctx context.Context) (*AdminStats
 
 	// 2. New users last 7 days
 	if err := r.db.QueryRowContext(ctx, `
-		SELECT COUNT(*) FROM beerUsers WHERE created_at >= NOW() - INTERVAL '7 days'`).Scan(&stats.NewUsersWeek); err != nil {
+		SELECT COUNT(*) FROM beerUsers WHERE created >= NOW() - INTERVAL '7 days'`).Scan(&stats.NewUsersWeek); err != nil {
 		return nil, fmt.Errorf("failed to count new users: %w", err)
 	}
 
@@ -147,8 +147,8 @@ func (r *PostgresBeerRepository) GetAdminStats(ctx context.Context) (*AdminStats
 	// 10. Sentiment (positive vs negative from JSONB comments)
 	if err := r.db.QueryRowContext(ctx, `
 		SELECT
-			COALESCE(SUM((elem->>'positive')::int), 0) FILTER (WHERE (elem->>'positive')::boolean = true),
-			COALESCE(SUM((elem->>'positive')::int), 0) FILTER (WHERE (elem->>'positive')::boolean = false)
+			COALESCE(SUM((elem->>'positive')::int) FILTER (WHERE (elem->>'positive')::boolean = true), 0),
+			COALESCE(SUM((elem->>'positive')::int) FILTER (WHERE (elem->>'positive')::boolean = false), 0)
 		FROM beers,
 		jsonb_array_elements(comments) AS elem`).Scan(&stats.Sentiment.Positive, &stats.Sentiment.Negative); err != nil {
 		return nil, fmt.Errorf("failed to get sentiment: %w", err)
@@ -234,7 +234,12 @@ func (r *PostgresBeerRepository) GetUserStats(ctx context.Context, userID string
 		SELECT COUNT(*)
 		FROM beers,
 		jsonb_array_elements(comments) AS elem
-		WHERE $1 = ANY(ARRAY(SELECT jsonb_array_elements_text(elem->'likedBy')))`, userID).Scan(&stats.LikesGiven); err != nil {
+		WHERE $1 = ANY(
+			CASE WHEN jsonb_typeof(elem->'likedBy') = 'array'
+			     THEN ARRAY(SELECT jsonb_array_elements_text(elem->'likedBy'))
+			     ELSE ARRAY[]::text[]
+			END
+		)`, userID).Scan(&stats.LikesGiven); err != nil {
 		return nil, fmt.Errorf("failed to count likes given: %w", err)
 	}
 

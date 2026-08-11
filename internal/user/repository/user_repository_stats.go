@@ -13,7 +13,7 @@ import (
 func (r *PostgresUserRepository) GetMemberSince(ctx context.Context, userID string) (time.Time, error) {
 	var createdAt time.Time
 	if err := r.db.QueryRowContext(ctx, `
-		SELECT created_at FROM beerUsers WHERE id = $1`, userID).Scan(&createdAt); err != nil {
+		SELECT created FROM beerUsers WHERE id = $1`, userID).Scan(&createdAt); err != nil {
 		if err == sql.ErrNoRows {
 			return time.Time{}, errors.NewAppError(404, "user not found", err)
 		}
