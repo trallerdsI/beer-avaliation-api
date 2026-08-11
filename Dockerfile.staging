@@ -1,0 +1,23 @@
+# Build stage - Same as production for paridade
+FROM golang:1.26.5-alpine AS builder
+
+WORKDIR /app
+
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY . .
+RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o main cmd/server/main.go
+
+FROM gcr.io/distroless/static-debian12
+
+WORKDIR /root/
+
+COPY --from=builder /app/main /root/main/
+COPY --from=builder /app/migrations/ /root/migrations/
+
+EXPOSE 8082
+
+USER nonroot:nonroot
+
+CMD ["/root/main"]

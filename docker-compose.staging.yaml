@@ -1,0 +1,53 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: always
+    environment:
+      POSTGRES_USER: ${STAGING_DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${STAGING_DB_PASSWORD:-staging_secure_password}
+      POSTGRES_DB: ${STAGING_DB_NAME:-beer_review_staging}
+    ports:
+      - "${STAGING_DB_PORT:-5433}:5432"
+    volumes:
+      - postgres_staging_data:/var/lib/postgresql/data
+      - ./scripts/anonymize_data.sql:/docker-entrypoint-initdb.d/01_anonymize.sql:ro
+    networks:
+      - staging-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${STAGING_DB_USER:-postgres}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.staging
+    environment:
+      DBConnString: postgres://${STAGING_DB_USER:-postgres}:${STAGING_DB_PASSWORD:-staging_secure_password}@postgres:5432/${STAGING_DB_NAME:-beer_review_staging}?sslmode=disable
+      SERVER_PORT: ${STAGING_API_PORT:-8082}
+      JWT_SECRET: ${STAGING_JWT_SECRET}
+      CORS_ALLOWED_ORIGINS: ${STAGING_CORS_ORIGINS:-https://staging-app.example.com}
+      DB_RESET_SCHEMA: "false"
+      DB_MAX_OPEN_CONNS: ${STAGING_DB_MAX_OPEN_CONNS:-10}
+      DB_MAX_IDLE_CONNS: ${STAGING_DB_MAX_IDLE_CONNS:-5}
+      LOG_LEVEL: ${STAGING_LOG_LEVEL:-info}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - staging-network
+    ports:
+      - "${STAGING_API_PORT:-8082}:${STAGING_API_PORT:-8082}"
+    labels:
+      - "com.staging.environment=true"
+    restart: unless-stopped
+
+volumes:
+  postgres_staging_data:
+
+networks:
+  staging-network:
+    driver: bridge

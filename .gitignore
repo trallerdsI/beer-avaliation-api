@@ -1,3 +1,7 @@
 .history
 .env
+.env.staging
+*.db
 ignore
+coverage.html
+coverage.out
