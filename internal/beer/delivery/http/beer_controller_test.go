@@ -488,7 +488,70 @@ func TestGetAllBeersRegressionNullSlice(t *testing.T) {
 			if strings.Contains(rr.Body.String(), `"beers":null`) {
 				t.Fatalf("contrato violado: beers serializado como null: %s", rr.Body.String())
 			}
-			mockBeerUsecase.AssertExpectations(t)
-		})
+		mockBeerUsecase.AssertExpectations(t)
+	})
+}
+}
+
+func TestDeleteBeer_NotFound(t *testing.T) {
+	mockBeerUsecase = new(MockBeerUsecase)
+	controller := NewBeerController(mockBeerUsecase, mockLogger, nil)
+
+	mockBeerUsecase.On("Delete", mock.Anything, "999").Return(errors.NewAppError(http.StatusNotFound, "beer not found", nil)).Once()
+
+	req := httptest.NewRequest(http.MethodDelete, "/beers/999", nil)
+	req.SetPathValue("id", "999")
+	rr := httptest.NewRecorder()
+
+	controller.DeleteBeer(rr, req)
+
+	if rr.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d", rr.Code, http.StatusNotFound)
 	}
+}
+
+func TestUpdateBeer_ValidationFailure(t *testing.T) {
+	mockBeerUsecase = new(MockBeerUsecase)
+	controller := NewBeerController(mockBeerUsecase, mockLogger, nil)
+
+	beer := model.Beer{Name: "ab", Style: "IPA", Description: "desc", ImageUrl: "https://x.com/a.jpg", Alcohol: float64Ptr(5.0), Taste: "Doce", Aroma: "Floral", Color: "Clara", Body: "Leve", Carbonation: "Baixa", Finish: "Seco"}
+	body, _ := json.Marshal(beer)
+	req := httptest.NewRequest(http.MethodPut, "/beers/1", bytes.NewBuffer(body))
+	req.SetPathValue("id", "1")
+	rr := httptest.NewRecorder()
+
+	controller.UpdateBeer(rr, req)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", rr.Code, http.StatusBadRequest)
+	}
+	mockBeerUsecase.AssertNotCalled(t, "Update", mock.Anything, mock.Anything, mock.Anything)
+}
+
+func TestSearchBeers_AlcoholFilters(t *testing.T) {
+	mockBeerUsecase = new(MockBeerUsecase)
+	controller := NewBeerController(mockBeerUsecase, mockLogger, nil)
+
+	mockBeerUsecase.On("SearchBeers", mock.Anything, model.BeerFilters{
+		Query:      "",
+		Style:      "",
+		Taste:      "",
+		Page:       1,
+		PageSize:   10,
+		MinAlcohol: float64Ptr(4.0),
+		MaxAlcohol: float64Ptr(6.0),
+	}).Return([]model.Beer{{ID: "1", Name: "IPA"}}, 1, nil).Once()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/beers/search?minAlcohol=4.0&maxAlcohol=6.0&page=1&pageSize=10", nil)
+	rr := httptest.NewRecorder()
+
+	controller.SearchBeers(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rr.Code, http.StatusOK)
+	}
+}
+
+func float64Ptr(v float64) *float64 {
+	return &v
 }
