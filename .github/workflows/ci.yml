@@ -2,8 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, staging]
   pull_request:
+    branches: [main, staging]
 
 permissions:
   contents: read
@@ -26,7 +27,6 @@ jobs:
           go-version: ${{ matrix.go }}
           check-latest: true
 
-      # go mod tidy valida que go.mod/go.sum estão consistentes com o código.
       - name: Verify modules
         run: go mod tidy && git diff --exit-code -- go.mod go.sum
 
@@ -39,14 +39,12 @@ jobs:
             exit 1
           fi
 
-      # go vet: análise estática nativa (Pilar 1 — Zero-Dependency).
       - name: Vet
         run: go vet ./...
 
       - name: Build
         run: go build ./...
 
-      # -race garante a Pilar 3 (concorrência sem race conditions).
       - name: Test (race + atomic coverage)
         run: go test -race -covermode=atomic -coverprofile=coverage.out ./...
 
@@ -68,8 +66,6 @@ jobs:
           name: coverage
           path: coverage.out
 
-      # Defense-in-Depth (Pilar 4): varre vulnerabilidades conhecidas nas
-      # dependências diretas e transitivas sem instalar binários externos.
       - name: Govulncheck
         if: matrix.go == '1.26.5'
         run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...

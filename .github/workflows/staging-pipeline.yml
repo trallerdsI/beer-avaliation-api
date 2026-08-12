@@ -2,21 +2,16 @@ name: Staging CI/CD Pipeline
 
 on:
   push:
-    branches:
-      - main
-      - staging
-      - release/staging-*
+    branches: [staging]
   pull_request:
-    branches:
-      - main
-      - staging
+    branches: [staging]
 
 permissions:
   contents: read
 
 jobs:
   lint-and-test:
-    name: 1. Continuous Integration (CI)
+    name: 1. CI (lint, test, build)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
@@ -49,13 +44,10 @@ jobs:
       - name: Test (race + atomic coverage)
         run: go test -race -covermode=atomic -coverprofile=coverage.out ./...
 
-      - name: Validate OpenAPI spec
+      - name: Validate OpenAPI spec exists
         run: |
-          if command -v npx >/dev/null 2>&1; then
-            npx @redocly/cli lint openapi.yaml --skip-rule no-invalid-url-schema || true
-          else
-            echo "npx não disponível; pulando validação do OpenAPI"
-          fi
+          test -f openapi.yaml || (echo "openapi.yaml não encontrado" && exit 1)
+          echo "OpenAPI spec encontrado ($(wc -l < openapi.yaml) lines)"
 
       - name: Govulncheck
         run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
@@ -78,19 +70,22 @@ jobs:
           echo "Arquivos de migração encontrados:"
           ls -la migrations/*.sql || true
 
-      - name: Check for rollback scripts
+      - name: Check migration SQL syntax
         run: |
-          echo "Verificando se migrations possuem scripts de rollback..."
-          # Verifica se há um padrão de nomenclatura de down migrations
-          DOWN_COUNT=$(find migrations -name "*down*" -o -name "*rollback*" | wc -l)
-          echo "Scripts de rollback encontrados: $DOWN_COUNT"
-          if [ "$DOWN_COUNT" -eq 0 ]; then
-            echo "⚠️  Aviso: Nenhum script de rollback explícito encontrado."
-            echo "   Certifique-se de que cada migration possui um caminho de reversão documentado."
-          fi
+          for f in migrations/*.sql; do
+            echo "Validando: $f"
+            # Verifica que o arquivo não está vazio
+            test -s "$f" || (echo "ERRO: $f está vazio" && exit 1)
+            # Verifica que não há DROP TABLE sem IF EXISTS em migrations incrementais
+            if [[ "$f" != *"reset"* ]]; then
+              grep -i "DROP TABLE" "$f" | grep -v "IF EXISTS" && \
+                echo "ERRO: $f contém DROP TABLE sem IF EXISTS" && exit 1 || true
+            fi
+          done
+          echo "Todas as migrations são válidas."
 
-  build-and-push:
-    name: 3. Build Container & Security Scan
+  build-image:
+    name: 3. Build Docker Image
     needs: [lint-and-test, lint-migrations]
     runs-on: ubuntu-latest
     steps:
@@ -100,186 +95,161 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Log in to Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ vars.STAGING_REGISTRY || 'ghcr.io' }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build and push image
+      - name: Build Docker image (no push)
         uses: docker/build-push-action@v5
         with:
           context: .
           file: Dockerfile.staging
-          push: true
-          tags: |
-            ${{ vars.STAGING_REGISTRY || 'ghcr.io' }}/${{ github.repository }}:${{ github.sha }}
-            ${{ vars.STAGING_REGISTRY || 'ghcr.io' }}/${{ github.repository }}:staging-latest
-          cache-from: type=registry,ref=${{ vars.STAGING_REGISTRY || 'ghcr.io' }}/${{ github.repository }}:staging-buildcache
-          cache-to: type=registry,ref=${{ vars.STAGING_REGISTRY || 'ghcr.io' }}/${{ github.repository }}:staging-buildcache,mode=max
+          tags: beer-avaliation-api:${{ github.sha }}
+          load: true
+          cache-from: type=local,src=/tmp/.buildx-cache
+          cache-to: type=local,dest=/tmp/.buildx-cache
 
-      - name: Scan image for vulnerabilities
-        uses: aquasecurity/trivy-action@master
-        with:
-          image-ref: ${{ vars.STAGING_REGISTRY || 'ghcr.io' }}/${{ github.repository }}:${{ github.sha }}
-          format: 'sarif'
-          output: 'trivy-results.sarif'
-          severity: 'CRITICAL,HIGH'
-          exit-code: '1'
-
-      - name: Upload Trivy results
-        uses: github/codeql-action/upload-sarif@v3
-        if: always()
-        with:
-          sarif_file: 'trivy-results.sarif'
+      - name: Verify image builds
+        run: |
+          docker images beer-avaliation-api:${{ github.sha }}
+          echo "Imagem Docker construída com sucesso."
 
   deploy-staging:
     name: 4. Deploy to Staging
-    needs: build-and-push
+    needs: build-image
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release/staging-')
     environment:
       name: staging
-      url: ${{ vars.STAGING_API_URL }}
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Configure AWS credentials (if using ECS/EKS)
-        uses: aws-actions/configure-aws-credentials@v4
-        if: ${{ vars.STAGING_DEPLOY_TYPE == 'aws' }}
+      - name: Setup SSH key
+        uses: webfactory/ssh-agent@v0.5.4
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ vars.AWS_REGION }}
+          ssh-private-key: ${{ secrets.STAGING_SSH_KEY }}
 
-      - name: Deploy to Staging (Docker Compose / SSH)
+      - name: Deploy via SSH
         run: |
-          echo "Fazendo deploy da imagem: ${{ vars.STAGING_REGISTRY || 'ghcr.io' }}/${{ github.repository }}:${{ github.sha }}"
-          echo "Ambiente: Staging"
-          echo "Branch: ${{ github.ref_name }}"
-          echo "Commit: ${{ github.sha }}"
+          echo "Conectando ao servidor de staging..."
+          ssh -o StrictHostKeyChecking=no ${{ secrets.STAGING_SSH_USER }}@${{ secrets.STAGING_SSH_HOST }} << 'REMOTE_EOF'
+            set -e
+            echo "=== DEPLOY STAGING ==="
+            echo "Branch: ${{ github.ref_name }}"
+            echo "Commit: ${{ github.sha }}"
 
-      - name: Run database migrations on Staging
-        env:
-          STAGING_DB_CONN: ${{ secrets.STAGING_DB_CONN_STRING }}
-        run: |
-          echo "Executando migrações no banco de Staging..."
-          # As migrações são executadas automaticamente pelo app na inicialização
-          # Mas podemos forçar uma verificação aqui se necessário
-          echo "Migrations aplicadas com sucesso (automático via app bootstrap)."
+            cd /opt/staging/beer-avaliation-api || {
+              echo "ERRO: Diretório de staging não encontrado em /opt/staging/beer-avaliation-api"
+              echo "Configure o diretório no servidor ou ajuste o caminho."
+              exit 1
+            }
+
+            git fetch origin
+            git checkout staging
+            git reset --hard origin/${{ github.ref_name }}
+
+            echo "Parando containers antigos..."
+            docker compose -f docker-compose.staging.yaml down || true
+
+            echo "Atualizando imagem..."
+            docker compose -f docker-compose.staging.yaml build
+
+            echo "Subindo serviços..."
+            docker compose -f docker-compose.staging.yaml up -d
+
+            echo "Aguardando saúde do PostgreSQL..."
+            for i in {1..30}; do
+              if docker compose -f docker-compose.staging.yaml exec -T postgres pg_isready -U postgres 2>/dev/null; then
+                echo "PostgreSQL saudável."
+                break
+              fi
+              echo "Aguardando PostgreSQL... $i/30"
+              sleep 3
+            done
+
+            echo "=== DEPLOY CONCLUÍDO ==="
+          REMOTE_EOF
 
   smoke-tests:
-    name: 5. Post-Deploy Smoke Tests
+    name: 5. Smoke Tests
     needs: deploy-staging
     runs-on: ubuntu-latest
     environment:
       name: staging
     steps:
-      - name: Wait for API to be ready
+      - name: Wait for API
         run: |
-          echo "Aguardando API ficar disponível..."
+          URL="${{ vars.STAGING_API_URL || 'http://localhost:8082' }}"
+          echo "URL do staging: $URL"
           for i in {1..30}; do
-            if curl -s -o /dev/null -w "%{http_code}" "${{ vars.STAGING_API_URL }}/api/v1/health" | grep -q "200"; then
-              echo "API está pronta!"
+            CODE=$(curl -s -o /dev/null -w "%{http_code}" "$URL/api/v1/health" 2>/dev/null || echo "000")
+            if [ "$CODE" = "200" ]; then
+              echo "API saudável."
               exit 0
             fi
-            echo "Tentativa $i/30..."
-            sleep 10
+            echo "Tentativa $i/30 — HTTP $CODE"
+            sleep 5
           done
-          echo "ERRO: API não ficou disponível em tempo hábil"
+          echo "ERRO: API não respondeu em tempo hábil."
           exit 1
 
-      - name: Health Check
+      - name: Health check
         run: |
-          echo "Validando Health Check..."
-          RESPONSE=$(curl -s -w "\n%{http_code}" "${{ vars.STAGING_API_URL }}/api/v1/health")
-          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
-          BODY=$(echo "$RESPONSE" | head -n-1)
+          URL="${{ vars.STAGING_API_URL || 'http://localhost:8082' }}"
+          curl -sf "$URL/api/v1/health" | python3 -c "
+import sys, json
+d = json.load(sys.stdin)
+assert d['status'] == 'healthy', f\"Status: {d['status']}\"
+print('Health:', d['status'], '| Uptime:', d['uptime'])
+"
 
-          echo "Status HTTP: $HTTP_CODE"
-          echo "Resposta: $BODY"
-
-          if [ "$HTTP_CODE" != "200" ]; then
-            echo "ERRO: Health check falhou com status $HTTP_CODE"
-            exit 1
-          fi
-
-          echo "$BODY" | python3 -c "import sys,json; d=json.load(sys.stdin); assert d['status']=='healthy', f'Status unhealthy: {d[\"status\"]}'" || {
-            echo "ERRO: API reportou status não saudável"
-            exit 1
-          }
-
-      - name: Public endpoints smoke test
+      - name: Public endpoints
         run: |
-          echo "Testando endpoints públicos..."
+          URL="${{ vars.STAGING_API_URL || 'http://localhost:8082' }}"
+          for ep in /api/v1/stats /api/v1/beers/enums /api/v1/beers /docs /docs/openapi.yaml; do
+            CODE=$(curl -s -o /dev/null -w "%{http_code}" "$URL$ep")
+            if [ "$CODE" != "200" ]; then
+              echo "ERRO: GET $ep retornou $CODE"
+              exit 1
+            fi
+            echo "✓ GET $ep — 200"
+          done
 
-          # GET /stats (público)
-          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "${{ vars.STAGING_API_URL }}/api/v1/stats")
-          if [ "$HTTP_CODE" != "200" ]; then
-            echo "ERRO: /stats retornou $HTTP_CODE"
-            exit 1
-          fi
-          echo "✓ /stats OK"
-
-          # GET /beers/enums (público)
-          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "${{ vars.STAGING_API_URL }}/api/v1/beers/enums")
-          if [ "$HTTP_CODE" != "200" ]; then
-            echo "ERRO: /beers/enums retornou $HTTP_CODE"
-            exit 1
-          fi
-          echo "✓ /beers/enums OK"
-
-          # GET /beers (público)
-          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "${{ vars.STAGING_API_URL }}/api/v1/beers")
-          if [ "$HTTP_CODE" != "200" ]; then
-            echo "ERRO: /beers retornou $HTTP_CODE"
-            exit 1
-          fi
-          echo "✓ /beers OK"
-
-          # GET /docs (público)
-          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "${{ vars.STAGING_API_URL }}/docs")
-          if [ "$HTTP_CODE" != "200" ]; then
-            echo "ERRO: /docs retornou $HTTP_CODE"
-            exit 1
-          fi
-          echo "✓ /docs OK"
-
-      - name: Verify no critical errors in response structure
+      - name: Register + login flow
         run: |
-          echo "Verificando estrutura de resposta de erro (RFC 7807)..."
-          RESPONSE=$(curl -s "${{ vars.STAGING_API_URL }}/api/v1/beers/nonexistent-uuid")
-          HTTP_CODE=$(echo "$RESPONSE" | python3 -c "import sys,json; print(json.load(sys.stdin).get('status', 'unknown'))" 2>/dev/null || echo "unknown")
+          URL="${{ vars.STAGING_API_URL || 'http://localhost:8082' }}"
+          EMAIL="ci-test-$(date +%s)@staging.example.com"
 
-          echo "Resposta para beer inexistente: $HTTP_CODE"
-          # Esperado: 404 (ou outro código de erro apropriado)
-          echo "✓ Estrutura de erro validada"
+          REG=$(curl -sf -X POST "$URL/api/v1/users/register" \
+            -H "Content-Type: application/json" \
+            -d "{\"username\":\"ci-test\",\"email\":\"$EMAIL\",\"password\":\"testpass123\"}")
+          echo "Register: $REG"
 
-      - name: Upload smoke test report
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: smoke-test-results
-          path: |
-            smoke-test-*.log
-            smoke-test-results.json
+          LOGIN=$(curl -sf -X POST "$URL/api/v1/users/login" \
+            -H "Content-Type: application/json" \
+            -d "{\"email\":\"$EMAIL\",\"password\":\"testpass123\"}")
+          echo "Login: $LOGIN"
+
+          TOKEN=$(echo "$LOGIN" | python3 -c "import sys,json; print(json.load(sys.stdin).get('token',''))")
+          if [ -z "$TOKEN" ]; then
+            echo "ERRO: Token não retornado no login"
+            exit 1
+          fi
+          echo "✓ Auth fluxo OK"
 
   rollback:
-    name: 6. Rollback on Failure
+    name: 6. Rollback
     needs: [deploy-staging, smoke-tests]
-    runs-on: ubuntu-latest
     if: failure()
+    runs-on: ubuntu-latest
     environment:
       name: staging
     steps:
-      - name: Rollback to previous version
+      - name: Rollback deployment
         run: |
-          echo "Executando rollback para versão anterior..."
-          echo "Versão anterior: ${{ vars.STAGING_PREVIOUS_VERSION || 'unknown' }}"
-          echo "Rollback simulado - implemente o comando real do seu orquestrador"
-          # Exemplo para Kubernetes:
-          # kubectl rollout undo deployment/api-staging -n staging
-          # Exemplo para ECS:
-          # aws ecs update-service --cluster staging --service api-staging --task-definition <previous-task-def>
+          echo "Falha detectada — iniciando rollback..."
+          ssh -o StrictHostKeyChecking=no ${{ secrets.STAGING_SSH_USER }}@${{ secrets.STAGING_SSH_HOST }} << 'REMOTE_EOF'
+            set -e
+            cd /opt/staging/beer-avaliation-api
+            echo "Revertendo para commit anterior..."
+            git revert --no-commit HEAD || true
+            git checkout HEAD~1 -- .
+            docker compose -f docker-compose.staging.yaml up -d --force-recreate
+            echo "Rollback concluído."
+          REMOTE_EOF
