@@ -8,36 +8,36 @@ import (
 
 // AdminStatsResponse é o payload do endpoint /api/v1/admin/stats.
 type AdminStatsResponse struct {
-	GeneratedAt time.Time `json:"generated_at"`
-	Users       AdminUsers `json:"users"`
-	Beers       AdminBeers `json:"beers"`
+	GeneratedAt time.Time       `json:"generated_at"`
+	Users       AdminUsers      `json:"users"`
+	Beers       AdminBeers      `json:"beers"`
 	Engagement  AdminEngagement `json:"engagement"`
-	System      AdminSystem `json:"system"`
+	System      AdminSystem     `json:"system"`
 }
 
 type AdminUsers struct {
-	Total        int            `json:"total"`
-	NewThisWeek  int            `json:"new_this_week"`
-	ByProvider   map[string]int `json:"by_provider"`
-	AdminsCount  int            `json:"admins_count"`
+	Total       int            `json:"total"`
+	NewThisWeek int            `json:"new_this_week"`
+	ByProvider  map[string]int `json:"by_provider"`
+	AdminsCount int            `json:"admins_count"`
 }
 
 type AdminBeers struct {
-	Total             int                  `json:"total"`
-	TopStyles         []repository.StyleCount `json:"top_styles"`
-	AddedLast30Days   int                  `json:"added_last_30_days"`
-	CommunityContributions CommunityBeerStats `json:"community_contributions"`
+	Total                  int                     `json:"total"`
+	TopStyles              []repository.StyleCount `json:"top_styles"`
+	AddedLast30Days        int                     `json:"added_last_30_days"`
+	CommunityContributions CommunityBeerStats      `json:"community_contributions"`
 }
 
 type CommunityBeerStats struct {
-	UserCreated    int `json:"user_created"`
-	SystemCreated  int `json:"system_created"`
+	UserCreated   int `json:"user_created"`
+	SystemCreated int `json:"system_created"`
 }
 
 type AdminEngagement struct {
-	TotalComments int                         `json:"total_comments"`
-	Sentiment     repository.SentimentStats  `json:"sentiment"`
-	TotalLikes    int                         `json:"total_likes"`
+	TotalComments     int                           `json:"total_comments"`
+	Sentiment         repository.SentimentStats     `json:"sentiment"`
+	TotalLikes        int                           `json:"total_likes"`
 	MostCommentedBeer *repository.MostCommentedBeer `json:"most_commented_beer,omitempty"`
 }
 

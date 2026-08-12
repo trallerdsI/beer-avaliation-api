@@ -9,21 +9,21 @@ import (
 
 // AdminStats agrega métricas globais para o painel administrativo.
 type AdminStats struct {
-	TotalUsers        int
-	NewUsersWeek      int
-	UsersByProvider   map[string]int
-	AdminsCount       int
-	TotalBeers        int
-	TopStyles         []StyleCount
-	AddedLast30Days   int
-	UserCreatedBeers  int
+	TotalUsers         int
+	NewUsersWeek       int
+	UsersByProvider    map[string]int
+	AdminsCount        int
+	TotalBeers         int
+	TopStyles          []StyleCount
+	AddedLast30Days    int
+	UserCreatedBeers   int
 	SystemCreatedBeers int
-	TotalComments     int
-	Sentiment         SentimentStats
-	TotalLikes        int
-	MostCommentedBeer *MostCommentedBeer
-	LastBeerCreatedAt *time.Time
-	LastDBUpdate      *time.Time
+	TotalComments      int
+	Sentiment          SentimentStats
+	TotalLikes         int
+	MostCommentedBeer  *MostCommentedBeer
+	LastBeerCreatedAt  *time.Time
+	LastDBUpdate       *time.Time
 }
 
 type StyleCount struct {

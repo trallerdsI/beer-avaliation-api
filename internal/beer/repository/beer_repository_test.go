@@ -128,8 +128,6 @@ func (r *InMemoryBeerRepository) GetUserStats(ctx context.Context, userID string
 	return &UserStats{UserID: userID}, nil
 }
 
-
-
 // TestSetRatingAggregates valida a agregação de averageRating/totalReviews
 // (Decisão B) a partir dos ratings dos comentários, incluindo notas fora do
 // intervalo [1,5] que devem ser ignoradas no cálculo.

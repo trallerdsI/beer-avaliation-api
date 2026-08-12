@@ -8,10 +8,10 @@ import (
 
 // UserStatsResponse é o payload do endpoint /api/v1/users/me/stats.
 type UserStatsResponse struct {
-	UserID      string          `json:"user_id"`
-	MemberSince time.Time       `json:"member_since"`
-	Activity    UserActivity    `json:"activity"`
-	Preferences UserPreferences `json:"preferences"`
+	UserID        string            `json:"user_id"`
+	MemberSince   time.Time         `json:"member_since"`
+	Activity      UserActivity      `json:"activity"`
+	Preferences   UserPreferences   `json:"preferences"`
 	Contributions UserContributions `json:"contributions"`
 }
 
@@ -23,9 +23,9 @@ type UserActivity struct {
 }
 
 type UserPreferences struct {
-	PositiveRatingRatio float64             `json:"positive_rating_ratio"`
+	PositiveRatingRatio float64                 `json:"positive_rating_ratio"`
 	FavoriteStyles      []repository.StyleCount `json:"favorite_styles"`
-	TopAromaNotes       string              `json:"top_aroma_notes,omitempty"`
+	TopAromaNotes       string                  `json:"top_aroma_notes,omitempty"`
 }
 
 type UserContributions struct {

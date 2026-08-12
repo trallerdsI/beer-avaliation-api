@@ -96,8 +96,8 @@ func (u *beerUsecase) Create(ctx context.Context, beer *model.Beer) error {
 		details := make([]errors.ProblemDetail, 0, len(existing))
 		for _, b := range existing {
 			details = append(details, errors.ProblemDetail{
-				Code:    "duplicate_beer",
-				Detail:  b.Name,
+				Code:   "duplicate_beer",
+				Detail: b.Name,
 			})
 		}
 		return errors.NewAppErrorWithDetails(409, "Uma cerveja com nome semelhante já existe", "DUPLICATE_BEER", details)

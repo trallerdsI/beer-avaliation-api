@@ -124,9 +124,9 @@ func TestPostgresUserRepository_GetByID(t *testing.T) {
 			},
 		},
 		{
-			name:     "not found",
-			id:       "999",
-			wantErr:  true,
+			name:    "not found",
+			id:      "999",
+			wantErr: true,
 			setup: func(m sqlmock.Sqlmock) {
 				m.ExpectQuery("SELECT").
 					WithArgs("999").
@@ -134,9 +134,9 @@ func TestPostgresUserRepository_GetByID(t *testing.T) {
 			},
 		},
 		{
-			name:     "query error",
-			id:       "u1",
-			wantErr:  true,
+			name:    "query error",
+			id:      "u1",
+			wantErr: true,
 			setup: func(m sqlmock.Sqlmock) {
 				m.ExpectQuery("SELECT").
 					WithArgs("u1").
@@ -252,10 +252,10 @@ func TestPostgresUserRepository_GetByExternal(t *testing.T) {
 			},
 		},
 		{
-			name:    "not found",
+			name:     "not found",
 			provider: "google",
-			sub:     "missing",
-			wantErr: true,
+			sub:      "missing",
+			wantErr:  true,
 			setup: func(m sqlmock.Sqlmock) {
 				m.ExpectQuery("SELECT").
 					WithArgs("google", "missing").
@@ -263,10 +263,10 @@ func TestPostgresUserRepository_GetByExternal(t *testing.T) {
 			},
 		},
 		{
-			name:    "query error",
+			name:     "query error",
 			provider: "google",
-			sub:     "sub-123",
-			wantErr: true,
+			sub:      "sub-123",
+			wantErr:  true,
 			setup: func(m sqlmock.Sqlmock) {
 				m.ExpectQuery("SELECT").
 					WithArgs("google", "sub-123").
@@ -388,10 +388,10 @@ func TestPostgresUserRepository_Update(t *testing.T) {
 			},
 		},
 		{
-			name:     "rows affected 0",
-			id:       "999",
-			user:     model.User{Username: "alice2", Email: "alice@example.com", Role: model.RoleUser},
-			wantErr:  true,
+			name:    "rows affected 0",
+			id:      "999",
+			user:    model.User{Username: "alice2", Email: "alice@example.com", Role: model.RoleUser},
+			wantErr: true,
 			setup: func(m sqlmock.Sqlmock) {
 				m.ExpectExec("UPDATE beerUsers").
 					WithArgs("alice2", "alice@example.com", "999").
@@ -454,9 +454,9 @@ func TestPostgresUserRepository_Delete(t *testing.T) {
 			},
 		},
 		{
-			name:     "rows affected 0",
-			id:       "999",
-			wantErr:  true,
+			name:    "rows affected 0",
+			id:      "999",
+			wantErr: true,
 			setup: func(m sqlmock.Sqlmock) {
 				m.ExpectExec("DELETE FROM beerUsers").
 					WithArgs("999").
@@ -485,19 +485,19 @@ func TestPostgresUserRepository_List(t *testing.T) {
 	repo := &PostgresUserRepository{db: db}
 
 	tests := []struct {
-		name     string
-		page     int
-		pageSize int
-		setup    func(sqlmock.Sqlmock)
-		wantErr  bool
-		wantLen  int
+		name      string
+		page      int
+		pageSize  int
+		setup     func(sqlmock.Sqlmock)
+		wantErr   bool
+		wantLen   int
 		wantTotal int
 	}{
 		{
-			name:     "success",
-			page:     1,
-			pageSize: 10,
-			wantLen:  1,
+			name:      "success",
+			page:      1,
+			pageSize:  10,
+			wantLen:   1,
 			wantTotal: 1,
 			setup: func(m sqlmock.Sqlmock) {
 				m.ExpectQuery("SELECT COUNT").
@@ -680,9 +680,9 @@ func TestPostgresUserRepository_DeletePushSubscription(t *testing.T) {
 			},
 		},
 		{
-			name:     "rows affected 0",
-			id:       "missing",
-			wantErr:  true,
+			name:    "rows affected 0",
+			id:      "missing",
+			wantErr: true,
 			setup: func(m sqlmock.Sqlmock) {
 				m.ExpectExec("DELETE FROM push_subscriptions").
 					WithArgs("missing").

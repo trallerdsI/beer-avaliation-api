@@ -62,9 +62,9 @@ func validationDetails(err error) []appErrors.ProblemDetail {
 	details := make([]appErrors.ProblemDetail, 0, len(verrs))
 	for _, fe := range verrs {
 		details = append(details, appErrors.ProblemDetail{
-			Field:   validation.FieldLabel(fe.Field()),
-			Code:    "invalid_" + fe.Tag(),
-			Detail:  validation.FieldLabel(fe.Field()) + ": " + validation.RuleMessage(fe),
+			Field:  validation.FieldLabel(fe.Field()),
+			Code:   "invalid_" + fe.Tag(),
+			Detail: validation.FieldLabel(fe.Field()) + ": " + validation.RuleMessage(fe),
 		})
 	}
 	return details
@@ -82,8 +82,6 @@ func (c *UserController) sendValidationProblem(w http.ResponseWriter, r *http.Re
 	}
 	response.SendProblem(w, p)
 }
-
-
 
 func (c *UserController) Register(w http.ResponseWriter, r *http.Request) {
 	if r.Body == nil {

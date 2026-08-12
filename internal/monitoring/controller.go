@@ -19,7 +19,7 @@ import (
 // Structs de resposta para tipagem forte e melhor documentação Swagger
 
 type StatsResponse struct {
-	TotalBeers int                  `json:"totalBeers"`
+	TotalBeers int                   `json:"totalBeers"`
 	TopStyles  []beerRepo.StyleCount `json:"topStyles"`
 }
 
@@ -172,18 +172,18 @@ func (c *MonitoringController) GetAdminStats(w http.ResponseWriter, r *http.Requ
 			AdminsCount: stats.AdminsCount,
 		},
 		Beers: AdminBeers{
-			Total:             stats.TotalBeers,
-			TopStyles:         stats.TopStyles,
-			AddedLast30Days:   stats.AddedLast30Days,
+			Total:           stats.TotalBeers,
+			TopStyles:       stats.TopStyles,
+			AddedLast30Days: stats.AddedLast30Days,
 			CommunityContributions: CommunityBeerStats{
 				UserCreated:   stats.UserCreatedBeers,
 				SystemCreated: stats.SystemCreatedBeers,
 			},
 		},
 		Engagement: AdminEngagement{
-			TotalComments: stats.TotalComments,
-			Sentiment:     stats.Sentiment,
-			TotalLikes:    stats.TotalLikes,
+			TotalComments:     stats.TotalComments,
+			Sentiment:         stats.Sentiment,
+			TotalLikes:        stats.TotalLikes,
 			MostCommentedBeer: stats.MostCommentedBeer,
 		},
 		System: AdminSystem{
@@ -238,10 +238,10 @@ func (c *MonitoringController) GetUserStats(w http.ResponseWriter, r *http.Reque
 		UserID:      userID,
 		MemberSince: memberSince,
 		Activity: UserActivity{
-			BeersReviewed:  userStats.BeersReviewed,
-			TotalComments:  userStats.TotalComments,
-			LikesGiven:     userStats.LikesGiven,
-			LikesReceived:  userStats.LikesReceived,
+			BeersReviewed: userStats.BeersReviewed,
+			TotalComments: userStats.TotalComments,
+			LikesGiven:    userStats.LikesGiven,
+			LikesReceived: userStats.LikesReceived,
 		},
 		Preferences: UserPreferences{
 			PositiveRatingRatio: userStats.PositiveRatio,

@@ -42,9 +42,9 @@ type Problem struct {
 
 // ProblemDetail descreve um erro granular (ex: um campo inválido).
 type ProblemDetail struct {
-	Field   string `json:"field,omitempty"`
-	Code    string `json:"code"`    // Código de erro do campo (ex: email_invalid)
-	Detail  string `json:"detail"`  // Mensagem legível do campo (i18n no cliente)
+	Field  string `json:"field,omitempty"`
+	Code   string `json:"code"`   // Código de erro do campo (ex: email_invalid)
+	Detail string `json:"detail"` // Mensagem legível do campo (i18n no cliente)
 }
 
 // ProblemAction sugere à UX um fluxo a seguir (sem o obrigar).
@@ -92,9 +92,9 @@ func (e *AppError) Is(target error) bool {
 
 func NewAppError(code int, detail string, err error) *AppError {
 	return &AppError{
-		Code:    code,
-		Detail:  detail,
-		Err:     err,
+		Code:   code,
+		Detail: detail,
+		Err:    err,
 	}
 }
 
@@ -106,7 +106,6 @@ func NewAppErrorWithCode(code int, detail, errorCode string) *AppError {
 		ErrorCode: errorCode,
 	}
 }
-
 
 // granulares tipados (RFC 7807), seguro para o cliente (sem PII).
 func NewAppErrorWithDetails(code int, detail, errorCode string, details []ProblemDetail) *AppError {

@@ -106,4 +106,3 @@ func TestToProblem(t *testing.T) {
 		t.Fatalf("expected fallback code internal_server_error, got %q", p2.Code)
 	}
 }
-

@@ -6,8 +6,8 @@ import (
 	"os"
 	"time"
 
-	"github.com/golang-jwt/jwt/v5"
 	appErrors "beer-review-app/pkg/errors"
+	"github.com/golang-jwt/jwt/v5"
 )
 
 const (

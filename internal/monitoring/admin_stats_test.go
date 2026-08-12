@@ -117,10 +117,10 @@ func (f *fakeUserRepo) GetMemberSince(ctx context.Context, userID string) (time.
 
 func TestGetAdminStatsSuccess(t *testing.T) {
 	stats := &repository.AdminStats{
-		TotalUsers:  100,
-		TotalBeers:  50,
-		TopStyles:   []repository.StyleCount{{Style: "IPA", Count: 20}},
-		TotalLikes:  300,
+		TotalUsers: 100,
+		TotalBeers: 50,
+		TopStyles:  []repository.StyleCount{{Style: "IPA", Count: 20}},
+		TotalLikes: 300,
 	}
 	c := NewMonitoringController(&fakeBeerUsecase{}, &fakeBeerRepo{stats: stats}, &fakeUserRepo{}, nil, nil, nil)
 

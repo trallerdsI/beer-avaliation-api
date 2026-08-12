@@ -130,11 +130,11 @@ func TestGetBeer(t *testing.T) {
 		t.Errorf("404 deve ser application/problem+json, got Content-Type %q", ct)
 	}
 	var notFoundBody struct {
-		Type    string `json:"type"`
-		Title   string `json:"title"`
-		Status  int    `json:"status"`
-		Code    string `json:"code"`
-		Detail  string `json:"detail"`
+		Type   string `json:"type"`
+		Title  string `json:"title"`
+		Status int    `json:"status"`
+		Code   string `json:"code"`
+		Detail string `json:"detail"`
 	}
 	if err := json.Unmarshal(rr.Body.Bytes(), &notFoundBody); err != nil {
 		t.Errorf("404 body should be valid JSON, got %q: %v", rr.Body.String(), err)
@@ -395,11 +395,11 @@ func TestCreateBeerValidationFailure(t *testing.T) {
 	mockBeerUsecase.AssertNotCalled(t, "Create", mock.Anything, mock.Anything)
 
 	var resp struct {
-		Type    string `json:"type"`
-		Title   string `json:"title"`
-		Status  int    `json:"status"`
-		Code    string `json:"code"`
-		Detail  string `json:"detail"`
+		Type   string `json:"type"`
+		Title  string `json:"title"`
+		Status int    `json:"status"`
+		Code   string `json:"code"`
+		Detail string `json:"detail"`
 	}
 	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("body should be JSON, got %q: %v", rr.Body.String(), err)

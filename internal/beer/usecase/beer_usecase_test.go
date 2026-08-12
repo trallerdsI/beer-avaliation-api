@@ -461,4 +461,3 @@ func TestUpdateBeerNotFound(t *testing.T) {
 	err := uc.Update(ctx, "1", model.Beer{Name: "New"})
 	assert.Error(t, err)
 }
-

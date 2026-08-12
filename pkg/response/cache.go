@@ -102,5 +102,3 @@ func SendNotModified(w http.ResponseWriter, etag string) {
 	w.Header().Set("Cache-Control", "public, max-age=0, must-revalidate")
 	w.WriteHeader(http.StatusNotModified)
 }
-
-

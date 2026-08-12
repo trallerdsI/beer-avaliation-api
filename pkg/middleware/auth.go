@@ -55,24 +55,24 @@ func Auth(next http.HandlerFunc) http.HandlerFunc {
 
 		authHeader := r.Header.Get("Authorization")
 		if authHeader == "" {
-		response.SendProblem(w, errors.NewProblem(http.StatusUnauthorized, "unauthorized",
-			"O cabeçalho de autorização é obrigatório."))
+			response.SendProblem(w, errors.NewProblem(http.StatusUnauthorized, "unauthorized",
+				"O cabeçalho de autorização é obrigatório."))
 			return
 		}
 
 		// strings.Cut evita alocar um slice de partes (zero-alloc no hot path).
 		scheme, token, ok := strings.Cut(authHeader, " ")
 		if !ok || scheme != "Bearer" || token == "" {
-		response.SendProblem(w, errors.NewProblem(http.StatusUnauthorized, "unauthorized",
-			"Formato de autorização inválido. Use 'Bearer <token>'."))
+			response.SendProblem(w, errors.NewProblem(http.StatusUnauthorized, "unauthorized",
+				"Formato de autorização inválido. Use 'Bearer <token>'."))
 			return
 		}
 
 		userID, role, err := auth.ValidateToken(token)
 		if err != nil {
 			slog.WarnContext(ctx, "invalid token", "err", err)
-		response.SendProblem(w, errors.NewProblem(http.StatusUnauthorized, "invalid_token",
-			"Token inválido ou expirado."))
+			response.SendProblem(w, errors.NewProblem(http.StatusUnauthorized, "invalid_token",
+				"Token inválido ou expirado."))
 			return
 		}
 
@@ -89,8 +89,8 @@ func Auth(next http.HandlerFunc) http.HandlerFunc {
 func RequireAdmin(next http.HandlerFunc) http.HandlerFunc {
 	return Auth(func(w http.ResponseWriter, r *http.Request) {
 		if !IsAdmin(r.Context()) {
-		response.SendProblem(w, errors.NewProblem(http.StatusForbidden, "forbidden",
-			"É necessário privilégio de administrador."))
+			response.SendProblem(w, errors.NewProblem(http.StatusForbidden, "forbidden",
+				"É necessário privilégio de administrador."))
 			return
 		}
 		next.ServeHTTP(w, r)

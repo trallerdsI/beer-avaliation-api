@@ -11,15 +11,15 @@ import (
 )
 
 type InMemoryUserRepository struct {
-	users       []model.User
+	users         []model.User
 	subscriptions []model.PushSubscription
-	mutex       sync.RWMutex
-	nextSubID   int
+	mutex         sync.RWMutex
+	nextSubID     int
 }
 
 func NewInMemoryUserRepository() *InMemoryUserRepository {
 	return &InMemoryUserRepository{
-		users:        []model.User{},
+		users:         []model.User{},
 		subscriptions: []model.PushSubscription{},
 	}
 }

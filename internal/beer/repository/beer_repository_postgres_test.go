@@ -17,10 +17,10 @@ import (
 
 func TestNewPostgresBeerRepository(t *testing.T) {
 	tests := []struct {
-		name     string
-		db       *sql.DB
-		wantErr  bool
-		errCode  int
+		name    string
+		db      *sql.DB
+		wantErr bool
+		errCode int
 	}{
 		{
 			name:    "nil db returns unavailable error",
@@ -59,11 +59,11 @@ func TestPostgresBeerRepository_Create(t *testing.T) {
 	repo := &PostgresBeerRepository{db: db}
 
 	tests := []struct {
-		name      string
-		beer      *model.Beer
-		setup     func(sqlmock.Sqlmock)
-		wantErr   bool
-		errCode   int
+		name    string
+		beer    *model.Beer
+		setup   func(sqlmock.Sqlmock)
+		wantErr bool
+		errCode int
 	}{
 		{
 			name: "success",
@@ -135,10 +135,10 @@ func TestPostgresBeerRepository_GetByID(t *testing.T) {
 			},
 		},
 		{
-			name:     "not found",
-			id:       "999",
-			wantErr:  true,
-			errCode:  http.StatusNotFound,
+			name:    "not found",
+			id:      "999",
+			wantErr: true,
+			errCode: http.StatusNotFound,
 			setup: func(m sqlmock.Sqlmock) {
 				m.ExpectQuery("SELECT").
 					WithArgs("999").
@@ -146,9 +146,9 @@ func TestPostgresBeerRepository_GetByID(t *testing.T) {
 			},
 		},
 		{
-			name:     "query error",
-			id:       "1",
-			wantErr:  true,
+			name:    "query error",
+			id:      "1",
+			wantErr: true,
 			setup: func(m sqlmock.Sqlmock) {
 				m.ExpectQuery("SELECT").
 					WithArgs("1").
@@ -164,18 +164,18 @@ func TestPostgresBeerRepository_GetByID(t *testing.T) {
 			if (err != nil) != tt.wantErr {
 				t.Fatalf("GetByID() error = %v, wantErr %v", err, tt.wantErr)
 			}
-		if tt.wantErr {
-			if tt.errCode > 0 {
-				var appErr *errors.AppError
-				if !stdErr.As(err, &appErr) {
-					t.Fatalf("expected *AppError, got %T", err)
+			if tt.wantErr {
+				if tt.errCode > 0 {
+					var appErr *errors.AppError
+					if !stdErr.As(err, &appErr) {
+						t.Fatalf("expected *AppError, got %T", err)
+					}
+					if appErr.Code != tt.errCode {
+						t.Fatalf("error code = %d, want %d", appErr.Code, tt.errCode)
+					}
 				}
-				if appErr.Code != tt.errCode {
-					t.Fatalf("error code = %d, want %d", appErr.Code, tt.errCode)
-				}
+				return
 			}
-			return
-		}
 			require.Equal(t, tt.wantName, beer.Name)
 			require.NoError(t, mock.ExpectationsWereMet())
 		})
@@ -311,12 +311,12 @@ func TestPostgresBeerRepository_Update(t *testing.T) {
 	repo := &PostgresBeerRepository{db: db}
 
 	tests := []struct {
-		name     string
-		id       string
-		beer     model.Beer
-		setup    func(sqlmock.Sqlmock)
-		wantErr  bool
-		errCode  int
+		name    string
+		id      string
+		beer    model.Beer
+		setup   func(sqlmock.Sqlmock)
+		wantErr bool
+		errCode int
 	}{
 		{
 			name: "success",
@@ -340,11 +340,11 @@ func TestPostgresBeerRepository_Update(t *testing.T) {
 			},
 		},
 		{
-			name:     "rows affected 0",
-			id:       "999",
-			beer:     model.Beer{Name: "IPA", CreatedBy: "u1", CreatedAt: time.Now().Format(time.RFC3339)},
-			wantErr:  true,
-			errCode:  http.StatusNotFound,
+			name:    "rows affected 0",
+			id:      "999",
+			beer:    model.Beer{Name: "IPA", CreatedBy: "u1", CreatedAt: time.Now().Format(time.RFC3339)},
+			wantErr: true,
+			errCode: http.StatusNotFound,
 			setup: func(m sqlmock.Sqlmock) {
 				m.ExpectExec("UPDATE beers").
 					WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), "999").
@@ -382,11 +382,11 @@ func TestPostgresBeerRepository_Delete(t *testing.T) {
 	repo := &PostgresBeerRepository{db: db}
 
 	tests := []struct {
-		name     string
-		id       string
-		setup    func(sqlmock.Sqlmock)
-		wantErr  bool
-		errCode  int
+		name    string
+		id      string
+		setup   func(sqlmock.Sqlmock)
+		wantErr bool
+		errCode int
 	}{
 		{
 			name: "success",
@@ -408,10 +408,10 @@ func TestPostgresBeerRepository_Delete(t *testing.T) {
 			},
 		},
 		{
-			name:     "rows affected 0",
-			id:       "999",
-			wantErr:  true,
-			errCode:  http.StatusNotFound,
+			name:    "rows affected 0",
+			id:      "999",
+			wantErr: true,
+			errCode: http.StatusNotFound,
 			setup: func(m sqlmock.Sqlmock) {
 				m.ExpectExec("DELETE FROM beers").
 					WithArgs("999").
@@ -449,12 +449,12 @@ func TestPostgresBeerRepository_AddComment(t *testing.T) {
 	repo := &PostgresBeerRepository{db: db}
 
 	tests := []struct {
-		name     string
-		id       string
-		comment  model.Comment
-		setup    func(sqlmock.Sqlmock)
-		wantErr  bool
-		errCode  int
+		name    string
+		id      string
+		comment model.Comment
+		setup   func(sqlmock.Sqlmock)
+		wantErr bool
+		errCode int
 	}{
 		{
 			name:    "success",
@@ -471,11 +471,11 @@ func TestPostgresBeerRepository_AddComment(t *testing.T) {
 			},
 		},
 		{
-			name:     "beer not found",
-			id:       "999",
-			comment:  model.Comment{ID: "c1", Text: "Great", Rating: 5},
-			wantErr:  true,
-			errCode:  http.StatusNotFound,
+			name:    "beer not found",
+			id:      "999",
+			comment: model.Comment{ID: "c1", Text: "Great", Rating: 5},
+			wantErr: true,
+			errCode: http.StatusNotFound,
 			setup: func(m sqlmock.Sqlmock) {
 				m.ExpectQuery("SELECT").
 					WithArgs("999").
