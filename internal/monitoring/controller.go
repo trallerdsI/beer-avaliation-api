@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"log/slog"
 	"net/http"
-	"runtime"
 	"time"
 
 	beerRepo "beer-review-app/internal/beer/repository"
@@ -34,7 +33,6 @@ type HealthResponse struct {
 	Status       string            `json:"status"`
 	Version      string            `json:"version"`
 	Uptime       string            `json:"uptime"`
-	Memory       MemoryStats       `json:"memory"`
 	Dependencies map[string]string `json:"dependencies"`
 }
 
@@ -97,9 +95,6 @@ func (c *MonitoringController) GetStats(w http.ResponseWriter, r *http.Request) 
 // @Success 200 {object} HealthResponse
 // @Router /health [get]
 func (c *MonitoringController) HealthCheck(w http.ResponseWriter, r *http.Request) {
-	var m runtime.MemStats
-	runtime.ReadMemStats(&m) // Chamada leve para coleta de GC e memória em rotas de monitoramento
-
 	dbStatus := c.checkDatabaseHealth(r.Context())
 	status := http.StatusOK
 	overall := "healthy"
@@ -119,15 +114,9 @@ func (c *MonitoringController) HealthCheck(w http.ResponseWriter, r *http.Reques
 	health := HealthResponse{
 		Status:  overall,
 		Version: "1.0.0",
-		Uptime:  time.Since(c.startTime).Truncate(time.Second).String(), // Exibe uptime limpo sem frações de nanossegundos
-		Memory: MemoryStats{
-			Alloc:      m.Alloc,
-			TotalAlloc: m.TotalAlloc,
-			Sys:        m.Sys,
-			NumGC:      m.NumGC,
-		},
+		Uptime:  time.Since(c.startTime).Truncate(time.Second).String(),
 		Dependencies: map[string]string{
-			"database": dbStatus, // Propagação correta do contexto para respeitar timeouts
+			"database": dbStatus,
 		},
 	}
 	if dbDetail != "" {

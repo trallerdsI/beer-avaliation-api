@@ -297,6 +297,18 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Beer'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '403':
+          description: Forbidden (not owner or admin)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
         '404':
           description: Beer not found
           content:
@@ -315,6 +327,18 @@ paths:
       responses:
         '204':
           description: Beer deleted successfully
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '403':
+          description: Forbidden (not owner or admin)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
         '404':
           description: Beer not found
           content:
@@ -633,6 +657,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Problem'
+        '403':
+          description: Forbidden (not owner or admin)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
         '404':
           description: User not found
           content:
@@ -653,6 +683,12 @@ paths:
           description: User account deleted
         '401':
           description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '403':
+          description: Forbidden (not owner or admin)
           content:
             application/json:
               schema:
@@ -837,24 +873,10 @@ components:
           type: string
         uptime:
           type: string
-        memory:
-          $ref: '#/components/schemas/MemoryStats'
         dependencies:
           type: object
           additionalProperties:
             type: string
-
-    MemoryStats:
-      type: object
-      properties:
-        alloc:
-          type: integer
-        totalAlloc:
-          type: integer
-        sys:
-          type: integer
-        numGC:
-          type: integer
 
     StatsResponse:
       type: object
