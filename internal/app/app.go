@@ -108,7 +108,7 @@ func BuildRouterWithDBErr(db *sql.DB, dbErr error, logger *slog.Logger) http.Han
 	handler = middleware.MetricsMiddleware(handler)
 	handler = middleware.RequestIDMiddleware(handler)
 	handler = middleware.CompressionMiddleware(handler)
-	handler = middleware.RateLimitMiddleware(handler)
+	handler = middleware.NewRateLimitMiddleware(10, time.Minute)(handler)
 
 	return handler
 }

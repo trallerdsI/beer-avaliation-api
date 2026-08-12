@@ -3,8 +3,10 @@ package middleware
 import (
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
+	"time"
 )
 
 func resetWriteLimiter() {
@@ -33,6 +35,94 @@ func TestIsWriteMethod(t *testing.T) {
 	}
 }
 
+func TestNewRateLimitMiddleware_UsesCustomLimit(t *testing.T) {
+	resetWriteLimiter()
+	os.Setenv("RATE_LIMIT_DISABLED", "false")
+	defer os.Unsetenv("RATE_LIMIT_DISABLED")
+
+	handler := NewRateLimitMiddleware(2, time.Minute)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusCreated)
+	}))
+
+	for i := 0; i < 2; i++ {
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/beers", strings.NewReader(`{"name":"IPA"}`))
+		req.Header.Set("Content-Type", "application/json")
+		req.RemoteAddr = "127.0.0.1:12345"
+		handler.ServeHTTP(rr, req)
+		if rr.Code != http.StatusCreated {
+			t.Fatalf("request %d: expected 201, got %d", i, rr.Code)
+		}
+	}
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/beers", strings.NewReader(`{"name":"IPA"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.RemoteAddr = "127.0.0.1:12345"
+	handler.ServeHTTP(rr, req)
+	if rr.Code != http.StatusTooManyRequests {
+		t.Fatalf("expected 429 after custom limit, got %d", rr.Code)
+	}
+}
+
+func TestNewRateLimitMiddleware_DisabledByEnv(t *testing.T) {
+	os.Setenv("RATE_LIMIT_DISABLED", "true")
+	defer os.Unsetenv("RATE_LIMIT_DISABLED")
+
+	handler := NewRateLimitMiddleware(1, time.Minute)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusCreated)
+	}))
+
+	for i := 0; i < 5; i++ {
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/beers", strings.NewReader(`{"name":"IPA"}`))
+		req.Header.Set("Content-Type", "application/json")
+		req.RemoteAddr = "127.0.0.1:12345"
+		handler.ServeHTTP(rr, req)
+		if rr.Code != http.StatusCreated {
+			t.Fatalf("request %d: expected 201 when disabled, got %d", i, rr.Code)
+		}
+	}
+}
+
+func TestNewRateLimitMiddleware_SkipsGetRequests(t *testing.T) {
+	os.Setenv("RATE_LIMIT_DISABLED", "false")
+	defer os.Unsetenv("RATE_LIMIT_DISABLED")
+
+	handler := NewRateLimitMiddleware(1, time.Minute)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	for i := 0; i < 5; i++ {
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/beers", nil)
+		req.RemoteAddr = "127.0.0.1:12345"
+		handler.ServeHTTP(rr, req)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("request %d: expected 200 for GET, got %d", i, rr.Code)
+		}
+	}
+}
+
+func TestNewRateLimitMiddleware_InvalidLimit_UsesDefault(t *testing.T) {
+	resetWriteLimiter()
+	os.Setenv("RATE_LIMIT_DISABLED", "false")
+	defer os.Unsetenv("RATE_LIMIT_DISABLED")
+
+	handler := NewRateLimitMiddleware(0, 0)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusCreated)
+	}))
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/beers", strings.NewReader(`{"name":"IPA"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.RemoteAddr = "127.0.0.1:12345"
+	handler.ServeHTTP(rr, req)
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("expected 201 with default limit, got %d", rr.Code)
+	}
+}
+
 func TestRateLimitMiddlewareAllowsWriteUnderLimit(t *testing.T) {
 	resetWriteLimiter()
 	rr := httptest.NewRecorder()
@@ -53,7 +143,7 @@ func TestRateLimitMiddlewareAllowsWriteUnderLimit(t *testing.T) {
 
 func TestRateLimitMiddlewareRejectsWriteOverLimit(t *testing.T) {
 	resetWriteLimiter()
-	for i := 0; i < writeRateLimit; i++ {
+	for i := 0; i < defaultWriteRateLimit; i++ {
 		rr := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/beers", strings.NewReader(`{"name":"IPA"}`))
 		req.Header.Set("Content-Type", "application/json")
@@ -82,7 +172,7 @@ func TestRateLimitMiddlewareRejectsWriteOverLimit(t *testing.T) {
 	handler.ServeHTTP(rr, req)
 
 	if rr.Code != http.StatusTooManyRequests {
-		t.Fatalf("expected 429 after %d requests, got %d", writeRateLimit, rr.Code)
+		t.Fatalf("expected 429 after %d requests, got %d", defaultWriteRateLimit, rr.Code)
 	}
 
 	if rr.Header().Get("Retry-After") != "60" {

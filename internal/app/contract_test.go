@@ -12,6 +12,7 @@ import (
 )
 
 func newTestRouter() http.Handler {
+	os.Setenv("RATE_LIMIT_DISABLED", "true")
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
 	return BuildRouterWithDBErr(nil, nil, logger)
 }

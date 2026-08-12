@@ -3,6 +3,7 @@ package middleware
 import (
 	"log/slog"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -12,17 +13,27 @@ import (
 )
 
 const (
-	writeRateLimit       = 10
-	writeRateLimitWindow = time.Minute
+	defaultWriteRateLimit       = 10
+	defaultWriteRateLimitWindow = time.Minute
 )
 
 type rateLimiter struct {
-	mu   sync.Mutex
-	hits map[string][]time.Time
+	mu     sync.Mutex
+	hits   map[string][]time.Time
+	limit  int
+	window time.Duration
 }
 
 func newRateLimiter() *rateLimiter {
-	return &rateLimiter{hits: make(map[string][]time.Time)}
+	return newRateLimiterWith(defaultWriteRateLimit, defaultWriteRateLimitWindow)
+}
+
+func newRateLimiterWith(limit int, window time.Duration) *rateLimiter {
+	return &rateLimiter{
+		hits:   make(map[string][]time.Time),
+		limit:  limit,
+		window: window,
+	}
 }
 
 func (rl *rateLimiter) allow(key string) bool {
@@ -30,7 +41,7 @@ func (rl *rateLimiter) allow(key string) bool {
 	defer rl.mu.Unlock()
 
 	now := time.Now()
-	cutoff := now.Add(-writeRateLimitWindow)
+	cutoff := now.Add(-rl.window)
 
 	for k, times := range rl.hits {
 		filtered := make([]time.Time, 0, len(times))
@@ -53,7 +64,7 @@ func (rl *rateLimiter) allow(key string) bool {
 			filtered = append(filtered, t)
 		}
 	}
-	if len(filtered) >= writeRateLimit {
+	if len(filtered) >= rl.limit {
 		rl.hits[key] = filtered
 		return false
 	}
@@ -83,7 +94,14 @@ func isWriteMethod(method string) bool {
 	return false
 }
 
+func rateLimitDisabled() bool {
+	return strings.ToLower(os.Getenv("RATE_LIMIT_DISABLED")) == "true"
+}
+
 func RateLimitMiddleware(next http.Handler) http.Handler {
+	if rateLimitDisabled() {
+		return next
+	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !isWriteMethod(r.Method) {
 			next.ServeHTTP(w, r)
@@ -99,4 +117,36 @@ func RateLimitMiddleware(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+func NewRateLimitMiddleware(limit int, window time.Duration) func(http.Handler) http.Handler {
+	if limit <= 0 {
+		limit = defaultWriteRateLimit
+	}
+	if window <= 0 {
+		window = defaultWriteRateLimitWindow
+	}
+	rl := newRateLimiterWith(limit, window)
+	if rateLimitDisabled() {
+		return func(next http.Handler) http.Handler {
+			return next
+		}
+	}
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if !isWriteMethod(r.Method) {
+				next.ServeHTTP(w, r)
+				return
+			}
+			key := clientKey(r)
+			if !rl.allow(key) {
+				w.Header().Set("Retry-After", "60")
+				response.SendProblem(w, errors.NewProblem(http.StatusTooManyRequests, "rate_limit_exceeded",
+					"Muitas requisições. Tente novamente dentro de 60 segundos."))
+				slog.WarnContext(r.Context(), "rate limit exceeded", "key", key, "method", r.Method, "path", r.URL.Path)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
 }
