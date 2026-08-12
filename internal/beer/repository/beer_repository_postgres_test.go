@@ -599,3 +599,140 @@ func TestPostgresBeerRepository_DeleteComment(t *testing.T) {
 func float64Ptr(v float64) *float64 {
 	return &v
 }
+
+func TestPostgresBeerRepository_SearchBeers_CountError(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer db.Close()
+
+	repo := &PostgresBeerRepository{db: db}
+
+	mock.ExpectQuery("SELECT COUNT").
+		WillReturnError(http.ErrHandlerTimeout)
+
+	_, _, err = repo.SearchBeers(context.Background(), model.BeerFilters{Query: "IPA", Page: 1, PageSize: 10})
+	require.Error(t, err)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestPostgresBeerRepository_SearchBeers_QueryError(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer db.Close()
+
+	repo := &PostgresBeerRepository{db: db}
+
+	mock.ExpectQuery("SELECT COUNT").
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
+	mock.ExpectQuery("SELECT").
+		WillReturnError(http.ErrHandlerTimeout)
+
+	_, _, err = repo.SearchBeers(context.Background(), model.BeerFilters{Query: "IPA", Page: 1, PageSize: 10})
+	require.Error(t, err)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestPostgresBeerRepository_GetAdminStats(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer db.Close()
+
+	repo := &PostgresBeerRepository{db: db}
+
+	now := time.Now()
+
+	mock.ExpectQuery("SELECT COUNT.*FROM beerUsers").
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(10))
+	mock.ExpectQuery("SELECT COUNT.*FROM beerUsers WHERE created").
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(2))
+	mock.ExpectQuery("SELECT provider, COUNT").
+		WillReturnRows(sqlmock.NewRows([]string{"provider", "count"}).AddRow("google", 5).AddRow("apple", 5))
+	mock.ExpectQuery("SELECT COUNT.*FROM beerUsers WHERE role").
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
+	mock.ExpectQuery("SELECT COUNT.*FROM beers").
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(3))
+	mock.ExpectQuery("SELECT style, COUNT").
+		WillReturnRows(sqlmock.NewRows([]string{"style", "cnt"}).AddRow("IPA", 2))
+	mock.ExpectQuery("SELECT COUNT.*FROM beers WHERE created_at").
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
+	mock.ExpectQuery("SELECT COUNT.*FROM beers WHERE created_by").
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
+	mock.ExpectQuery("SELECT COALESCE.*FROM beers").
+		WillReturnRows(sqlmock.NewRows([]string{"coalesce"}).AddRow(5))
+	mock.ExpectQuery("SELECT").
+		WillReturnRows(sqlmock.NewRows([]string{"positive", "negative"}).AddRow(3, 1))
+	mock.ExpectQuery("SELECT COALESCE.*FROM beers").
+		WillReturnRows(sqlmock.NewRows([]string{"coalesce"}).AddRow(4))
+	mock.ExpectQuery("SELECT id, name").
+		WillReturnRows(sqlmock.NewRows([]string{"id", "name", "cnt"}).AddRow("b1", "IPA", 2))
+	mock.ExpectQuery("SELECT created_at").
+		WillReturnRows(sqlmock.NewRows([]string{"created_at"}).AddRow(now))
+	mock.ExpectQuery("SELECT GREATEST").
+		WillReturnRows(sqlmock.NewRows([]string{"greatest"}).AddRow(now))
+
+	stats, err := repo.GetAdminStats(context.Background())
+	require.NoError(t, err)
+	require.NotNil(t, stats)
+	require.Equal(t, 10, stats.TotalUsers)
+	require.Equal(t, 2, stats.NewUsersWeek)
+	require.Equal(t, 1, stats.AdminsCount)
+	require.Equal(t, 3, stats.TotalBeers)
+	require.Len(t, stats.TopStyles, 1)
+	require.Equal(t, "IPA", stats.TopStyles[0].Style)
+	require.Equal(t, 1, stats.AddedLast30Days)
+	require.Equal(t, 1, stats.UserCreatedBeers)
+	require.Equal(t, 3, stats.Sentiment.Positive)
+	require.Equal(t, 1, stats.Sentiment.Negative)
+	require.Equal(t, 5, stats.TotalComments)
+	require.Equal(t, 4, stats.TotalLikes)
+	require.NotNil(t, stats.MostCommentedBeer)
+	require.Equal(t, "b1", stats.MostCommentedBeer.ID)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestPostgresBeerRepository_GetUserStats(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer db.Close()
+
+	repo := &PostgresBeerRepository{db: db}
+
+	userID := "user-1"
+
+	mock.ExpectQuery("SELECT COUNT.*FROM beers.*jsonb_array_elements.*createdBy").
+		WithArgs(userID).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(3))
+	mock.ExpectQuery("SELECT COALESCE.*SUM.*likes.*FROM beers.*jsonb_array_elements.*createdBy").
+		WithArgs(userID).
+		WillReturnRows(sqlmock.NewRows([]string{"coalesce"}).AddRow(10))
+	mock.ExpectQuery("SELECT COUNT.*ANY.*likedBy").
+		WithArgs(userID).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(2))
+	mock.ExpectQuery("SELECT COUNT.*createdBy.*positive.*boolean").
+		WithArgs(userID).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
+	mock.ExpectQuery("SELECT b.style, COUNT.*GROUP BY b.style").
+		WithArgs(userID).
+		WillReturnRows(sqlmock.NewRows([]string{"style", "cnt"}).AddRow("IPA", 2).AddRow("Stout", 1))
+	mock.ExpectQuery("SELECT aroma.*FROM beers.*jsonb_array_elements.*createdBy").
+		WithArgs(userID).
+		WillReturnRows(sqlmock.NewRows([]string{"aroma"}).AddRow("Floral"))
+	mock.ExpectQuery("SELECT COUNT.*FROM beers WHERE created_by").
+		WithArgs(userID).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
+
+	stats, err := repo.GetUserStats(context.Background(), userID)
+	require.NoError(t, err)
+	require.NotNil(t, stats)
+	require.Equal(t, userID, stats.UserID)
+	require.Equal(t, 3, stats.TotalComments)
+	require.Equal(t, 3, stats.BeersReviewed)
+	require.Equal(t, 10, stats.LikesReceived)
+	require.Equal(t, 2, stats.LikesGiven)
+	require.InDelta(t, 33.33, stats.PositiveRatio, 0.01)
+	require.Len(t, stats.FavoriteStyles, 2)
+	require.Equal(t, "IPA", stats.FavoriteStyles[0].Style)
+	require.Equal(t, "Floral", stats.TopAromaNotes)
+	require.Equal(t, 1, stats.BeersAdded)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
