@@ -461,3 +461,97 @@ func TestUpdateBeerNotFound(t *testing.T) {
 	err := uc.Update(ctx, "1", model.Beer{Name: "New"})
 	assert.Error(t, err)
 }
+
+func TestCanModify_AdminAlwaysAllowed(t *testing.T) {
+	ctx := middleware.WithUserID(context.Background(), "admin-1", usermodel.RoleAdmin)
+	assert.True(t, canModify(ctx, "owner-1"))
+	assert.True(t, canModify(ctx, ""))
+}
+
+func TestCanModify_OwnerAllowed(t *testing.T) {
+	ctx := middleware.WithUserID(context.Background(), "owner-1", "")
+	assert.True(t, canModify(ctx, "owner-1"))
+	assert.False(t, canModify(ctx, "other-1"))
+}
+
+func TestCanModify_EmptyOwnerOnlyAdmin(t *testing.T) {
+	ctx := middleware.WithUserID(context.Background(), "owner-1", "")
+	assert.False(t, canModify(ctx, ""))
+
+	ctxAdmin := middleware.WithUserID(context.Background(), "admin-1", usermodel.RoleAdmin)
+	assert.True(t, canModify(ctxAdmin, ""))
+}
+
+func TestUnavailable_Returns503WhenRepoNil(t *testing.T) {
+	uc := NewBeerUsecase(nil, nil)
+
+	_, err := uc.GetAll(context.Background())
+	assert.Error(t, err)
+	var appErr *appErrors.AppError
+	assert.ErrorAs(t, err, &appErr)
+	assert.Equal(t, http.StatusServiceUnavailable, appErr.Code)
+}
+
+func TestCreate_PublishesSSEEvent(t *testing.T) {
+	mockRepo := new(MockBeerRepository)
+	hub := realtime.NewHub(8)
+	defer hub.Shutdown()
+	uc := NewBeerUsecase(mockRepo, hub)
+
+	beer := model.Beer{ID: "1", Name: "IPA"}
+	mockRepo.On("SearchBeers", mock.Anything, mock.Anything).Return([]model.Beer{}, 0, nil)
+	mockRepo.On("Create", mock.Anything, &beer).Return(nil)
+
+	ctx := middleware.WithUserID(context.Background(), "owner-1", "")
+	err := uc.Create(ctx, &beer)
+	assert.NoError(t, err)
+
+	events, _ := hub.Subscribe(context.Background())
+	select {
+	case ev := <-events:
+		assert.Equal(t, "beer.created", ev.Type)
+		assert.Equal(t, "1", ev.ID)
+	default:
+		t.Fatal("expected SSE event to be published")
+	}
+}
+
+func TestAddMedia_SyncsImageUrl(t *testing.T) {
+	mockRepo := new(MockBeerRepository)
+	uc := NewBeerUsecase(mockRepo, nil)
+
+	beer := model.Beer{ID: "1", Name: "Beer1", CreatedBy: "owner-1", ImageUrl: ""}
+	item := model.MediaItem{URL: "https://img.example.com/beer.jpg", Type: "image/jpeg"}
+
+	mockRepo.On("GetByID", mock.Anything, "1").Return(beer, nil)
+	mockRepo.On("Update", mock.Anything, "1", mock.Anything).Return(nil)
+
+	ctx := middleware.WithUserID(context.Background(), "owner-1", "")
+	media, err := uc.AddMedia(ctx, "1", item)
+	assert.NoError(t, err)
+	assert.Equal(t, []model.MediaItem{{URL: "https://img.example.com/beer.jpg", Type: "image/jpeg"}}, media)
+}
+
+func TestLikeComment_UsesUserIDOverDeviceID(t *testing.T) {
+	mockRepo := new(MockBeerRepository)
+	uc := NewBeerUsecase(mockRepo, nil)
+
+	beer := model.Beer{ID: "1", Comments: []model.Comment{{ID: "c1", Likes: 0}}}
+	mockRepo.On("GetByID", mock.Anything, "1").Return(beer, nil)
+	mockRepo.On("Update", mock.Anything, "1", mock.Anything).Return(nil)
+
+	err := uc.LikeComment(context.Background(), "1", "c1", "user-1", "device-1")
+	assert.NoError(t, err)
+}
+
+func TestLikeComment_DeviceIDFallback(t *testing.T) {
+	mockRepo := new(MockBeerRepository)
+	uc := NewBeerUsecase(mockRepo, nil)
+
+	beer := model.Beer{ID: "1", Comments: []model.Comment{{ID: "c1", Likes: 0}}}
+	mockRepo.On("GetByID", mock.Anything, "1").Return(beer, nil)
+	mockRepo.On("Update", mock.Anything, "1", mock.Anything).Return(nil)
+
+	err := uc.LikeComment(context.Background(), "1", "c1", "", "device-1")
+	assert.NoError(t, err)
+}
