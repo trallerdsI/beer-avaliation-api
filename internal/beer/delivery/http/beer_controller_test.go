@@ -488,9 +488,9 @@ func TestGetAllBeersRegressionNullSlice(t *testing.T) {
 			if strings.Contains(rr.Body.String(), `"beers":null`) {
 				t.Fatalf("contrato violado: beers serializado como null: %s", rr.Body.String())
 			}
-		mockBeerUsecase.AssertExpectations(t)
-	})
-}
+			mockBeerUsecase.AssertExpectations(t)
+		})
+	}
 }
 
 func TestDeleteBeer_NotFound(t *testing.T) {

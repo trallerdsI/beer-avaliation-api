@@ -2,8 +2,8 @@ package usecase
 
 import (
 	"context"
-	"net/http"
 	stderrors "errors"
+	"net/http"
 	"testing"
 	"time"
 
