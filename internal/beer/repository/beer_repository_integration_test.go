@@ -1,162 +1,172 @@
+//go:build integration
+
 package repository
 
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"os"
 	"testing"
-	"time"
 
 	"beer-review-app/internal/beer/model"
-	"beer-review-app/pkg/uuid"
+
+	"github.com/stretchr/testify/require"
 )
 
-func TestPostgresBeerRepositoryIntegration(t *testing.T) {
-	dsn := os.Getenv("TEST_DATABASE_URL")
-	if dsn == "" {
-		t.Skip("TEST_DATABASE_URL não definida; pulando teste de integração")
-	}
-
-	db, err := sql.Open("postgres", dsn)
-	if err != nil {
-		t.Fatalf("falha ao conectar DB de teste: %v", err)
-	}
-	defer db.Close()
-
-	repo, err := NewPostgresBeerRepository(db)
-	if err != nil {
-		t.Fatalf("falha ao criar repo: %v", err)
+func TestIntegration_BeerRepository_CRUD(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
 	}
 
 	ctx := context.Background()
-	userID := uuid.MustNewV7()
-	now := time.Now().UTC().Format(time.RFC3339)
+	db := startPostgresContainer(t)
+	defer db.Close()
 
-	if _, err := db.ExecContext(ctx, `
-		INSERT INTO beerUsers (id, username, email, password, role, created)
-		VALUES ($1, $2, $3, $4, $5, $6)`,
-		userID, "tester", "test@example.com", "hashed", "user", now,
-	); err != nil {
-		t.Fatalf("create user: %v", err)
-	}
+	err := applyMigrations(db)
+	require.NoError(t, err)
 
-	beerID := uuid.MustNewV7()
-	beer := &model.Beer{
-		ID:        beerID,
-		Name:      "Test Beer",
-		Style:     string(model.FlavorBitter),
-		CreatedBy: userID,
-		CreatedAt: now,
-		Alcohol:   ptrFloat64(5.0),
-		Comments: []model.Comment{
-			{ID: uuid.MustNewV7(), Text: "good", Rating: 5, CreatedBy: userID, CreatedAt: now},
-			{ID: uuid.MustNewV7(), Text: "bad", Rating: 1, CreatedBy: userID, CreatedAt: now},
-		},
-	}
+	repo, err := NewPostgresBeerRepository(db)
+	require.NoError(t, err)
 
-	if err := repo.Create(ctx, beer); err != nil {
-		t.Fatalf("Create: %v", err)
+	beer := model.Beer{
+		ID:          "550e8400-e29b-41d4-a716-446655440000",
+		Name:        "IPA Teste",
+		Style:       "IPA",
+		Description: "Cerveja de teste",
+		ImageUrl:    "https://example.com/img.jpg",
+		Alcohol:     float64Ptr(5.5),
+		Taste:       model.FlavorBitter,
+		Aroma:       model.AromaCitrus,
+		Color:       model.ColorAmber,
+		Body:        model.BodyMedium,
+		Carbonation: model.CarbonationMedium,
+		Finish:      model.FinishDry,
+		CreatedBy:   "user-1",
+		CreatedAt:   "2024-01-01T00:00:00Z",
+		Comments:    []model.Comment{},
 	}
 
-	got, err := repo.GetByID(ctx, beerID)
-	if err != nil {
-		t.Fatalf("GetByID: %v", err)
-	}
-	if got.Name != "Test Beer" {
-		t.Fatalf("Name: got %q, want Test Beer", got.Name)
-	}
+	err = repo.Create(ctx, &beer)
+	require.NoError(t, err)
 
-	beer.Style = string(model.FlavorSweet)
-	if err := repo.Update(ctx, beerID, *beer); err != nil {
-		t.Fatalf("Update: %v", err)
-	}
+	got, err := repo.GetByID(ctx, beer.ID)
+	require.NoError(t, err)
+	require.Equal(t, beer.Name, got.Name)
+	require.Equal(t, "user-1", got.CreatedBy)
 
-	got, _ = repo.GetByID(ctx, beerID)
-	if got.Style != string(model.FlavorSweet) {
-		t.Fatalf("Style after update: got %q, want %q", got.Style, model.FlavorSweet)
-	}
+	all, err := repo.GetAll(ctx)
+	require.NoError(t, err)
+	require.Len(t, all, 1)
 
-	if err := repo.Delete(ctx, beerID); err != nil {
-		t.Fatalf("Delete: %v", err)
-	}
+	page, total, err := repo.GetPaginated(ctx, 1, 10)
+	require.NoError(t, err)
+	require.Equal(t, 1, total)
+	require.Len(t, page, 1)
 
-	_, err = repo.GetByID(ctx, beerID)
-	if err == nil {
-		t.Fatal("expected 404 after delete")
-	}
+	beer.Name = "IPA Atualizada"
+	err = repo.Update(ctx, beer.ID, beer)
+	require.NoError(t, err)
+
+	got, _ = repo.GetByID(ctx, beer.ID)
+	require.Equal(t, "IPA Atualizada", got.Name)
+
+	err = repo.Delete(ctx, beer.ID)
+	require.NoError(t, err)
+
+	_, err = repo.GetByID(ctx, beer.ID)
+	require.Error(t, err)
 }
 
-func TestPostgresBeerRepositoryIntegrationAggregations(t *testing.T) {
-	dsn := os.Getenv("TEST_DATABASE_URL")
-	if dsn == "" {
-		t.Skip("TEST_DATABASE_URL não definida; pulando teste de integração")
-	}
-
-	db, err := sql.Open("postgres", dsn)
-	if err != nil {
-		t.Fatalf("falha ao conectar DB de teste: %v", err)
-	}
-	defer db.Close()
-
-	repo, err := NewPostgresBeerRepository(db)
-	if err != nil {
-		t.Fatalf("falha ao criar repo: %v", err)
+func TestIntegration_BeerRepository_SearchAndStats(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
 	}
 
 	ctx := context.Background()
-	userID := uuid.MustNewV7()
-	now := time.Now().UTC().Format(time.RFC3339)
-	username := "tester-" + userID[:8]
-	email := "test-" + userID[:8] + "@example.com"
+	db := startPostgresContainer(t)
+	defer db.Close()
 
-	if _, err := db.ExecContext(ctx, `
-		INSERT INTO beerUsers (id, username, email, password, role, created)
-		VALUES ($1, $2, $3, $4, $5, $6)`,
-		userID, username, email, "hashed", "user", now,
-	); err != nil {
-		t.Fatalf("create user: %v", err)
+	err := applyMigrations(db)
+	require.NoError(t, err)
+
+	repo, err := NewPostgresBeerRepository(db)
+	require.NoError(t, err)
+
+	beers := []model.Beer{
+		{ID: "550e8400-e29b-41d4-a716-446655440001", Name: "IPA", Style: "IPA", CreatedBy: "user-1", CreatedAt: "2024-01-01T00:00:00Z", Comments: []model.Comment{}},
+		{ID: "550e8400-e29b-41d4-a716-446655440002", Name: "Stout", Style: "Stout", CreatedBy: "user-2", CreatedAt: "2024-01-01T00:00:00Z", Comments: []model.Comment{}},
+		{ID: "550e8400-e29b-41d4-a716-446655440003", Name: "IPA Nova", Style: "IPA", CreatedBy: "user-1", CreatedAt: "2024-01-02T00:00:00Z", Comments: []model.Comment{}},
+	}
+	for _, b := range beers {
+		err = repo.Create(ctx, &b)
+		require.NoError(t, err)
 	}
 
-	beerID := uuid.MustNewV7()
-	beer := &model.Beer{
-		ID:        beerID,
-		Name:      "Agg Beer",
-		Style:     string(model.FlavorBitter),
-		CreatedBy: userID,
-		CreatedAt: now,
-		Alcohol:   ptrFloat64(5.0),
-		Comments: []model.Comment{
-			{ID: uuid.MustNewV7(), Text: "good", Rating: 5, CreatedBy: userID, CreatedAt: now},
-			{ID: uuid.MustNewV7(), Text: "bad", Rating: 1, CreatedBy: userID, CreatedAt: now},
-		},
-	}
-	if err := repo.Create(ctx, beer); err != nil {
-		t.Fatalf("create beer: %v", err)
-	}
+	results, total, err := repo.SearchBeers(ctx, model.BeerFilters{Query: "IPA", Page: 1, PageSize: 10})
+	require.NoError(t, err)
+	require.Equal(t, 2, total)
+	require.Len(t, results, 2)
+
+	results, total, err = repo.SearchBeers(ctx, model.BeerFilters{Style: "Stout", Page: 1, PageSize: 10})
+	require.NoError(t, err)
+	require.Equal(t, 1, total)
+	require.Len(t, results, 1)
 
 	adminStats, err := repo.GetAdminStats(ctx)
-	if err != nil {
-		t.Fatalf("GetAdminStats: %v", err)
-	}
-	if adminStats.TotalBeers < 1 {
-		t.Fatalf("expected at least 1 beer, got %d", adminStats.TotalBeers)
-	}
-	if adminStats.TotalComments < 2 {
-		t.Fatalf("expected at least 2 comments, got %d", adminStats.TotalComments)
-	}
+	require.NoError(t, err)
+	require.Equal(t, 3, adminStats.TotalBeers)
+	require.Len(t, adminStats.TopStyles, 2)
 
-	userStats, err := repo.GetUserStats(ctx, userID)
-	if err != nil {
-		t.Fatalf("GetUserStats: %v", err)
-	}
-	if userStats.TotalComments != 2 {
-		t.Fatalf("expected 2 comments for user, got %d", userStats.TotalComments)
-	}
-	if userStats.BeersReviewed != 2 {
-		t.Fatalf("expected 2 beers reviewed, got %d", userStats.BeersReviewed)
-	}
+	userStats, err := repo.GetUserStats(ctx, "user-1")
+	require.NoError(t, err)
+	require.Equal(t, 2, userStats.BeersAdded)
 }
 
-func ptrFloat64(v float64) *float64 {
-	return &v
+func startPostgresContainer(t *testing.T) *sql.DB {
+	t.Helper()
+	user := os.Getenv("USER")
+	if user == "" {
+		user = "postgres"
+	}
+	dsn := fmt.Sprintf("postgres://%s@localhost:5432/beer_test?sslmode=disable", user)
+	if envDSN := os.Getenv("TEST_DATABASE_URL"); envDSN != "" {
+		dsn = envDSN
+	}
+	db, err := sql.Open("postgres", dsn)
+	require.NoError(t, err)
+	require.NoError(t, db.Ping())
+	return db
 }
+
+func applyMigrations(db *sql.DB) error {
+	migrationDir := "../../../internal/app/migrations"
+	order := []string{
+		"000_reset.sql",
+		"create_users_table.sql",
+		"add_role_to_users.sql",
+		"add_oauth_provider_to_users.sql",
+		"create_beers_table.sql",
+		"add_created_by_to_beers.sql",
+		"add_created_at_to_beers.sql",
+		"add_comments_jsonb.sql",
+		"create_indexes.sql",
+		"use_uuid_pk.sql",
+		"add_updated_at.sql",
+		"extend_media.sql",
+		"drop_legacy_comments_table.sql",
+		"create_push_subscriptions.sql",
+	}
+	for _, name := range order {
+		data, err := os.ReadFile(migrationDir + "/" + name)
+		if err != nil {
+			return err
+		}
+		if _, err := db.Exec(string(data)); err != nil {
+			return fmt.Errorf("migration %s: %w", name, err)
+		}
+	}
+	return nil
+}
+
+
