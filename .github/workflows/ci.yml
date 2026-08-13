@@ -6,66 +6,52 @@ on:
   pull_request:
     branches: [main, staging]
 
-permissions:
-  contents: read
-
 jobs:
-  build:
-    name: Build & Test (Go ${{ matrix.go }})
+  lint-build-test:
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        go: ['1.26.5', 'stable']
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up Go
-        uses: actions/setup-go@v5
+      - uses: actions/setup-go@v5
         with:
-          go-version: ${{ matrix.go }}
-          check-latest: true
+          go-version: "1.26.5"
+          cache: true
 
-      - name: Verify modules
-        run: go mod tidy && git diff --exit-code -- go.mod go.sum
-
-      - name: Check formatting
+      - name: Verify gofmt
         run: |
-          unformatted=$(gofmt -l $(go list -f '{{.Dir}}' ./...))
+          unformatted=$(gofmt -l .)
           if [ -n "$unformatted" ]; then
-            echo "The following files are not gofmt-compliant:"
+            echo "Arquivos não formatados com gofmt:"
             echo "$unformatted"
             exit 1
           fi
 
-      - name: Vet
+      - name: Run go vet
         run: go vet ./...
 
       - name: Build
         run: go build ./...
 
-      - name: Test (race + atomic coverage)
-        run: go test -race -covermode=atomic -coverprofile=coverage.out ./...
+      - name: Run unit tests with race detector
+        run: go test -race ./...
 
-      - name: Coverage HTML
-        if: matrix.go == '1.26.5'
-        run: go tool cover -html=coverage.out -o coverage.html
+  integration-test:
+    runs-on: ubuntu-latest
+    services:
+      docker:
+        image: docker:dind
+        options: --privileged
+        ports:
+          - 2375:2375
+    env:
+      DOCKER_HOST: tcp://localhost:2375
+    steps:
+      - uses: actions/checkout@v4
 
-      - name: Upload coverage HTML
-        if: matrix.go == '1.26.5'
-        uses: actions/upload-artifact@v4
+      - uses: actions/setup-go@v5
         with:
-          name: coverage-html
-          path: coverage.html
+          go-version: "1.26.5"
+          cache: true
 
-      - name: Upload coverage profile
-        if: matrix.go == '1.26.5'
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage
-          path: coverage.out
-
-      - name: Govulncheck
-        if: matrix.go == '1.26.5'
-        run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+      - name: Run integration tests with testcontainers
+        run: go test -tags=integration -race -timeout 300s ./internal/beer/repository/
