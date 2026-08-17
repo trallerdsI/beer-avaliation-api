@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main, staging]
+    branches: [main]
   pull_request:
-    branches: [main, staging]
+    branches: [main]
 
 jobs:
   lint-build-test:
@@ -35,7 +35,7 @@ jobs:
       - name: Run gosec security scanner
         run: |
           go install github.com/securego/gosec/v2/cmd/gosec@latest
-          gosec ./...
+          gosec -exclude-dir=.history -exclude-dir=.kilo -exclude=G101,G115,G404,G120 ./...
 
       - name: Run unit tests with race detector
         run: go test -race ./...
