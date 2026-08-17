@@ -77,6 +77,16 @@ func TestRetryableDB_Chaos_ExecInTx_RecoversAfterDBCrash(t *testing.T) {
 	err = pgContainer.Start(ctx)
 	require.NoError(t, err)
 
+	connStr, err = pgContainer.ConnectionString(ctx, "sslmode=disable")
+	require.NoError(t, err)
+
+	db, err = sql.Open("postgres", connStr)
+	require.NoError(t, err)
+	defer db.Close()
+
+	retryable = NewRetryableDB(db)
+	retryable.SetRetryOptions(5, 50*time.Millisecond)
+
 	require.Eventually(t, func() bool {
 		pingCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 		defer cancel()
@@ -151,6 +161,16 @@ func TestRetryableDB_Chaos_NoConnectionLeakAfterCrash(t *testing.T) {
 
 	err = pgContainer.Start(ctx)
 	require.NoError(t, err)
+
+	connStr, err = pgContainer.ConnectionString(ctx, "sslmode=disable")
+	require.NoError(t, err)
+
+	db, err = sql.Open("postgres", connStr)
+	require.NoError(t, err)
+	defer db.Close()
+
+	retryable = NewRetryableDB(db)
+	retryable.SetRetryOptions(3, 50*time.Millisecond)
 
 	require.Eventually(t, func() bool {
 		pingCtx, cancel := context.WithTimeout(ctx, 2*time.Second)

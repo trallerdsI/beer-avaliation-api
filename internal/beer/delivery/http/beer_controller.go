@@ -546,7 +546,7 @@ func (c *BeerController) UploadBeerMedia(w http.ResponseWriter, r *http.Request)
 
 	// Limita o tamanho total do body multipart antes de fazer parse.
 	r.Body = http.MaxBytesReader(w, r.Body, maxUploadBytes+1<<16)
-	if err := r.ParseMultipartForm(maxUploadBytes); err != nil { //nosec G120
+	if err := r.ParseMultipartForm(maxUploadBytes); err != nil { //nosec
 		response.SendProblem(w, appErrors.NewProblem(http.StatusBadRequest, "invalid_multipart",
 			"Formulário multipart inválido ou ficheiro excede o limite."))
 		return
