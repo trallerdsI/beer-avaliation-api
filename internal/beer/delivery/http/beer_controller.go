@@ -526,9 +526,9 @@ func (c *BeerController) GetEnums(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(payload)
 }
 
-// maxUploadBytes limita o tamanho do ficheiro de mídia (10MB) para evitar DoS
+// maxUploadBytes limita o tamanho do ficheiro de mídia (5MB) para evitar DoS
 // de memória no upload (RFC 7578). Imagens comprimidas raramente passam disso.
-const maxUploadBytes = 10 << 20
+const maxUploadBytes = 5 << 20
 
 // UploadBeerMedia recebe uma imagem via multipart/form-data (RFC 7578), valida
 // o binário por magic bytes (não só extensão), faz upload para o object storage
@@ -570,6 +570,12 @@ func (c *BeerController) UploadBeerMedia(w http.ResponseWriter, r *http.Request)
 	if err != nil {
 		response.SendProblem(w, appErrors.NewProblem(http.StatusUnsupportedMediaType, "unsupported_media",
 			"Apenas imagens JPEG, PNG ou WebP são aceites."))
+		return
+	}
+
+	if err := validateImageDimensions(data, contentType); err != nil {
+		response.SendProblem(w, appErrors.NewProblem(http.StatusUnprocessableEntity, "dimensions_exceeded",
+			"A imagem excede o limite máximo de 4096x4096 pixels."))
 		return
 	}
 
