@@ -82,4 +82,4 @@ jobs:
           cache: true
 
       - name: Run chaos tests with testcontainers
-        run: go test -race -timeout 600s ./pkg/database/
+        run: go test -race -timeout 180s ./pkg/database/

@@ -7,8 +7,7 @@ info:
     Conformidade: RFC 7807 (Problem Details), RFC 9111 (ETag/Cache),
     RFC 7578 (multipart upload), RFC 6749 (OAuth2/OIDC), RFC 9562 (UUIDv7).
 
-servers:
-  - url: https://beer-avaliation-api.vercel.app
+servers: []
 
 security:
   - bearerAuth: []

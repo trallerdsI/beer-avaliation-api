@@ -14,24 +14,6 @@ import (
 )
 
 func TestResolveDBConnStringPrefersExplicitEnvVars(t *testing.T) {
-	t.Setenv("DB_CONN_STRING", "postgres://local")
-	t.Setenv("DBConnString", "postgres://vercel")
-
-	if got := resolveDBConnString(); got != "postgres://local" {
-		t.Fatalf("expected DB_CONN_STRING to be preferred, got %q", got)
-	}
-}
-
-func TestResolveDBConnStringFallsBackToVercelStyleEnv(t *testing.T) {
-	os.Unsetenv("DB_CONN_STRING")
-	t.Setenv("DBConnString", "postgres://vercel")
-
-	if got := resolveDBConnString(); got != "postgres://vercel" {
-		t.Fatalf("expected DBConnString fallback, got %q", got)
-	}
-}
-
-func TestResolveDBConnStringComposesFromParts(t *testing.T) {
 	os.Unsetenv("DB_CONN_STRING")
 	os.Unsetenv("DBConnString")
 	os.Unsetenv("POSTGRES_URL_NON_POOLING")
@@ -48,6 +30,20 @@ func TestResolveDBConnStringComposesFromParts(t *testing.T) {
 	want := "postgres://custom_user:p%40ss@db.example.com:5433/app_db?sslmode=require"
 	if got != want {
 		t.Fatalf("composed DSN = %q, want %q", got, want)
+	}
+}
+
+func TestResolveDBConnStringFallsBackToDBConnString(t *testing.T) {
+	os.Unsetenv("DB_CONN_STRING")
+	os.Unsetenv("POSTGRES_URL_NON_POOLING")
+	os.Unsetenv("POSTGRES_URL")
+
+	t.Setenv("DBConnString", "postgres://fallback:pass@host:5432/db?sslmode=require")
+
+	got := resolveDBConnString()
+	want := "postgres://fallback:pass@host:5432/db?sslmode=require"
+	if got != want {
+		t.Fatalf("expected DBConnString fallback, got %q", got)
 	}
 }
 

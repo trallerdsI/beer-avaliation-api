@@ -11,8 +11,7 @@ import (
 //
 // Omitte rel="next" na última página (page*pageSize >= total). Inclui rel="last"
 // sempre que haja mais de uma página. As URLs são absolutas (RFC 8288 §3.2),
-// construídas a partir do host da requisição com scheme https (ambiente
-// Vercel/Produção); em dev http pode ser aceite, mas o padrão é https.
+// construídas a partir do host da requisição com scheme https (produção);
 //
 // O cabeçalho não afeta o ETag por conteúdo (RFC 9111): este já incorpora page/
 // total no body, logo páginas distintas têm ETags distintos naturalmente.

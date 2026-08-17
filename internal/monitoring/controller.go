@@ -263,7 +263,7 @@ func (c *MonitoringController) LivenessProbe(w http.ResponseWriter, r *http.Requ
 // @Failure 503 {object} errors.Problem
 // @Router /readyz [get]
 func (c *MonitoringController) ReadinessProbe(w http.ResponseWriter, r *http.Request) {
-	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
 
 	dbStatus := c.checkDatabaseHealth(ctx)

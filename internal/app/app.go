@@ -178,6 +178,7 @@ func newModerator() moderation.Moderator {
 		}
 		slog.Warn("falha ao criar OpenAI Moderator; usando Noop", "err", err)
 	}
+	slog.Warn("OPENAI_API_KEY não configurada; API rodando com NoopModerator (modo permissivo)")
 	return moderation.NewNoopModerator()
 }
 
@@ -304,7 +305,7 @@ func maxIdleConns() int {
 // cada arranque (DROP + CREATE). Controlado por DB_RESET_SCHEMA (default true).
 // Enquanto o banco for descartável (sem front dependiente nem dados definitivos)
 // isto mantém o esquema sempre sincronizado com as migrations. Quando o banco
-// passar a ter dados reais, basta definir DB_RESET_SCHEMA=false na Vercel para
+// passar a ter dados reais, basta definir DB_RESET_SCHEMA=false para
 // desativar o reset destrutivo e passar a aplicar apenas as migrations
 // incrementais (idempotentes com IF NOT EXISTS / IF EXISTS).
 func resetSchemaEnabled() bool {
@@ -408,24 +409,6 @@ func openapiSpecHandler() http.HandlerFunc {
 		w.Header().Set("Content-Type", "application/yaml")
 		_, _ = w.Write(specData)
 	}
-}
-
-func InitializeVercelHandler() http.Handler {
-	// No Vercel o handler default de slog pode não capturar Info/Warn
-	// conforme esperado; forçamos JSON para stdout com nível Debug para que o
-	// arranque (resolução de DSN, erro de ping) seja sempre visível nos logs.
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug}))
-	slog.SetDefault(logger)
-
-	db, err := InitDBFromEnv()
-	if err != nil {
-		// Error (e nao Warn) para garantir visibilidade no Vercel.
-		slog.Error("vercel bootstrap: banco indisponível; rotas de dados retornarão 503", "err", err)
-	} else {
-		slog.Info("vercel bootstrap: banco inicializado com sucesso")
-	}
-
-	return BuildRouterWithDBErr(db, err, logger)
 }
 
 func newDBMetricsHandler(db *database.RetryableDB, next http.Handler) http.Handler {

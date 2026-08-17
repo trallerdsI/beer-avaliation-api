@@ -7,9 +7,7 @@ import (
 
 // TestEmbeddedMigrationsPresent valida que todos os ficheiros de migracao
 // listados em migrateDB estao efetivamente embutidos (go:embed) e leveis em
-// runtime. Isto evita o erro de 'migration file not found' que ocorria na
-// Vercel quando o embed apontava para internal/app/migrations/ (correto) mas
-// os ficheiros estavam na raiz migrations/ (fora do alcance do embed).
+// runtime.
 func TestEmbeddedMigrationsPresent(t *testing.T) {
 	want := []string{
 		"create_users_table.sql",

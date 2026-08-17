@@ -45,12 +45,11 @@ beer-review-app/
 │   ├── storage/         # Supabase Storage upload adapter (RFC 7578)
 │   ├── uuid/            # UUIDv7 generator (stdlib, RFC 9562)
 │   ├── validation/      # Custom validators (flavor, aroma, color, etc.)
-│   └── vercel/          # IPv4 DSN resolution for Supabase pooler
 ```
 
 ## Tech Stack
 
-- **Go 1.26.5** — `net/http` native routing (`log/slog`); **zero-dependency** where possible (UUIDv7 stdlib)
+- **Go 1.26.6** — `net/http` native routing (`log/slog`); **zero-dependency** where possible (UUIDv7 stdlib)
 - **PostgreSQL 17+ (Supabase)** com `lib/pq`
 - **golang-jwt/v5** — HS256 session tokens + RS256 OIDC validation (exceção à regra Zero-Dependency)
 - **go-playground/validator/v10** — validação de domínio
@@ -86,10 +85,10 @@ A API segue estes RFCs (12 de 12 implementados):
 
 ## Decisões de Arquitetura
 
-- **Banco como fonte de verdade:** `DB_RESET_SCHEMA=true` (default) recria o esquema a cada arranque via `internal/app/migrations/000_reset.sql`. Defina `false`/`0`/`no` na Vercel para preservar dados e aplicar apenas migrations incrementais.
+- **Banco como fonte de verdade:** `DB_RESET_SCHEMA=true` (default) recria o esquema a cada arranque via `internal/app/migrations/000_reset.sql`. Defina `false`/`0`/`no` para preservar dados e aplicar apenas migrations incrementais.
 - **Login social (RFC 6749 / OIDC):** `POST /api/v1/users/oauth` recebe `provider` + `id_token` (JWT RS256 do Google/Apple). Valida contra JWKS do IdP com cache e faz upsert em `beerUsers` por `(provider, external_sub)`. Devolve JWT HS256 de sessão.
-- **Migrações embutidas (`go:embed`):** os ficheiros SQL vivem em `internal/app/migrations/` e são embutidos no binário (necessário na Vercel, onde o filesystem do lambda não tem a pasta).
-- **Ligação ao Supabase na Vercel (IPv4):** o host direto `db.<ref>.supabase.co` só resolve para IPv6. A resolução de DSN reescreve automaticamente para o pooler IPv4 `aws-0-<region>.pooler.supabase.com` e força `default_query_exec_mode=simple_protocol`.
+- **Migrações embutidas (`go:embed`):** os ficheiros SQL vivem em `internal/app/migrations/` e são embutidos no binário.
+- **Ligação ao Supabase (IPv4):** o host direto `db.<ref>.supabase.co` só resolve para IPv6. A resolução de DSN reescreve automaticamente para o pooler IPv4 `aws-0-<region>.pooler.supabase.com` e força `default_query_exec_mode=simple_protocol`.
 - **RLS no Supabase:** `enable_rls.sql` ativa Row Level Security em `beers`/`beerUsers`. O backend usa service-role key (bypass RLS).
 - **SSE sobre WebSocket (RFC 6455):** tempo real via Server-Sent Events (multiplexa sobre HTTP/2). WebSocket só para chat bidirecional privado, fora de escopo.
 - **Rate Limiter:** cleanup lazy de chaves expiradas no map `hits` para evitar OOM em serverless.
@@ -149,44 +148,44 @@ go test -bench=. -benchmem ./...
 
 ## Deployment
 
-### Vercel + Supabase (serverless)
+### Docker (container-based)
 
-A aplicação corre na Vercel como função serverless e usa PostgreSQL no Supabase.
+A aplicação é empacotada como imagem Docker distroless (`gcr.io/distroless/static-debian12`).
 
-#### 1. Banco (Supabase)
+#### Build
 
-- Projeto Supabase (Free Plan ok). O esquema é recriado automaticamente a cada
-  deploy via `migrateDB` (migrações embutidas em `internal/app/migrations/`).
-- Recomenda-se ativar **Deployment Protection** nas definições da Vercel para
-  não expor os endpoints publicamente.
+```bash
+docker build -t beer-avaliation-api .
+```
 
-#### 2. Variáveis de ambiente na Vercel
+#### Run
 
-A integração Supabase injeta automaticamente `POSTGRES_URL`,
-`POSTGRES_URL_NON_POOLING`, `POSTGRES_HOST`, `POSTGRES_USER`, `POSTGRES_PASSWORD`,
-`POSTGRES_DATABASE`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, etc.
+```bash
+docker run -p 8082:8082 \
+  -e DB_CONN_STRING="postgres://user:pass@host:5432/db?sslmode=require" \
+  -e JWT_SECRET="your-secret" \
+  beer-avaliation-api
+```
 
-A resolução de DSN (`internal/app/app.go`) prioriza o **pooler IPv4** e força
-`sslmode=require` + `default_query_exec_mode=simple_protocol`. Não defina
-`DBConnString` apontando ao host direto (`db.<ref>.supabase.co`) — ele só
-resolve para IPv6 e falha no Vercel.
+#### Variáveis de ambiente
 
-Variáveis adicionais:
+| Nome | Descrição |
+|------|-----------|
+| `DB_CONN_STRING` | DSN completo do PostgreSQL (preferred) |
+| `JWT_SECRET` | Secreto para assinar/validar JWT (obrigatório) |
+| `DB_RESET_SCHEMA` | `true`/`false` para controlar reset do schema no arranque |
+| `CORS_ALLOWED_ORIGINS` | Origens permitidas |
+| `SUPABASE_URL` | URL do projeto Supabase (para storage) |
+| `SUPABASE_SERVICE_ROLE_KEY` | Service role key do Supabase Storage |
+| `OPENAI_API_KEY` | API key para moderação de conteúdo (opcional) |
 
-- `JWT_SECRET` — secreto para assinar/validar JWT (obrigatório)
-- `DB_RESET_SCHEMA` — `true`/`false` para controlar reset do schema no arranque
-- `CORS_ALLOWED_ORIGINS` — origens permitidas (ex.: `https://app.vercel.app`)
-- `CORS_ALLOWED_REGEX` — regex opcional para subdomínios
-- `SUPABASE_STORAGE_BUCKET` — bucket de imagens (ex.: `beer-media`)
-- `OAUTH_GOOGLE_AUDIENCE` — client ID da app Flutter no Google. Defina para ativar login Google.
-- `OAUTH_GOOGLE_JWKS_URL` — **opcional**; default `https://www.googleapis.com/oauth2/v3/certs`.
-- `OAUTH_APPLE_AUDIENCE` — Service ID da app no Apple Developer. Defina para ativar login Apple.
-- `OAUTH_APPLE_JWKS_URL` — **opcional**; default `https://appleid.apple.com/auth/keys`.
+#### Deploy em produção
 
-#### 3. Deploy
+O `Dockerfile` produz uma imagem estática otimizada. Exemplos de plataformas:
 
-O repo já inclui [vercel.json](vercel.json) e [api/index.go](api/index.go).
-Ao importar na Vercel, as rotas `/api/*` são servidas pelo handler Go.
+- **Render:** `Dockerfile` como build method
+- **Fly.io:** `fly launch` com o Dockerfile existente
+- **AWS App Runner:** deploy direto do repositório
 
 ## License
 
