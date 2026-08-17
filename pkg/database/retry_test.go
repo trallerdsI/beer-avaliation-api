@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"database/sql/driver"
 	"errors"
+	"os"
 	"testing"
 	"time"
 
@@ -146,9 +147,37 @@ func TestNewRetryableDB(t *testing.T) {
 	var nilDB *sql.DB
 	retryable := NewRetryableDB(nilDB)
 	assert.NotNil(t, retryable)
-	assert.Equal(t, 3, retryable.maxRetries)
-	assert.Equal(t, 100*time.Millisecond, retryable.baseDelay)
+	assert.Equal(t, defaultMaxRetries, retryable.maxRetries)
+	assert.Equal(t, defaultBaseDelay, retryable.baseDelay)
 	assert.Equal(t, nilDB, retryable.DB)
+}
+
+func TestNewRetryableDB_FromEnv(t *testing.T) {
+	os.Setenv(envMaxRetries, "5")
+	os.Setenv(envBaseDelay, "250ms")
+	defer func() {
+		os.Unsetenv(envMaxRetries)
+		os.Unsetenv(envBaseDelay)
+	}()
+
+	var nilDB *sql.DB
+	retryable := NewRetryableDB(nilDB)
+	assert.Equal(t, 5, retryable.maxRetries)
+	assert.Equal(t, 250*time.Millisecond, retryable.baseDelay)
+}
+
+func TestNewRetryableDB_InvalidEnvFallsBackToDefaults(t *testing.T) {
+	os.Setenv(envMaxRetries, "not-a-number")
+	os.Setenv(envBaseDelay, "invalid")
+	defer func() {
+		os.Unsetenv(envMaxRetries)
+		os.Unsetenv(envBaseDelay)
+	}()
+
+	var nilDB *sql.DB
+	retryable := NewRetryableDB(nilDB)
+	assert.Equal(t, defaultMaxRetries, retryable.maxRetries)
+	assert.Equal(t, defaultBaseDelay, retryable.baseDelay)
 }
 
 func TestRetryableDB_SetRetryOptions(t *testing.T) {

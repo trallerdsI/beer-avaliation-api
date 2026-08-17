@@ -187,7 +187,6 @@ func InitDB(dsn string) (*database.RetryableDB, error) {
 	db.SetConnMaxLifetime(5 * time.Minute)
 
 	retryable := database.NewRetryableDB(db)
-	retryable.SetRetryOptions(3, 100*time.Millisecond)
 
 	if appMetrics.IsServerlessRuntime() {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

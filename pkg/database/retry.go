@@ -6,8 +6,17 @@ import (
 	"database/sql/driver"
 	"math"
 	"math/rand"
+	"os"
+	"strconv"
 	"strings"
 	"time"
+)
+
+const (
+	defaultMaxRetries = 3
+	defaultBaseDelay  = 100 * time.Millisecond
+	envMaxRetries     = "RETRY_MAX_RETRIES"
+	envBaseDelay      = "RETRY_BASE_DELAY"
 )
 
 // RetryableDB wraps *sql.DB with retry/backoff for transient errors.
@@ -17,12 +26,29 @@ type RetryableDB struct {
 	baseDelay  time.Duration
 }
 
-// NewRetryableDB creates a RetryableDB with default settings.
+// NewRetryableDB creates a RetryableDB reading configuration from environment
+// variables when available. It falls back to safe defaults when the variables
+// are unset or malformed, so it never panics during startup.
 func NewRetryableDB(db *sql.DB) *RetryableDB {
-	return &RetryableDB{
+	r := &RetryableDB{
 		DB:         db,
-		maxRetries: 3,
-		baseDelay:  100 * time.Millisecond,
+		maxRetries: defaultMaxRetries,
+		baseDelay:  defaultBaseDelay,
+	}
+	r.loadEnvConfig()
+	return r
+}
+
+func (r *RetryableDB) loadEnvConfig() {
+	if v := os.Getenv(envMaxRetries); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+			r.maxRetries = n
+		}
+	}
+	if v := os.Getenv(envBaseDelay); v != "" {
+		if d, err := time.ParseDuration(v); err == nil && d >= 0 {
+			r.baseDelay = d
+		}
 	}
 }
 
