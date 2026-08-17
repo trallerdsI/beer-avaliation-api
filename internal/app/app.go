@@ -19,7 +19,7 @@ import (
 
 	beerHttp "beer-review-app/internal/beer/delivery/http"
 	beerRepository "beer-review-app/internal/beer/repository"
-	beerUsecase "beer-review-app/internal/beer/usecase"
+	beerUsecasePkg "beer-review-app/internal/beer/usecase"
 	monitoring "beer-review-app/internal/monitoring"
 	userHttp "beer-review-app/internal/user/delivery/http"
 	userRepository "beer-review-app/internal/user/repository"
@@ -52,7 +52,12 @@ func BuildRouterWithDBErr(db *sql.DB, dbErr error, logger *slog.Logger) http.Han
 	userRepo := newUserRepo(db)
 
 	eventHub := realtime.NewHub(64)
-	beerUsecase := beerUsecase.NewBeerUsecase(beerRepo, eventHub)
+	beerUsecase := beerUsecasePkg.NewBeerUsecase(beerRepo, eventHub)
+	moderationRepo, err := beerRepository.NewPostgresModerationRepository(db)
+	if err != nil {
+		slog.Error("falha ao inicializar repositório de moderação", "err", err)
+	}
+	moderationUsecase := beerUsecasePkg.NewModerationUsecase(moderationRepo, moderationRepo, beerRepo)
 	userUsecase := userUsecase.NewUserUsecase(userRepo)
 
 	var uploader storage.Uploader
@@ -69,6 +74,7 @@ func BuildRouterWithDBErr(db *sql.DB, dbErr error, logger *slog.Logger) http.Han
 	beerController := beerHttp.NewBeerController(beerUsecase, logger, uploader)
 	userController := userHttp.NewUserController(userUsecase, logger)
 	monitoringController := monitoring.NewMonitoringController(beerUsecase, beerRepo, userRepo, logger, db, dbErr)
+	moderationController := beerHttp.NewModerationController(moderationUsecase, logger)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/v1/beers/enums", beerController.GetEnums)
@@ -82,6 +88,15 @@ func BuildRouterWithDBErr(db *sql.DB, dbErr error, logger *slog.Logger) http.Han
 	mux.HandleFunc("POST /api/v1/beers/{id}/comments", middleware.Auth(beerController.AddComment))
 	mux.HandleFunc("DELETE /api/v1/beers/{id}/comments/{commentId}", middleware.Auth(beerController.DeleteComment))
 	mux.HandleFunc("POST /api/v1/beers/{id}/comments/{commentId}/like", middleware.Auth(beerController.LikeComment))
+	mux.HandleFunc("POST /api/v1/beers/{id}/reports", middleware.Auth(func(w http.ResponseWriter, r *http.Request) {
+		middleware.NewRateLimitMiddleware(5, time.Minute)(http.HandlerFunc(moderationController.ReportBeer)).ServeHTTP(w, r)
+	}))
+	mux.HandleFunc("POST /api/v1/beers/{id}/deletion-requests", middleware.Auth(moderationController.RequestDeletion))
+	mux.HandleFunc("GET /api/v1/beers/{id}/reports", middleware.Auth(moderationController.GetBeerReports))
+	mux.HandleFunc("GET /api/v1/admin/reports", middleware.RequireAdmin(moderationController.GetReports))
+	mux.HandleFunc("PATCH /api/v1/admin/reports/{id}", middleware.RequireAdmin(moderationController.ResolveReport))
+	mux.HandleFunc("GET /api/v1/admin/deletion-requests", middleware.RequireAdmin(moderationController.GetDeletionRequests))
+	mux.HandleFunc("PATCH /api/v1/admin/deletion-requests/{id}", middleware.RequireAdmin(moderationController.ResolveDeletionRequest))
 	mux.HandleFunc("GET /api/v1/feed", beerController.GetHomeFeed)
 	mux.HandleFunc("GET /api/v1/stream", realtime.SSEHandler(eventHub))
 	mux.HandleFunc("POST /api/v1/users/register", userController.Register)
