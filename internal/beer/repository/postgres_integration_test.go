@@ -12,6 +12,7 @@ import (
 	userModel "beer-review-app/internal/user/model"
 	"beer-review-app/pkg/uuid"
 
+	_ "github.com/lib/pq"
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/modules/postgres"

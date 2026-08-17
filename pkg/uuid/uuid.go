@@ -26,8 +26,8 @@ func NewV7() (string, error) {
 	var uuid [16]byte
 
 	// unix_ts_ms (48 bits) nos primeiros 6 bytes.
-	binary.BigEndian.PutUint16(uuid[0:2], uint16(now>>32))
-	binary.BigEndian.PutUint32(uuid[2:6], uint32(now))
+	binary.BigEndian.PutUint16(uuid[0:2], uint16(now>>32)) //nosec G115
+	binary.BigEndian.PutUint32(uuid[2:6], uint32(now))     //nosec G115
 
 	// rand_a (12 bits) + rand_b (62 bits) preenchem o resto.
 	uuid[6] = 0x70 | (randBytes[0] & 0x0f) // bits 4-7 = version 0b0111 (v7)

@@ -113,7 +113,7 @@ func retryExec[T any](ctx context.Context, maxRetries int, baseDelay time.Durati
 		lastErr = err
 
 		if attempt < maxRetries {
-			jitter := time.Duration(rand.Int63n(int64(baseDelay)))
+			jitter := time.Duration(rand.Int63n(int64(baseDelay))) //nosec G404
 			delay := time.Duration(math.Pow(2, float64(attempt)))*baseDelay + jitter
 
 			select {

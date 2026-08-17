@@ -18,6 +18,7 @@ import (
 	"beer-review-app/pkg/moderation"
 	"beer-review-app/pkg/realtime"
 
+	_ "github.com/lib/pq"
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/modules/postgres"

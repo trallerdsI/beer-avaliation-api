@@ -11,6 +11,7 @@ import (
 
 	"beer-review-app/internal/beer/model"
 
+	_ "github.com/lib/pq"
 	"github.com/stretchr/testify/require"
 )
 

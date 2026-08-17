@@ -13,6 +13,7 @@ import (
 	"beer-review-app/pkg/middleware"
 	"beer-review-app/pkg/uuid"
 
+	_ "github.com/lib/pq"
 	"github.com/stretchr/testify/require"
 )
 

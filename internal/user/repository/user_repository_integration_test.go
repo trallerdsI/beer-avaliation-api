@@ -9,6 +9,8 @@ import (
 
 	"beer-review-app/internal/user/model"
 	"beer-review-app/pkg/uuid"
+
+	_ "github.com/lib/pq"
 )
 
 func TestPostgresUserRepositoryIntegration(t *testing.T) {

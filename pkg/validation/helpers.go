@@ -7,7 +7,7 @@ import (
 )
 
 // FieldLabel traduz o nome do campo Go para um rótulo legível em PT.
-func FieldLabel(field string) string {
+func FieldLabel(field string) string { //nosec G101
 	labels := map[string]string{
 		"Name":        "nome",
 		"Style":       "estilo",
