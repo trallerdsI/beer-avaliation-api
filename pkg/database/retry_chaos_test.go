@@ -140,15 +140,21 @@ func TestRetryableDB_Chaos_NoConnectionLeakAfterCrash(t *testing.T) {
 	require.NoError(t, err)
 	defer db.Close()
 
-	_, err = db.ExecContext(ctx, `
+	require.Eventually(t, func() bool {
+		pingCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+		return db.PingContext(pingCtx) == nil
+	}, 30*time.Second, 500*time.Millisecond, "database did not become reachable")
+
+	retryable := NewRetryableDB(db)
+	retryable.SetRetryOptions(3, 50*time.Millisecond)
+
+	_, err = retryable.ExecContext(ctx, `
 		CREATE TABLE IF NOT EXISTS leak_test_table (
 			id TEXT PRIMARY KEY
 		)
 	`)
 	require.NoError(t, err)
-
-	retryable := NewRetryableDB(db)
-	retryable.SetRetryOptions(3, 50*time.Millisecond)
 
 	timeout := 10 * time.Second
 	err = pgContainer.Stop(ctx, &timeout)
@@ -161,16 +167,6 @@ func TestRetryableDB_Chaos_NoConnectionLeakAfterCrash(t *testing.T) {
 
 	err = pgContainer.Start(ctx)
 	require.NoError(t, err)
-
-	connStr, err = pgContainer.ConnectionString(ctx, "sslmode=disable")
-	require.NoError(t, err)
-
-	db, err = sql.Open("postgres", connStr)
-	require.NoError(t, err)
-	defer db.Close()
-
-	retryable = NewRetryableDB(db)
-	retryable.SetRetryOptions(3, 50*time.Millisecond)
 
 	require.Eventually(t, func() bool {
 		pingCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
