@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"testing"
+	"time"
 
 	"beer-review-app/internal/beer/model"
 	"beer-review-app/internal/beer/repository"
@@ -18,6 +19,9 @@ import (
 	"beer-review-app/pkg/realtime"
 
 	"github.com/stretchr/testify/require"
+	"github.com/testcontainers/testcontainers-go"
+	"github.com/testcontainers/testcontainers-go/modules/postgres"
+	"github.com/testcontainers/testcontainers-go/wait"
 )
 
 func TestIntegration_BeerUsecase_RBAC(t *testing.T) {
@@ -118,15 +122,30 @@ func TestIntegration_BeerUsecase_RBAC(t *testing.T) {
 
 func startPostgresContainer(t *testing.T) *sql.DB {
 	t.Helper()
-	user := os.Getenv("USER")
-	if user == "" {
-		user = "postgres"
-	}
-	dsn := fmt.Sprintf("postgres://%s@localhost:5432/beer_test?sslmode=disable", user)
+
 	if envDSN := os.Getenv("TEST_DATABASE_URL"); envDSN != "" {
-		dsn = envDSN
+		db, err := sql.Open("postgres", envDSN)
+		require.NoError(t, err)
+		require.NoError(t, db.Ping())
+		return db
 	}
-	db, err := sql.Open("postgres", dsn)
+
+	ctx := context.Background()
+	pgContainer, err := postgres.Run(ctx,
+		"postgres:16-alpine",
+		postgres.WithDatabase("beer_test"),
+		postgres.WithUsername("postgres"),
+		postgres.WithPassword("postgres"),
+		testcontainers.WithWaitStrategy(
+			wait.ForLog("database system is ready to accept connections").WithStartupTimeout(60*time.Second)),
+	)
+	require.NoError(t, err)
+	t.Cleanup(func() { pgContainer.Terminate(ctx) })
+
+	connStr, err := pgContainer.ConnectionString(ctx, "sslmode=disable")
+	require.NoError(t, err)
+
+	db, err := sql.Open("postgres", connStr)
 	require.NoError(t, err)
 	require.NoError(t, db.Ping())
 	return db

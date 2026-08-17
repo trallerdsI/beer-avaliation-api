@@ -39,7 +39,7 @@ var (
 // — bloqueando http, javascript:, data: e outros, mitigando XSS/SSRF.
 func newValidator() *validator.Validate {
 	v := validator.New()
-	v.RegisterValidation("https_url", func(fl validator.FieldLevel) bool {
+	_ = v.RegisterValidation("https_url", func(fl validator.FieldLevel) bool {
 		val := fl.Field().String()
 		if val == "" {
 			return true // vazio é permitido (campo opcional)
@@ -52,26 +52,26 @@ func newValidator() *validator.Validate {
 	})
 	// Enums do domínio: o backend é a fonte da verdade. O app consome os
 	// valores via GET /api/v1/enums e não envia entrada livre.
-	v.RegisterValidation("flavor", func(fl validator.FieldLevel) bool {
+	_ = v.RegisterValidation("flavor", func(fl validator.FieldLevel) bool {
 		return model.IsFlavor(model.Flavor(fl.Field().String()))
 	})
-	v.RegisterValidation("aroma", func(fl validator.FieldLevel) bool {
+	_ = v.RegisterValidation("aroma", func(fl validator.FieldLevel) bool {
 		return model.IsAroma(model.Aroma(fl.Field().String()))
 	})
-	v.RegisterValidation("color", func(fl validator.FieldLevel) bool {
+	_ = v.RegisterValidation("color", func(fl validator.FieldLevel) bool {
 		return model.IsColor(model.Color(fl.Field().String()))
 	})
-	v.RegisterValidation("body", func(fl validator.FieldLevel) bool {
+	_ = v.RegisterValidation("body", func(fl validator.FieldLevel) bool {
 		return model.IsBody(model.Body(fl.Field().String()))
 	})
-	v.RegisterValidation("carbonation", func(fl validator.FieldLevel) bool {
+	_ = v.RegisterValidation("carbonation", func(fl validator.FieldLevel) bool {
 		return model.IsCarbonation(model.Carbonation(fl.Field().String()))
 	})
-	v.RegisterValidation("finish", func(fl validator.FieldLevel) bool {
+	_ = v.RegisterValidation("finish", func(fl validator.FieldLevel) bool {
 		return model.IsFinish(model.Finish(fl.Field().String()))
 	})
 	// media_type: allowlist de Content-Types aceites no upload (RFC 7578).
-	v.RegisterValidation("media_type", func(fl validator.FieldLevel) bool {
+	_ = v.RegisterValidation("media_type", func(fl validator.FieldLevel) bool {
 		switch fl.Field().String() {
 		case "image/jpeg", "image/png", "image/webp":
 			return true

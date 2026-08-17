@@ -12,6 +12,8 @@ import (
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
 	"github.com/testcontainers/testcontainers-go/wait"
+
+	_ "github.com/lib/pq"
 )
 
 func TestRetryableDB_Chaos_ExecInTx_RecoversAfterDBCrash(t *testing.T) {

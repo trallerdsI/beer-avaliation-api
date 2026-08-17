@@ -206,7 +206,7 @@ func InitDB(dsn string) (*database.RetryableDB, error) {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		if err = db.PingContext(ctx); err != nil {
-			db.Close()
+			_ = db.Close()
 			slog.Error("falha no ping do banco de dados (serverless)", "err", err, "conn", maskPassword(dsn))
 			return nil, fmt.Errorf("banco de dados indisponível: %w", err)
 		}
@@ -222,14 +222,14 @@ func InitDB(dsn string) (*database.RetryableDB, error) {
 			time.Sleep(2 * time.Second)
 		}
 		if retries == 0 {
-			db.Close()
+			_ = db.Close()
 			slog.Error("banco de dados indisponível após várias tentativas", "conn", maskPassword(dsn))
 			return nil, fmt.Errorf("banco de dados não está disponível após várias tentativas")
 		}
 	}
 
 	if err := migrateDB(db); err != nil {
-		db.Close()
+		_ = db.Close()
 		return nil, fmt.Errorf("migrations failed: %w", err)
 	}
 	return retryable, nil
