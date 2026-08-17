@@ -19,7 +19,7 @@ FROM gcr.io/distroless/static-debian12
 WORKDIR /root/
 
 COPY --from=builder /app/main /root/main
-COPY --from=builder /app/migrations/ /root/migrations/
+COPY --from=builder /app/internal/app/migrations/ /root/migrations/
 
 # Porta exposta (mantém 8082 para alinhar com SERVER_PORT padrão)
 EXPOSE 8082

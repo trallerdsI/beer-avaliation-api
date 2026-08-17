@@ -86,7 +86,7 @@ A API segue estes RFCs (12 de 12 implementados):
 
 ## Decisões de Arquitetura
 
-- **Banco como fonte de verdade:** `DB_RESET_SCHEMA=true` (default) recria o esquema a cada arranque via `migrations/000_reset.sql`. Defina `false`/`0`/`no` na Vercel para preservar dados e aplicar apenas migrations incrementais.
+- **Banco como fonte de verdade:** `DB_RESET_SCHEMA=true` (default) recria o esquema a cada arranque via `internal/app/migrations/000_reset.sql`. Defina `false`/`0`/`no` na Vercel para preservar dados e aplicar apenas migrations incrementais.
 - **Login social (RFC 6749 / OIDC):** `POST /api/v1/users/oauth` recebe `provider` + `id_token` (JWT RS256 do Google/Apple). Valida contra JWKS do IdP com cache e faz upsert em `beerUsers` por `(provider, external_sub)`. Devolve JWT HS256 de sessão.
 - **Migrações embutidas (`go:embed`):** os ficheiros SQL vivem em `internal/app/migrations/` e são embutidos no binário (necessário na Vercel, onde o filesystem do lambda não tem a pasta).
 - **Ligação ao Supabase na Vercel (IPv4):** o host direto `db.<ref>.supabase.co` só resolve para IPv6. A resolução de DSN reescreve automaticamente para o pooler IPv4 `aws-0-<region>.pooler.supabase.com` e força `default_query_exec_mode=simple_protocol`.

@@ -36,6 +36,18 @@ var embeddedMigrations embed.FS
 //go:embed openapi.yaml
 var embeddedOpenAPI embed.FS
 
+// eventHub is the package-level SSE hub instance. It is created during router
+// initialization and shut down gracefully on server termination.
+var eventHub *realtime.Hub
+
+// Shutdown gracefully stops the SSE hub, closing all active subscriber channels
+// before the HTTP server stops accepting connections.
+func Shutdown() {
+	if eventHub != nil {
+		eventHub.Shutdown()
+	}
+}
+
 func BuildRouter(db *sql.DB, logger *slog.Logger) http.Handler {
 	return BuildRouterWithDBErr(db, nil, logger)
 }
@@ -51,7 +63,7 @@ func BuildRouterWithDBErr(db *sql.DB, dbErr error, logger *slog.Logger) http.Han
 	beerRepo := newBeerRepo(db)
 	userRepo := newUserRepo(db)
 
-	eventHub := realtime.NewHub(64)
+	eventHub = realtime.NewHub(64)
 	beerUsecase := beerUsecasePkg.NewBeerUsecase(beerRepo, eventHub)
 	moderationRepo, err := beerRepository.NewPostgresModerationRepository(db)
 	if err != nil {
@@ -308,6 +320,7 @@ func migrateDB(db *sql.DB) error {
 		"migrations/create_push_subscriptions.sql",
 		"migrations/add_beer_reports.sql",
 		"migrations/add_beer_deletion_requests.sql",
+		"migrations/add_moderation_rls.sql",
 	)
 
 	for _, file := range sqlFiles {

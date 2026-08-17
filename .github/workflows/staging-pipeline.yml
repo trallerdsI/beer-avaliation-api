@@ -68,11 +68,11 @@ jobs:
       - name: List migration files
         run: |
           echo "Arquivos de migração encontrados:"
-          ls -la migrations/*.sql || true
+          ls -la internal/app/migrations/*.sql || true
 
       - name: Check migration SQL syntax
         run: |
-          for f in migrations/*.sql; do
+          for f in internal/app/migrations/*.sql; do
             echo "Validando: $f"
             # Verifica que o arquivo não está vazio
             test -s "$f" || (echo "ERRO: $f está vazio" && exit 1)

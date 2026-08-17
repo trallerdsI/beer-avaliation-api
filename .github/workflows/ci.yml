@@ -54,4 +54,4 @@ jobs:
           cache: true
 
       - name: Run integration tests with testcontainers
-        run: go test -tags=integration -race -timeout 300s ./internal/beer/repository/
+        run: go test -tags=integration -race -timeout 300s ./...

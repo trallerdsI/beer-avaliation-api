@@ -158,6 +158,7 @@ func applyMigrations(db *sql.DB) error {
 		"create_push_subscriptions.sql",
 		"add_beer_reports.sql",
 		"add_beer_deletion_requests.sql",
+		"add_moderation_rls.sql",
 	}
 	for _, name := range order {
 		data, err := os.ReadFile(migrationDir + "/" + name)
