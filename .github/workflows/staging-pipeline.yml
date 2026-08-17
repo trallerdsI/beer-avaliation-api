@@ -142,7 +142,7 @@ jobs:
 
             git fetch origin
             git checkout staging
-            git reset --hard origin/${{ github.ref_name }}
+            git reset --hard HEAD
 
             echo "Parando containers antigos..."
             docker compose -f docker-compose.staging.yaml down || true
@@ -192,12 +192,7 @@ jobs:
       - name: Health check
         run: |
           URL="${{ vars.STAGING_API_URL || 'http://localhost:8082' }}"
-          curl -sf "$URL/api/v1/health" | python3 -c "
-import sys, json
-d = json.load(sys.stdin)
-assert d['status'] == 'healthy', f\"Status: {d['status']}\"
-print('Health:', d['status'], '| Uptime:', d['uptime'])
-"
+          curl -sf "$URL/api/v1/health" | python3 -c "import sys, json; d=json.load(sys.stdin); assert d['status']=='healthy', 'Status: '+str(d['status']); print('Health:', d['status'], '| Uptime:', d['uptime'])"
 
       - name: Public endpoints
         run: |
@@ -248,8 +243,7 @@ print('Health:', d['status'], '| Uptime:', d['uptime'])
             set -e
             cd /opt/staging/beer-avaliation-api
             echo "Revertendo para commit anterior..."
-            git revert --no-commit HEAD || true
-            git checkout HEAD~1 -- .
+            git reset --hard HEAD~1 || true
             docker compose -f docker-compose.staging.yaml up -d --force-recreate
             echo "Rollback concluído."
           REMOTE_EOF
