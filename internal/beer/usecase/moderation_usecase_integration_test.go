@@ -8,10 +8,10 @@ import (
 
 	"beer-review-app/internal/beer/model"
 	"beer-review-app/internal/beer/repository"
+	usermodel "beer-review-app/internal/user/model"
 	appErrors "beer-review-app/pkg/errors"
 	"beer-review-app/pkg/middleware"
 	"beer-review-app/pkg/uuid"
-	usermodel "beer-review-app/internal/user/model"
 
 	"github.com/stretchr/testify/require"
 )
@@ -50,18 +50,18 @@ func TestIntegration_ModerationUsecase_Reports(t *testing.T) {
 	uc := NewModerationUsecase(moderationRepo, beerRepo)
 
 	beer := model.Beer{
-		ID: uuid.MustNewV7(),
-		Name: "Moderation Test Beer",
-		Style: "IPA",
-		Taste: model.FlavorBitter,
-		Aroma: model.AromaCitrus,
-		Color: model.ColorAmber,
-		Body: model.BodyMedium,
+		ID:          uuid.MustNewV7(),
+		Name:        "Moderation Test Beer",
+		Style:       "IPA",
+		Taste:       model.FlavorBitter,
+		Aroma:       model.AromaCitrus,
+		Color:       model.ColorAmber,
+		Body:        model.BodyMedium,
 		Carbonation: model.CarbonationMedium,
-		Finish: model.FinishDry,
-		CreatedBy: "00000000-0000-0000-0000-000000000001",
-		CreatedAt: "2024-01-01T00:00:00Z",
-		Comments: []model.Comment{},
+		Finish:      model.FinishDry,
+		CreatedBy:   "00000000-0000-0000-0000-000000000001",
+		CreatedAt:   "2024-01-01T00:00:00Z",
+		Comments:    []model.Comment{},
 	}
 	err = beerRepo.Create(ctx, &beer)
 	require.NoError(t, err)
@@ -128,18 +128,18 @@ func TestIntegration_ModerationUsecase_DeletionRequests(t *testing.T) {
 	uc := NewModerationUsecase(moderationRepo, beerRepo)
 
 	beer := model.Beer{
-		ID: uuid.MustNewV7(),
-		Name: "Deletion Test Beer",
-		Style: "Stout",
-		Taste: model.FlavorBitter,
-		Aroma: model.AromaMalty,
-		Color: model.ColorDark,
-		Body: model.BodyFull,
+		ID:          uuid.MustNewV7(),
+		Name:        "Deletion Test Beer",
+		Style:       "Stout",
+		Taste:       model.FlavorBitter,
+		Aroma:       model.AromaMalty,
+		Color:       model.ColorDark,
+		Body:        model.BodyFull,
 		Carbonation: model.CarbonationLow,
-		Finish: model.FinishDry,
-		CreatedBy: "00000000-0000-0000-0000-000000000001",
-		CreatedAt: "2024-01-01T00:00:00Z",
-		Comments: []model.Comment{},
+		Finish:      model.FinishDry,
+		CreatedBy:   "00000000-0000-0000-0000-000000000001",
+		CreatedAt:   "2024-01-01T00:00:00Z",
+		Comments:    []model.Comment{},
 	}
 	err = beerRepo.Create(ctx, &beer)
 	require.NoError(t, err)

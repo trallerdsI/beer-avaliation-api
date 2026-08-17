@@ -171,5 +171,3 @@ func applyMigrations(db *sql.DB) error {
 	}
 	return nil
 }
-
-

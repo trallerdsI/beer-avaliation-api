@@ -43,17 +43,17 @@ func TestIntegration_BeerUsecase_RBAC(t *testing.T) {
 	intruderCtx := middleware.WithUserID(ctx, "intruder-2", "")
 
 	beer := model.Beer{
-		Name: "RBAC Beer",
-		Style: "IPA",
-		Taste: model.FlavorBitter,
-		Aroma: model.AromaCitrus,
-		Color: model.ColorAmber,
-		Body: model.BodyMedium,
+		Name:        "RBAC Beer",
+		Style:       "IPA",
+		Taste:       model.FlavorBitter,
+		Aroma:       model.AromaCitrus,
+		Color:       model.ColorAmber,
+		Body:        model.BodyMedium,
 		Carbonation: model.CarbonationMedium,
-		Finish: model.FinishDry,
-		CreatedBy: "user-1",
-		CreatedAt: "2024-01-01T00:00:00Z",
-		Comments: []model.Comment{},
+		Finish:      model.FinishDry,
+		CreatedBy:   "user-1",
+		CreatedAt:   "2024-01-01T00:00:00Z",
+		Comments:    []model.Comment{},
 	}
 
 	err = uc.Create(ownerCtx, &beer)
@@ -72,17 +72,17 @@ func TestIntegration_BeerUsecase_RBAC(t *testing.T) {
 	})
 
 	beer2 := model.Beer{
-		Name: "RBAC Beer 2",
-		Style: "Stout",
-		Taste: model.FlavorBitter,
-		Aroma: model.AromaMalty,
-		Color: model.ColorDark,
-		Body: model.BodyFull,
+		Name:        "RBAC Beer 2",
+		Style:       "Stout",
+		Taste:       model.FlavorBitter,
+		Aroma:       model.AromaMalty,
+		Color:       model.ColorDark,
+		Body:        model.BodyFull,
 		Carbonation: model.CarbonationLow,
-		Finish: model.FinishDry,
-		CreatedBy: "user-1",
-		CreatedAt: "2024-01-01T00:00:00Z",
-		Comments: []model.Comment{},
+		Finish:      model.FinishDry,
+		CreatedBy:   "user-1",
+		CreatedAt:   "2024-01-01T00:00:00Z",
+		Comments:    []model.Comment{},
 	}
 	err = uc.Create(ownerCtx, &beer2)
 	require.NoError(t, err)

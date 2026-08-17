@@ -10,8 +10,8 @@ import (
 
 	"beer-review-app/internal/beer/model"
 	"beer-review-app/internal/beer/repository"
-	userRepository "beer-review-app/internal/user/repository"
 	usermodel "beer-review-app/internal/user/model"
+	userRepository "beer-review-app/internal/user/repository"
 	"beer-review-app/pkg/errors"
 	"beer-review-app/pkg/middleware"
 )

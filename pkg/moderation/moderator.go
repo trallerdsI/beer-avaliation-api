@@ -26,9 +26,9 @@ type OpenAIResponse struct {
 	ID      string `json:"id"`
 	Model   string `json:"model"`
 	Results []struct {
-		Flagged         bool                `json:"flagged"`
-		Categories      map[string]bool     `json:"categories"`
-		CategoryScores  map[string]float64 `json:"category_scores"`
+		Flagged        bool               `json:"flagged"`
+		Categories     map[string]bool    `json:"categories"`
+		CategoryScores map[string]float64 `json:"category_scores"`
 	} `json:"results"`
 }
 

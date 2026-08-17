@@ -17,8 +17,6 @@ import (
 	_ "github.com/lib/pq"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
-	"beer-review-app/pkg/database"
-	"beer-review-app/pkg/moderation"
 	beerHttp "beer-review-app/internal/beer/delivery/http"
 	beerRepository "beer-review-app/internal/beer/repository"
 	beerUsecasePkg "beer-review-app/internal/beer/usecase"
@@ -26,8 +24,10 @@ import (
 	userHttp "beer-review-app/internal/user/delivery/http"
 	userRepository "beer-review-app/internal/user/repository"
 	userUsecase "beer-review-app/internal/user/usecase"
+	"beer-review-app/pkg/database"
 	appMetrics "beer-review-app/pkg/metrics"
 	middleware "beer-review-app/pkg/middleware"
+	"beer-review-app/pkg/moderation"
 	"beer-review-app/pkg/realtime"
 	"beer-review-app/pkg/storage"
 )

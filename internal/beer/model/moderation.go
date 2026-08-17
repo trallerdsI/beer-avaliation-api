@@ -15,48 +15,48 @@ const (
 )
 
 const (
-	ReportReasonDuplicate             ReportReason = "DUPLICATE"
-	ReportReasonInappropriateContent  ReportReason = "INAPPROPRIATE_CONTENT"
-	ReportReasonIncorrectInformation  ReportReason = "INCORRECT_INFORMATION"
-	ReportReasonOutOfProduction       ReportReason = "OUT_OF_PRODUCTION"
-	ReportReasonOther                 ReportReason = "OTHER"
+	ReportReasonDuplicate            ReportReason = "DUPLICATE"
+	ReportReasonInappropriateContent ReportReason = "INAPPROPRIATE_CONTENT"
+	ReportReasonIncorrectInformation ReportReason = "INCORRECT_INFORMATION"
+	ReportReasonOutOfProduction      ReportReason = "OUT_OF_PRODUCTION"
+	ReportReasonOther                ReportReason = "OTHER"
 )
 
 const (
-	DeletionStatusPending   DeletionStatus = "pending"
-	DeletionStatusApproved  DeletionStatus = "approved"
-	DeletionStatusRejected  DeletionStatus = "rejected"
+	DeletionStatusPending  DeletionStatus = "pending"
+	DeletionStatusApproved DeletionStatus = "approved"
+	DeletionStatusRejected DeletionStatus = "rejected"
 )
 
 const (
-	DeletionReasonDuplicate     DeletionReason = "DUPLICATE"
-	DeletionReasonInappropriate DeletionReason = "INAPPROPRIATE_CONTENT"
+	DeletionReasonDuplicate       DeletionReason = "DUPLICATE"
+	DeletionReasonInappropriate   DeletionReason = "INAPPROPRIATE_CONTENT"
 	DeletionReasonOutOfProduction DeletionReason = "OUT_OF_PRODUCTION"
-	DeletionReasonOther         DeletionReason = "OTHER"
+	DeletionReasonOther           DeletionReason = "OTHER"
 )
 
 type BeerReport struct {
-	ID          string      `json:"id"`
-	BeerID      string      `json:"beerId"`
-	UserID      string      `json:"userId"`
+	ID          string       `json:"id"`
+	BeerID      string       `json:"beerId"`
+	UserID      string       `json:"userId"`
 	Reason      ReportReason `json:"reason"`
-	Description string      `json:"description"`
+	Description string       `json:"description"`
 	Status      ReportStatus `json:"status"`
-	CreatedAt   time.Time   `json:"createdAt"`
-	ResolvedBy  *string     `json:"resolvedBy,omitempty"`
-	ResolvedAt  *time.Time  `json:"resolvedAt,omitempty"`
+	CreatedAt   time.Time    `json:"createdAt"`
+	ResolvedBy  *string      `json:"resolvedBy,omitempty"`
+	ResolvedAt  *time.Time   `json:"resolvedAt,omitempty"`
 }
 
 type BeerDeletionRequest struct {
-	ID        string            `json:"id"`
-	BeerID    string            `json:"beerId"`
-	UserID    string            `json:"userId"`
-	Reason    DeletionReason    `json:"reason"`
-	Details   string            `json:"details"`
-	Status    DeletionStatus    `json:"status"`
-	CreatedAt time.Time         `json:"createdAt"`
-	ReviewedBy *string          `json:"reviewedBy,omitempty"`
-	ReviewedAt *time.Time       `json:"reviewedAt,omitempty"`
+	ID         string         `json:"id"`
+	BeerID     string         `json:"beerId"`
+	UserID     string         `json:"userId"`
+	Reason     DeletionReason `json:"reason"`
+	Details    string         `json:"details"`
+	Status     DeletionStatus `json:"status"`
+	CreatedAt  time.Time      `json:"createdAt"`
+	ReviewedBy *string        `json:"reviewedBy,omitempty"`
+	ReviewedAt *time.Time     `json:"reviewedAt,omitempty"`
 }
 
 type BeerReportInput struct {
@@ -70,17 +70,17 @@ type BeerDeletionRequestInput struct {
 }
 
 type ReportFilter struct {
-	BeerID  string
-	UserID  string
-	Status  ReportStatus
-	Limit   int
-	Offset  int
+	BeerID string
+	UserID string
+	Status ReportStatus
+	Limit  int
+	Offset int
 }
 
 type DeletionRequestFilter struct {
-	BeerID  string
-	UserID  string
-	Status  DeletionStatus
-	Limit   int
-	Offset  int
+	BeerID string
+	UserID string
+	Status DeletionStatus
+	Limit  int
+	Offset int
 }

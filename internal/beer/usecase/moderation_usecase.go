@@ -87,7 +87,7 @@ func (u *moderationUsecase) ResolveDeletionRequest(ctx context.Context, reqID, s
 
 	return u.moderationRepo.ExecInTx(ctx, func(ctx context.Context, txRepo repository.ModerationRepository, txBeerRepo repository.BeerRepository) error {
 		requests, _, err := txRepo.GetDeletionRequests(ctx, model.DeletionRequestFilter{
-			Limit: 1,
+			Limit:  1,
 			Offset: 0,
 		})
 		if err != nil {

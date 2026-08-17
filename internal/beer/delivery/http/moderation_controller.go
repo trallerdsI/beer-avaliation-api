@@ -1,8 +1,8 @@
 package http
 
 import (
-	stdErrors "errors"
 	"encoding/json"
+	stdErrors "errors"
 	"log/slog"
 	"net/http"
 	"strconv"

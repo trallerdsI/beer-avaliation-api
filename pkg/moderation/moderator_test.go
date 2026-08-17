@@ -68,7 +68,7 @@ func TestOpenAIModerator_IsContentAllowed_FailOpenOnTimeout(t *testing.T) {
 	}))
 	defer server.Close()
 
-	mod, err := NewOpenAIModerator("test-key", WithBaseURL(server.URL), WithHTTPClient(&http.Client{Timeout: 300*time.Millisecond}))
+	mod, err := NewOpenAIModerator("test-key", WithBaseURL(server.URL), WithHTTPClient(&http.Client{Timeout: 300 * time.Millisecond}))
 	require.NoError(t, err)
 
 	allowed, err := mod.IsContentAllowed(context.Background(), "texto qualquer")
