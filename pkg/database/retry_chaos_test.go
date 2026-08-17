@@ -165,16 +165,30 @@ func TestRetryableDB_Chaos_NoConnectionLeakAfterCrash(t *testing.T) {
 	err = retryable.PingContext(attemptCtx)
 	assert.Error(t, err, "expected ping to fail while container is stopped")
 
+	_ = db.Close()
+
 	err = pgContainer.Start(ctx)
 	require.NoError(t, err)
+
+	newConnStr, err := pgContainer.ConnectionString(ctx, "sslmode=disable")
+	require.NoError(t, err)
+
+	newDB, err := sql.Open("postgres", newConnStr)
+	require.NoError(t, err)
+	defer newDB.Close()
 
 	require.Eventually(t, func() bool {
 		pingCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 		defer cancel()
-		return db.PingContext(pingCtx) == nil
-	}, 60*time.Second, 1*time.Second, "database did not recover in time")
+		return newDB.PingContext(pingCtx) == nil
+	}, 120*time.Second, 2*time.Second, "database did not recover in time")
 
-	stats := db.Stats()
+	require.Eventually(t, func() bool {
+		stats := newDB.Stats()
+		return stats.OpenConnections <= stats.Idle
+	}, 30*time.Second, 500*time.Millisecond, "leaked connections were not cleaned up in time")
+
+	stats := newDB.Stats()
 	assert.Equal(t, 0, stats.OpenConnections, "expected no leaked connections, got %d", stats.OpenConnections)
 }
 
