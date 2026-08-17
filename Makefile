@@ -1,4 +1,4 @@
-.PHONY: all lint fmt test ci reset-db staging-up staging-down staging-logs staging-smoke staging-anonymize
+.PHONY: all lint fmt test ci reset-db coverage
 
 all: lint fmt test
 
@@ -29,48 +29,3 @@ reset-db:
 
 coverage:
 	go tool cover -html=coverage.out
-
-# ---------------------------------------------------------------------------
-# STAGING
-# ---------------------------------------------------------------------------
-
-staging-up:
-	@if [ ! -f .env.staging ]; then \
-		echo "ERRO: .env.staging não encontrado. Copie .env.staging.example primeiro."; \
-		exit 1; \
-	fi
-	docker compose -f docker-compose.staging.yaml up -d
-	@echo "Aguardando PostgreSQL ficar saudável..."
-	@docker compose -f docker-compose.staging.yaml exec -T postgres pg_isready -U $$(grep STAGING_DB_USER .env.staging | cut -d= -f2 || echo postgres)
-
-staging-down:
-	docker compose -f docker-compose.staging.yaml down
-
-staging-logs:
-	docker compose -f docker-compose.staging.yaml logs -f api
-
-staging-logs-db:
-	docker compose -f docker-compose.staging.yaml logs -f postgres
-
-staging-smoke:
-	@URL=$$(grep STAGING_API_URL .env.staging 2>/dev/null | cut -d= -f2 || echo http://localhost:8082); \
-	./scripts/smoke_tests.sh $$URL
-
-staging-anonymize:
-	./scripts/anonymize_data.sh
-
-staging-reset:
-	@echo "ATENÇÃO: Isto irá apagar todos os dados do banco de staging!"
-	@read -p "Confirmar? [yes/N] " ans; \
-	if [ "$$ans" = "yes" ]; then \
-		CONN=$$(grep STAGING_DB_CONN_STRING .env.staging 2>/dev/null | cut -d= -f2); \
-		if [ -n "$$CONN" ]; then \
-			psql "$$CONN" -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"; \
-			echo "Schema resetado."; \
-		else \
-			echo "STAGING_DB_CONN_STRING não configurado em .env.staging"; \
-			exit 1; \
-		fi \
-	else \
-		echo "Abortado."; \
-	fi

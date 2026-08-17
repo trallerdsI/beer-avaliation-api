@@ -1,0 +1,12 @@
+.git
+.history
+.env*
+coverage.*
+logs/
+ignore
+*.db
+Makefile
+docs/
+lib/
+pkg/vercel/
+openapi.yaml
