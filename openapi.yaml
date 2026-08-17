@@ -32,6 +32,48 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
 
+  /healthz:
+    get:
+      summary: Liveness probe
+      security: []
+      responses:
+        '200':
+          description: Process is alive
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+  /readyz:
+    get:
+      summary: Readiness probe
+      security: []
+      responses:
+        '200':
+          description: Service is ready to receive traffic
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+        '503':
+          description: Service not ready (database unreachable)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+
+  /metrics:
+    get:
+      summary: Prometheus metrics
+      security: []
+      responses:
+        '200':
+          description: Prometheus metrics text format
+          content:
+            text/plain:
+              schema:
+                type: string
+
   /api/v1/stats:
     get:
       summary: Public statistics (total beers + top styles)

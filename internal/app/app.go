@@ -124,10 +124,12 @@ func BuildRouterWithDBErr(db *sql.DB, dbErr error, logger *slog.Logger) http.Han
 	mux.HandleFunc("GET /api/v1/admin/stats", middleware.RequireAdmin(monitoringController.GetAdminStats))
 	mux.HandleFunc("GET /api/v1/users/me/stats", middleware.Auth(monitoringController.GetUserStats))
 	mux.HandleFunc("GET /api/v1/health", monitoringController.HealthCheck)
+	mux.HandleFunc("GET /healthz", monitoringController.LivenessProbe)
+	mux.HandleFunc("GET /readyz", monitoringController.ReadinessProbe)
 	mux.HandleFunc("GET /docs", docsHandler())
 	mux.HandleFunc("GET /docs/openapi.yaml", openapiSpecHandler())
 	if !appMetrics.IsServerlessRuntime() {
-		mux.Handle("GET /metrics", promhttp.Handler())
+		mux.Handle("GET /metrics", newDBMetricsHandler(db, promhttp.Handler()))
 	}
 
 	handler := http.Handler(mux)
@@ -407,4 +409,13 @@ func InitializeVercelHandler() http.Handler {
 	}
 
 	return BuildRouterWithDBErr(db, err, logger)
+}
+
+func newDBMetricsHandler(db *sql.DB, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if db != nil {
+			appMetrics.RecordDBStats(db.Stats())
+		}
+		next.ServeHTTP(w, r)
+	})
 }

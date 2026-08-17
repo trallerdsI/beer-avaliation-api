@@ -2,6 +2,7 @@ package metrics
 
 import (
 	"context"
+	"database/sql"
 	"log/slog"
 	"os"
 
@@ -56,4 +57,31 @@ func RecordMetrics(ctx context.Context, pattern, method, status string, duration
 // IsServerlessRuntime devolve true quando a aplicação corre em modo serverless.
 func IsServerlessRuntime() bool {
 	return os.Getenv("VERCEL") != "" || os.Getenv("NOW_REGION") != "" || os.Getenv("AWS_LAMBDA_FUNCTION_NAME") != ""
+}
+
+var (
+	DBConnectionsOpen = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "go_sql_db_connections_open",
+		Help: "Current number of open connections in the pool",
+	})
+	DBConnectionsInUse = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "go_sql_db_connections_in_use",
+		Help: "Current number of connections actively executing queries",
+	})
+	DBConnectionsIdle = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "go_sql_db_connections_idle",
+		Help: "Current number of idle connections in the pool",
+	})
+	DBWaitCount = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "go_sql_db_wait_count_total",
+		Help: "Total number of requests that waited for a free connection",
+	})
+)
+
+// RecordDBStats updates Prometheus gauges/counters from database/sql stats.
+func RecordDBStats(stats sql.DBStats) {
+	DBConnectionsOpen.Set(float64(stats.OpenConnections))
+	DBConnectionsInUse.Set(float64(stats.InUse))
+	DBConnectionsIdle.Set(float64(stats.Idle))
+	DBWaitCount.Add(float64(stats.WaitCount))
 }

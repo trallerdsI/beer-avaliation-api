@@ -245,14 +245,43 @@ func (c *MonitoringController) GetUserStats(w http.ResponseWriter, r *http.Reque
 	response.SendResponse(w, http.StatusOK, resp)
 }
 
+// @Summary Liveness probe
+// @Description Returns 200 OK if the process is alive
+// @Produce json
+// @Success 200 {object} HealthResponse
+// @Router /healthz [get]
+func (c *MonitoringController) LivenessProbe(w http.ResponseWriter, r *http.Request) {
+	response.SendResponse(w, http.StatusOK, HealthResponse{
+		Status: "alive",
+	})
+}
+
+// @Summary Readiness probe
+// @Description Returns 200 OK if the app is ready to receive traffic (DB reachable)
+// @Produce json
+// @Success 200 {object} HealthResponse
+// @Failure 503 {object} errors.Problem
+// @Router /readyz [get]
+func (c *MonitoringController) ReadinessProbe(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+	defer cancel()
+
+	dbStatus := c.checkDatabaseHealth(ctx)
+	if dbStatus != "up" {
+		response.SendProblem(w, errors.NewProblem(http.StatusServiceUnavailable, "service_unavailable", "Database not ready"))
+		return
+	}
+
+	response.SendResponse(w, http.StatusOK, HealthResponse{
+		Status:       "ready",
+		Dependencies: map[string]string{"database": "up"},
+	})
+}
+
 func (c *MonitoringController) checkDatabaseHealth(ctx context.Context) string {
 	if c.db == nil {
-		// Sem ligação à BD (ex: falhou no arranque). O motivo real é exposto
-		// em dependencies.database_detail via c.dbErr.
 		return "down"
 	}
-	// Ping com timeout derivado do contexto da requisição: respeita cancelamento
-	// e evita bloqueio indefinido do endpoint de health (Defense-in-Depth).
 	if err := c.db.PingContext(ctx); err != nil {
 		c.logger.WarnContext(ctx, "database health check failed", "err", err)
 		return "down"
