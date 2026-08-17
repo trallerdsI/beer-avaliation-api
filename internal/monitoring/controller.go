@@ -2,7 +2,6 @@ package controller
 
 import (
 	"context"
-	"database/sql"
 	"log/slog"
 	"net/http"
 	"time"
@@ -10,6 +9,7 @@ import (
 	beerRepo "beer-review-app/internal/beer/repository"
 	"beer-review-app/internal/beer/usecase"
 	userRepo "beer-review-app/internal/user/repository"
+	"beer-review-app/pkg/database"
 	"beer-review-app/pkg/errors"
 	"beer-review-app/pkg/middleware"
 	"beer-review-app/pkg/response"
@@ -42,11 +42,11 @@ type MonitoringController struct {
 	userRepo    userRepo.UserRepository
 	logger      *slog.Logger
 	startTime   time.Time
-	db          *sql.DB // opcional: nil em runtime offline/serverless desativa o ping de DB
-	dbErr       error   // erro de inicialização da BD (ex: sem DB_CONN_STRING); exposto em /health
+	db          *database.RetryableDB
+	dbErr       error
 }
 
-func NewMonitoringController(bu usecase.BeerUsecase, beerRepo beerRepo.BeerRepository, userRepo userRepo.UserRepository, logger *slog.Logger, db *sql.DB, dbErr error) *MonitoringController {
+func NewMonitoringController(bu usecase.BeerUsecase, beerRepo beerRepo.BeerRepository, userRepo userRepo.UserRepository, logger *slog.Logger, db *database.RetryableDB, dbErr error) *MonitoringController {
 	if logger == nil {
 		logger = slog.Default()
 	}

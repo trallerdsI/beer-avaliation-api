@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"reflect"
 	"time"
 
 	"beer-review-app/internal/user/model"
@@ -39,14 +40,25 @@ type PostgresUserRepository struct {
 	db querier
 }
 
-func NewPostgresUserRepository(db *sql.DB) (UserRepository, error) {
-	if db == nil {
+func NewPostgresUserRepository(db querier) (UserRepository, error) {
+	if isNilQuerier(db) {
 		return nil, appErrors.NewUnavailableError()
 	}
-	if err := db.Ping(); err != nil {
+	if err := db.(interface{ Ping() error }).Ping(); err != nil {
 		return nil, appErrors.NewAppError(503, "user database unavailable", err)
 	}
 	return &PostgresUserRepository{db: db}, nil
+}
+
+func isNilQuerier(q querier) bool {
+	if q == nil {
+		return true
+	}
+	v := reflect.ValueOf(q)
+	if v.Kind() == reflect.Ptr || v.Kind() == reflect.Interface {
+		return v.IsNil()
+	}
+	return false
 }
 
 func (r *PostgresUserRepository) withTx(tx *sql.Tx) *PostgresUserRepository {

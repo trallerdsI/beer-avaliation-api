@@ -38,11 +38,11 @@ type PostgresModerationRepository struct {
 	db querier
 }
 
-func NewPostgresModerationRepository(db *sql.DB) (*PostgresModerationRepository, error) {
-	if db == nil {
+func NewPostgresModerationRepository(db querier) (*PostgresModerationRepository, error) {
+	if isNilQuerier(db) {
 		return nil, errors.NewUnavailableError()
 	}
-	if err := db.Ping(); err != nil {
+	if err := db.(interface{ Ping() error }).Ping(); err != nil {
 		return nil, errors.NewAppError(503, "moderation database unavailable", err)
 	}
 	return &PostgresModerationRepository{db: db}, nil
@@ -314,7 +314,11 @@ func (r *PostgresModerationRepository) ResolveDeletionRequest(ctx context.Contex
 }
 
 func (r *PostgresModerationRepository) ExecInTx(ctx context.Context, fn func(ctx context.Context, txRepo ModerationRepository, txBeerRepo BeerRepository) error) error {
-	tx, err := r.db.(*sql.DB).BeginTx(ctx, nil)
+	db, ok := r.db.(*sql.DB)
+	if !ok {
+		return errors.NewUnavailableError()
+	}
+	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}

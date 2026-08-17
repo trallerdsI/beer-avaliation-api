@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"reflect"
 	"strings"
 
 	"beer-review-app/internal/beer/model"
@@ -43,15 +44,26 @@ type PostgresBeerRepository struct {
 }
 
 // NewPostgresBeerRepository creates a new PostgreSQL beer repository.
-func NewPostgresBeerRepository(db *sql.DB) (*PostgresBeerRepository, error) {
-	if db == nil {
+func NewPostgresBeerRepository(db querier) (*PostgresBeerRepository, error) {
+	if isNilQuerier(db) {
 		return nil, errors.NewUnavailableError()
 	}
-	if err := db.Ping(); err != nil {
+	if err := db.(interface{ Ping() error }).Ping(); err != nil {
 		return nil, errors.NewAppError(503, "beer database unavailable", err)
 	}
 
 	return &PostgresBeerRepository{db: db}, nil
+}
+
+func isNilQuerier(q querier) bool {
+	if q == nil {
+		return true
+	}
+	v := reflect.ValueOf(q)
+	if v.Kind() == reflect.Ptr || v.Kind() == reflect.Interface {
+		return v.IsNil()
+	}
+	return false
 }
 
 func (r *PostgresBeerRepository) withTx(tx *sql.Tx) *PostgresBeerRepository {
@@ -528,13 +540,17 @@ func (r *PostgresBeerRepository) DeleteComment(ctx context.Context, id string, c
 }
 
 func (r *PostgresBeerRepository) ExecInTx(ctx context.Context, fn func(ctx context.Context, txRepo BeerRepository) error) error {
-	tx, err := r.db.(*sql.DB).BeginTx(ctx, nil)
+	db, ok := r.db.(*sql.DB)
+	if !ok {
+		return errors.NewUnavailableError()
+	}
+	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
 
-	txRepo := r.withTx(tx)
+	txRepo := &PostgresBeerRepository{db: tx}
 	if err := fn(ctx, txRepo); err != nil {
 		return err
 	}

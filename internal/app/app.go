@@ -17,6 +17,7 @@ import (
 	_ "github.com/lib/pq"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
+	"beer-review-app/pkg/database"
 	beerHttp "beer-review-app/internal/beer/delivery/http"
 	beerRepository "beer-review-app/internal/beer/repository"
 	beerUsecasePkg "beer-review-app/internal/beer/usecase"
@@ -48,11 +49,11 @@ func Shutdown() {
 	}
 }
 
-func BuildRouter(db *sql.DB, logger *slog.Logger) http.Handler {
+func BuildRouter(db *database.RetryableDB, logger *slog.Logger) http.Handler {
 	return BuildRouterWithDBErr(db, nil, logger)
 }
 
-func BuildRouterWithDBErr(db *sql.DB, dbErr error, logger *slog.Logger) http.Handler {
+func BuildRouterWithDBErr(db *database.RetryableDB, dbErr error, logger *slog.Logger) http.Handler {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -142,7 +143,7 @@ func BuildRouterWithDBErr(db *sql.DB, dbErr error, logger *slog.Logger) http.Han
 	return handler
 }
 
-func newBeerRepo(db *sql.DB) beerRepository.BeerRepository {
+func newBeerRepo(db *database.RetryableDB) beerRepository.BeerRepository {
 	if db == nil {
 		return nil
 	}
@@ -154,7 +155,7 @@ func newBeerRepo(db *sql.DB) beerRepository.BeerRepository {
 	return repo
 }
 
-func newUserRepo(db *sql.DB) userRepository.UserRepository {
+func newUserRepo(db *database.RetryableDB) userRepository.UserRepository {
 	if db == nil {
 		return nil
 	}
@@ -166,7 +167,7 @@ func newUserRepo(db *sql.DB) userRepository.UserRepository {
 	return repo
 }
 
-func InitDBFromEnv() (*sql.DB, error) {
+func InitDBFromEnv() (*database.RetryableDB, error) {
 	dsn := resolveDBConnString()
 	if dsn == "" {
 		return nil, fmt.Errorf("database connection string is not configured")
@@ -175,7 +176,7 @@ func InitDBFromEnv() (*sql.DB, error) {
 	return InitDB(dsn)
 }
 
-func InitDB(dsn string) (*sql.DB, error) {
+func InitDB(dsn string) (*database.RetryableDB, error) {
 	db, err := sql.Open("postgres", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("erro ao conectar com o banco de dados: %w", err)
@@ -184,6 +185,9 @@ func InitDB(dsn string) (*sql.DB, error) {
 	db.SetMaxOpenConns(maxOpenConns())
 	db.SetMaxIdleConns(maxIdleConns())
 	db.SetConnMaxLifetime(5 * time.Minute)
+
+	retryable := database.NewRetryableDB(db)
+	retryable.SetRetryOptions(3, 100*time.Millisecond)
 
 	if appMetrics.IsServerlessRuntime() {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -215,7 +219,7 @@ func InitDB(dsn string) (*sql.DB, error) {
 		db.Close()
 		return nil, fmt.Errorf("migrations failed: %w", err)
 	}
-	return db, nil
+	return retryable, nil
 }
 
 func maskPassword(connString string) string {
@@ -411,7 +415,7 @@ func InitializeVercelHandler() http.Handler {
 	return BuildRouterWithDBErr(db, err, logger)
 }
 
-func newDBMetricsHandler(db *sql.DB, next http.Handler) http.Handler {
+func newDBMetricsHandler(db *database.RetryableDB, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if db != nil {
 			appMetrics.RecordDBStats(db.Stats())

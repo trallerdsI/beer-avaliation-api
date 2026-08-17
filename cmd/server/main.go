@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"database/sql"
 	"log/slog"
 	"net/http"
 	"os"
@@ -11,6 +10,7 @@ import (
 	"time"
 
 	"beer-review-app/internal/app"
+	"beer-review-app/pkg/database"
 )
 
 func main() {
@@ -22,7 +22,7 @@ func main() {
 		serverPort = "8082"
 	}
 
-	var db *sql.DB
+	var db *database.RetryableDB
 	db, err := app.InitDBFromEnv()
 	if err != nil {
 		slog.Error("inicialização sem banco", "err", err)
