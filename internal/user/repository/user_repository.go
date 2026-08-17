@@ -26,10 +26,17 @@ type UserRepository interface {
 	DeletePushSubscription(ctx context.Context, id string) error
 	DeletePushSubscriptionByEndpoint(ctx context.Context, userID, endpoint string) error
 	GetMemberSince(ctx context.Context, userID string) (time.Time, error)
+	ExecInTx(ctx context.Context, fn func(ctx context.Context, txRepo UserRepository) error) error
+}
+
+type querier interface {
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
 }
 
 type PostgresUserRepository struct {
-	db *sql.DB
+	db querier
 }
 
 func NewPostgresUserRepository(db *sql.DB) (UserRepository, error) {
@@ -40,6 +47,10 @@ func NewPostgresUserRepository(db *sql.DB) (UserRepository, error) {
 		return nil, appErrors.NewAppError(503, "user database unavailable", err)
 	}
 	return &PostgresUserRepository{db: db}, nil
+}
+
+func (r *PostgresUserRepository) withTx(tx *sql.Tx) *PostgresUserRepository {
+	return &PostgresUserRepository{db: tx}
 }
 
 func (r *PostgresUserRepository) Create(ctx context.Context, user model.User) error {
@@ -346,4 +357,19 @@ func (r *PostgresUserRepository) DeletePushSubscriptionByEndpoint(ctx context.Co
 		return fmt.Errorf("push subscription not found")
 	}
 	return nil
+}
+
+func (r *PostgresUserRepository) ExecInTx(ctx context.Context, fn func(ctx context.Context, txRepo UserRepository) error) error {
+	tx, err := r.db.(*sql.DB).BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	txRepo := r.withTx(tx)
+	if err := fn(ctx, txRepo); err != nil {
+		return err
+	}
+
+	return tx.Commit()
 }

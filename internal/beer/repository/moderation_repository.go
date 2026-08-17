@@ -23,8 +23,19 @@ type DeletionRequestRepository interface {
 	ResolveDeletionRequest(ctx context.Context, reqID, status string, reviewedBy *string, reviewedAt time.Time) error
 }
 
+type ModerationRepository interface {
+	CreateReport(ctx context.Context, report *model.BeerReport) error
+	GetReportsByBeerID(ctx context.Context, beerID string, limit, offset int) ([]model.BeerReport, int, error)
+	GetReports(ctx context.Context, filter model.ReportFilter) ([]model.BeerReport, int, error)
+	ResolveReport(ctx context.Context, reportID, status string, resolvedBy *string, resolvedAt time.Time) error
+	CreateDeletionRequest(ctx context.Context, req *model.BeerDeletionRequest) error
+	GetDeletionRequests(ctx context.Context, filter model.DeletionRequestFilter) ([]model.BeerDeletionRequest, int, error)
+	ResolveDeletionRequest(ctx context.Context, reqID, status string, reviewedBy *string, reviewedAt time.Time) error
+	ExecInTx(ctx context.Context, fn func(ctx context.Context, txRepo ModerationRepository, txBeerRepo BeerRepository) error) error
+}
+
 type PostgresModerationRepository struct {
-	db *sql.DB
+	db querier
 }
 
 func NewPostgresModerationRepository(db *sql.DB) (*PostgresModerationRepository, error) {
@@ -35,6 +46,10 @@ func NewPostgresModerationRepository(db *sql.DB) (*PostgresModerationRepository,
 		return nil, errors.NewAppError(503, "moderation database unavailable", err)
 	}
 	return &PostgresModerationRepository{db: db}, nil
+}
+
+func (r *PostgresModerationRepository) withTx(tx *sql.Tx) *PostgresModerationRepository {
+	return &PostgresModerationRepository{db: tx}
 }
 
 func (r *PostgresModerationRepository) CreateReport(ctx context.Context, report *model.BeerReport) error {
@@ -296,4 +311,21 @@ func (r *PostgresModerationRepository) ResolveDeletionRequest(ctx context.Contex
 		return errors.NewAppError(404, "deletion request not found", nil)
 	}
 	return nil
+}
+
+func (r *PostgresModerationRepository) ExecInTx(ctx context.Context, fn func(ctx context.Context, txRepo ModerationRepository, txBeerRepo BeerRepository) error) error {
+	tx, err := r.db.(*sql.DB).BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	txModerationRepo := r.withTx(tx)
+	txBeerRepo := &PostgresBeerRepository{db: tx}
+
+	if err := fn(ctx, txModerationRepo, txBeerRepo); err != nil {
+		return err
+	}
+
+	return tx.Commit()
 }

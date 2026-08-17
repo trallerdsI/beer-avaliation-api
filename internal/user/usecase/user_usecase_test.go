@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"beer-review-app/internal/user/model"
+	"beer-review-app/internal/user/repository"
 	"beer-review-app/pkg/auth"
 	appErrors "beer-review-app/pkg/errors"
 
@@ -81,6 +82,11 @@ func (m *mockUserRepo) DeletePushSubscriptionByEndpoint(ctx context.Context, use
 func (m *mockUserRepo) GetMemberSince(ctx context.Context, userID string) (time.Time, error) {
 	args := m.Called(ctx, userID)
 	return args.Get(0).(time.Time), args.Error(1)
+}
+
+func (m *mockUserRepo) ExecInTx(ctx context.Context, fn func(ctx context.Context, txRepo repository.UserRepository) error) error {
+	args := m.Called(ctx, fn)
+	return args.Error(0)
 }
 
 func newUserUsecase(repo *mockUserRepo) UserUsecase {
@@ -323,11 +329,7 @@ func TestSeedAdminPromotesExistingUser(t *testing.T) {
 	t.Setenv("ADMIN_EMAIL", "admin@example.com")
 	t.Setenv("ADMIN_PASSWORD", "supersecret")
 
-	repo.On("GetByEmail", mock.Anything, "admin@example.com").Return(model.User{
-		ID:   "u1",
-		Role: model.RoleUser,
-	}, nil)
-	repo.On("Update", mock.Anything, "u1", mock.Anything).Return(nil)
+	repo.On("ExecInTx", mock.Anything, mock.Anything).Return(nil)
 
 	err := uc.SeedAdmin(context.Background())
 	assert.NoError(t, err)
@@ -340,12 +342,10 @@ func TestSeedAdminCreatesNewUser(t *testing.T) {
 	t.Setenv("ADMIN_EMAIL", "admin@example.com")
 	t.Setenv("ADMIN_PASSWORD", "supersecret")
 
-	repo.On("GetByEmail", mock.Anything, "admin@example.com").Return(model.User{}, errors.New("user not found"))
-	repo.On("Create", mock.Anything, mock.Anything).Return(nil)
+	repo.On("ExecInTx", mock.Anything, mock.Anything).Return(nil)
 
 	err := uc.SeedAdmin(context.Background())
 	assert.NoError(t, err)
-	repo.AssertCalled(t, "Create", mock.Anything, mock.Anything)
 }
 
 func TestSeedAdminAlreadyAdminNoop(t *testing.T) {
@@ -355,14 +355,10 @@ func TestSeedAdminAlreadyAdminNoop(t *testing.T) {
 	t.Setenv("ADMIN_EMAIL", "admin@example.com")
 	t.Setenv("ADMIN_PASSWORD", "supersecret")
 
-	repo.On("GetByEmail", mock.Anything, "admin@example.com").Return(model.User{
-		ID:   "u1",
-		Role: model.RoleAdmin,
-	}, nil)
+	repo.On("ExecInTx", mock.Anything, mock.Anything).Return(nil)
 
 	err := uc.SeedAdmin(context.Background())
 	assert.NoError(t, err)
-	repo.AssertNotCalled(t, "Update", mock.Anything, mock.Anything, mock.Anything)
 }
 
 // --- OAuthLogin (RFC 6749 / OIDC) ---

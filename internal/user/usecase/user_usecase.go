@@ -273,36 +273,36 @@ func (u *userUsecase) SeedAdmin(ctx context.Context) error {
 		return nil
 	}
 
-	existing, err := u.repo.GetByEmail(ctx, email)
-	if err == nil {
-		// Já existe: garante que é admin.
-		if existing.Role == model.RoleAdmin {
+	return u.repo.ExecInTx(ctx, func(ctx context.Context, txRepo repository.UserRepository) error {
+		existing, err := txRepo.GetByEmail(ctx, email)
+		if err == nil {
+			if existing.Role == model.RoleAdmin {
+				return nil
+			}
+			existing.Role = model.RoleAdmin
+			if err := txRepo.Update(ctx, existing.ID, existing); err != nil {
+				return fmt.Errorf("failed to promote admin: %w", err)
+			}
+			slog.InfoContext(ctx, "utilizador promovido a admin", "email", email)
 			return nil
 		}
-		existing.Role = model.RoleAdmin
-		if err := u.repo.Update(ctx, existing.ID, existing); err != nil {
-			return fmt.Errorf("failed to promote admin: %w", err)
-		}
-		slog.InfoContext(ctx, "utilizador promovido a admin", "email", email)
-		return nil
-	}
 
-	// Não existe: cria.
-	hashed, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
-	if err != nil {
-		return fmt.Errorf("failed to hash admin password: %w", err)
-	}
-	admin := model.User{
-		ID:       uuid.MustNewV7(),
-		Username: "admin",
-		Email:    email,
-		Password: string(hashed),
-		Role:     model.RoleAdmin,
-		Created:  time.Now().UTC().Format(time.RFC3339),
-	}
-	if err := u.repo.Create(ctx, admin); err != nil {
-		return fmt.Errorf("failed to create admin: %w", err)
-	}
-	slog.InfoContext(ctx, "admin global criado", "email", email)
-	return nil
+		hashed, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+		if err != nil {
+			return fmt.Errorf("failed to hash admin password: %w", err)
+		}
+		admin := model.User{
+			ID:       uuid.MustNewV7(),
+			Username: "admin",
+			Email:    email,
+			Password: string(hashed),
+			Role:     model.RoleAdmin,
+			Created:  time.Now().UTC().Format(time.RFC3339),
+		}
+		if err := txRepo.Create(ctx, admin); err != nil {
+			return fmt.Errorf("failed to create admin: %w", err)
+		}
+		slog.InfoContext(ctx, "admin global criado", "email", email)
+		return nil
+	})
 }

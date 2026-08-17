@@ -28,26 +28,34 @@ type BeerRepository interface {
 	SearchBeers(ctx context.Context, filters model.BeerFilters) ([]model.Beer, int, error)
 	GetAdminStats(ctx context.Context) (*AdminStats, error)
 	GetUserStats(ctx context.Context, userID string) (*UserStats, error)
+	ExecInTx(ctx context.Context, fn func(ctx context.Context, txRepo BeerRepository) error) error
+}
+
+type querier interface {
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
 }
 
 // PostgresBeerRepository is a PostgreSQL implementation of BeerRepository.
 type PostgresBeerRepository struct {
-	db *sql.DB
+	db querier
 }
 
 // NewPostgresBeerRepository creates a new PostgreSQL beer repository.
 func NewPostgresBeerRepository(db *sql.DB) (*PostgresBeerRepository, error) {
-	// Defesa (Pilar 4): db nil (init sem banco) devolve erro em vez de panicar
-	// em db.Ping(); o BuildRouter aplica então o fallback UnavailableBeerRepository.
 	if db == nil {
 		return nil, errors.NewUnavailableError()
 	}
-	// Check if the connection is valid
 	if err := db.Ping(); err != nil {
 		return nil, errors.NewAppError(503, "beer database unavailable", err)
 	}
 
 	return &PostgresBeerRepository{db: db}, nil
+}
+
+func (r *PostgresBeerRepository) withTx(tx *sql.Tx) *PostgresBeerRepository {
+	return &PostgresBeerRepository{db: tx}
 }
 
 // Create adds a new beer to the PostgreSQL database.
@@ -517,4 +525,19 @@ func (r *PostgresBeerRepository) DeleteComment(ctx context.Context, id string, c
 
 	// Update the beer without the deleted comment
 	return r.Update(ctx, id, beer)
+}
+
+func (r *PostgresBeerRepository) ExecInTx(ctx context.Context, fn func(ctx context.Context, txRepo BeerRepository) error) error {
+	tx, err := r.db.(*sql.DB).BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	txRepo := r.withTx(tx)
+	if err := fn(ctx, txRepo); err != nil {
+		return err
+	}
+
+	return tx.Commit()
 }

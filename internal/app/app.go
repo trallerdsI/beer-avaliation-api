@@ -57,7 +57,7 @@ func BuildRouterWithDBErr(db *sql.DB, dbErr error, logger *slog.Logger) http.Han
 	if err != nil {
 		slog.Error("falha ao inicializar repositório de moderação", "err", err)
 	}
-	moderationUsecase := beerUsecasePkg.NewModerationUsecase(moderationRepo, moderationRepo, beerRepo)
+	moderationUsecase := beerUsecasePkg.NewModerationUsecase(moderationRepo, beerRepo)
 	userUsecase := userUsecase.NewUserUsecase(userRepo)
 
 	var uploader storage.Uploader

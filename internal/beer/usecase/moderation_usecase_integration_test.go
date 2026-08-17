@@ -44,13 +44,10 @@ func TestIntegration_ModerationUsecase_Reports(t *testing.T) {
 	beerRepo, err := repository.NewPostgresBeerRepository(db)
 	require.NoError(t, err)
 
-	reportRepo, err := repository.NewPostgresModerationRepository(db)
+	moderationRepo, err := repository.NewPostgresModerationRepository(db)
 	require.NoError(t, err)
 
-	deletionRepo, err := repository.NewPostgresModerationRepository(db)
-	require.NoError(t, err)
-
-	uc := NewModerationUsecase(reportRepo, deletionRepo, beerRepo)
+	uc := NewModerationUsecase(moderationRepo, beerRepo)
 
 	beer := model.Beer{
 		ID: uuid.MustNewV7(),
@@ -125,13 +122,10 @@ func TestIntegration_ModerationUsecase_DeletionRequests(t *testing.T) {
 	beerRepo, err := repository.NewPostgresBeerRepository(db)
 	require.NoError(t, err)
 
-	reportRepo, err := repository.NewPostgresModerationRepository(db)
+	moderationRepo, err := repository.NewPostgresModerationRepository(db)
 	require.NoError(t, err)
 
-	deletionRepo, err := repository.NewPostgresModerationRepository(db)
-	require.NoError(t, err)
-
-	uc := NewModerationUsecase(reportRepo, deletionRepo, beerRepo)
+	uc := NewModerationUsecase(moderationRepo, beerRepo)
 
 	beer := model.Beer{
 		ID: uuid.MustNewV7(),

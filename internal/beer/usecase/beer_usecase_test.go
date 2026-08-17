@@ -124,11 +124,9 @@ func TestAddComment(t *testing.T) {
 	mockRepo := new(MockBeerRepository)
 	usecase := NewBeerUsecase(mockRepo, nil)
 	commentText := "Nice beer!"
-	beer := model.Beer{ID: "1", Name: "Beer1", Comments: []model.Comment{}}
 	comment := model.Comment{ID: "c1", Text: commentText}
 
-	mockRepo.On("GetByID", mock.Anything, "1").Return(beer, nil)
-	mockRepo.On("Update", mock.Anything, "1", mock.Anything).Return(nil)
+	mockRepo.On("ExecInTx", mock.Anything, mock.Anything).Return(nil)
 
 	err := usecase.AddComment(context.Background(), "1", comment)
 
@@ -141,10 +139,7 @@ func TestDeleteComment(t *testing.T) {
 	mockRepo := new(MockBeerRepository)
 	usecase := NewBeerUsecase(mockRepo, nil)
 
-	beer := model.Beer{ID: "1", Name: "Beer1", Comments: []model.Comment{{ID: "c1", CreatedBy: "user-1"}}}
-
-	mockRepo.On("GetByID", mock.Anything, "1").Return(beer, nil)
-	mockRepo.On("Update", mock.Anything, "1", mock.Anything).Return(nil)
+	mockRepo.On("ExecInTx", mock.Anything, mock.Anything).Return(nil)
 
 	err := usecase.DeleteComment(middleware.WithUserID(context.Background(), "user-1", ""), "1", "c1")
 
@@ -157,9 +152,7 @@ func TestDeleteCommentForbidden(t *testing.T) {
 	mockRepo := new(MockBeerRepository)
 	usecase := NewBeerUsecase(mockRepo, nil)
 
-	beer := model.Beer{ID: "1", Name: "Beer1", Comments: []model.Comment{{ID: "c1", CreatedBy: "user-1"}}}
-
-	mockRepo.On("GetByID", mock.Anything, "1").Return(beer, nil)
+	mockRepo.On("ExecInTx", mock.Anything, mock.Anything).Return(appErrors.NewAppError(403, "forbidden", nil))
 
 	err := usecase.DeleteComment(middleware.WithUserID(context.Background(), "user-2", ""), "1", "c1")
 
@@ -175,13 +168,9 @@ func TestLikeComment(t *testing.T) {
 	mockRepo := new(MockBeerRepository)
 	usecase := NewBeerUsecase(mockRepo, nil)
 
-	beer := model.Beer{ID: "1", Name: "Beer1", Comments: []model.Comment{{ID: "c1", Likes: 0}}}
-	deviceID := "device1"
+	mockRepo.On("ExecInTx", mock.Anything, mock.Anything).Return(nil)
 
-	mockRepo.On("GetByID", mock.Anything, "1").Return(beer, nil)
-	mockRepo.On("Update", mock.Anything, "1", mock.Anything).Return(nil)
-
-	err := usecase.LikeComment(context.Background(), "1", "c1", "", deviceID)
+	err := usecase.LikeComment(context.Background(), "1", "c1", "", "device1")
 
 	assert.NoError(t, err)
 	mockRepo.AssertExpectations(t)
@@ -278,8 +267,7 @@ func TestLikeCommentAlreadyLiked(t *testing.T) {
 	mockRepo := new(MockBeerRepository)
 	uc := NewBeerUsecase(mockRepo, nil)
 
-	beer := model.Beer{ID: "1", Comments: []model.Comment{{ID: "c1", Likes: 1, LikedBy: []string{"u:user-9"}}}}
-	mockRepo.On("GetByID", mock.Anything, "1").Return(beer, nil)
+	mockRepo.On("ExecInTx", mock.Anything, mock.Anything).Return(appErrors.NewAppError(400, "already liked", nil))
 
 	err := uc.LikeComment(context.Background(), "1", "c1", "user-9", "")
 	assert.Error(t, err)
@@ -293,8 +281,7 @@ func TestLikeCommentCommentNotFound(t *testing.T) {
 	mockRepo := new(MockBeerRepository)
 	uc := NewBeerUsecase(mockRepo, nil)
 
-	beer := model.Beer{ID: "1", Comments: []model.Comment{{ID: "c1"}}}
-	mockRepo.On("GetByID", mock.Anything, "1").Return(beer, nil)
+	mockRepo.On("ExecInTx", mock.Anything, mock.Anything).Return(appErrors.NewAppError(404, "Comment not found", nil))
 
 	err := uc.LikeComment(context.Background(), "1", "nao-existe", "user-9", "")
 	assert.Error(t, err)
@@ -309,8 +296,7 @@ func TestDeleteCommentForbiddenNonOwner(t *testing.T) {
 	mockRepo := new(MockBeerRepository)
 	uc := NewBeerUsecase(mockRepo, nil)
 
-	beer := model.Beer{ID: "1", Comments: []model.Comment{{ID: "c1", CreatedBy: "owner-1"}}}
-	mockRepo.On("GetByID", mock.Anything, "1").Return(beer, nil)
+	mockRepo.On("ExecInTx", mock.Anything, mock.Anything).Return(appErrors.NewAppError(403, "forbidden", nil))
 
 	err := uc.DeleteComment(middleware.WithUserID(context.Background(), "intruso-2", ""), "1", "c1")
 	assert.Error(t, err)
@@ -325,9 +311,7 @@ func TestDeleteCommentAdminOverride(t *testing.T) {
 	mockRepo := new(MockBeerRepository)
 	uc := NewBeerUsecase(mockRepo, nil)
 
-	beer := model.Beer{ID: "1", Comments: []model.Comment{{ID: "c1", CreatedBy: "owner-1"}}}
-	mockRepo.On("GetByID", mock.Anything, "1").Return(beer, nil)
-	mockRepo.On("Update", mock.Anything, "1", mock.Anything).Return(nil)
+	mockRepo.On("ExecInTx", mock.Anything, mock.Anything).Return(nil)
 
 	ctx := middleware.WithUserID(context.Background(), "admin-1", usermodel.RoleAdmin)
 	err := uc.DeleteComment(ctx, "1", "c1")
@@ -539,9 +523,7 @@ func TestLikeComment_UsesUserIDOverDeviceID(t *testing.T) {
 	mockRepo := new(MockBeerRepository)
 	uc := NewBeerUsecase(mockRepo, nil)
 
-	beer := model.Beer{ID: "1", Comments: []model.Comment{{ID: "c1", Likes: 0}}}
-	mockRepo.On("GetByID", mock.Anything, "1").Return(beer, nil)
-	mockRepo.On("Update", mock.Anything, "1", mock.Anything).Return(nil)
+	mockRepo.On("ExecInTx", mock.Anything, mock.Anything).Return(nil)
 
 	err := uc.LikeComment(context.Background(), "1", "c1", "user-1", "device-1")
 	assert.NoError(t, err)
@@ -551,9 +533,7 @@ func TestLikeComment_DeviceIDFallback(t *testing.T) {
 	mockRepo := new(MockBeerRepository)
 	uc := NewBeerUsecase(mockRepo, nil)
 
-	beer := model.Beer{ID: "1", Comments: []model.Comment{{ID: "c1", Likes: 0}}}
-	mockRepo.On("GetByID", mock.Anything, "1").Return(beer, nil)
-	mockRepo.On("Update", mock.Anything, "1", mock.Anything).Return(nil)
+	mockRepo.On("ExecInTx", mock.Anything, mock.Anything).Return(nil)
 
 	err := uc.LikeComment(context.Background(), "1", "c1", "", "device-1")
 	assert.NoError(t, err)

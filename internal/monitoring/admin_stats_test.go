@@ -10,6 +10,7 @@ import (
 
 	"beer-review-app/internal/beer/model"
 	"beer-review-app/internal/beer/repository"
+	userRepository "beer-review-app/internal/user/repository"
 	usermodel "beer-review-app/internal/user/model"
 	"beer-review-app/pkg/errors"
 	"beer-review-app/pkg/middleware"
@@ -70,6 +71,10 @@ func (f *fakeBeerRepo) GetUserStats(ctx context.Context, userID string) (*reposi
 	}, nil
 }
 
+func (f *fakeBeerRepo) ExecInTx(ctx context.Context, fn func(ctx context.Context, txRepo repository.BeerRepository) error) error {
+	return fn(ctx, f)
+}
+
 type fakeUserRepo struct {
 	memberSince time.Time
 	err         error
@@ -113,6 +118,10 @@ func (f *fakeUserRepo) DeletePushSubscriptionByEndpoint(ctx context.Context, use
 }
 func (f *fakeUserRepo) GetMemberSince(ctx context.Context, userID string) (time.Time, error) {
 	return f.memberSince, f.err
+}
+
+func (f *fakeUserRepo) ExecInTx(ctx context.Context, fn func(ctx context.Context, txRepo userRepository.UserRepository) error) error {
+	return fn(ctx, f)
 }
 
 func TestGetAdminStatsSuccess(t *testing.T) {

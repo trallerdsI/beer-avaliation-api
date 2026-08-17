@@ -23,16 +23,14 @@ type ModerationUsecase interface {
 }
 
 type moderationUsecase struct {
-	reportRepo        repository.ReportRepository
-	deletionRepo      repository.DeletionRequestRepository
-	beerRepo          repository.BeerRepository
+	moderationRepo repository.ModerationRepository
+	beerRepo       repository.BeerRepository
 }
 
-func NewModerationUsecase(reportRepo repository.ReportRepository, deletionRepo repository.DeletionRequestRepository, beerRepo repository.BeerRepository) ModerationUsecase {
+func NewModerationUsecase(moderationRepo repository.ModerationRepository, beerRepo repository.BeerRepository) ModerationUsecase {
 	return &moderationUsecase{
-		reportRepo:   reportRepo,
-		deletionRepo: deletionRepo,
-		beerRepo:     beerRepo,
+		moderationRepo: moderationRepo,
+		beerRepo:       beerRepo,
 	}
 }
 
@@ -46,15 +44,15 @@ func (u *moderationUsecase) ReportBeer(ctx context.Context, beerID, userID strin
 		Status:      model.ReportStatusOpen,
 		CreatedAt:   time.Now().UTC(),
 	}
-	return u.reportRepo.CreateReport(ctx, report)
+	return u.moderationRepo.CreateReport(ctx, report)
 }
 
 func (u *moderationUsecase) GetReportsByBeerID(ctx context.Context, beerID string, limit, offset int) ([]model.BeerReport, int, error) {
-	return u.reportRepo.GetReportsByBeerID(ctx, beerID, limit, offset)
+	return u.moderationRepo.GetReportsByBeerID(ctx, beerID, limit, offset)
 }
 
 func (u *moderationUsecase) GetReports(ctx context.Context, filter model.ReportFilter) ([]model.BeerReport, int, error) {
-	return u.reportRepo.GetReports(ctx, filter)
+	return u.moderationRepo.GetReports(ctx, filter)
 }
 
 func (u *moderationUsecase) ResolveReport(ctx context.Context, reportID, status, adminID string) error {
@@ -62,7 +60,7 @@ func (u *moderationUsecase) ResolveReport(ctx context.Context, reportID, status,
 		return errors.NewAppError(http.StatusForbidden, "only admins can resolve reports", nil)
 	}
 	now := time.Now().UTC()
-	return u.reportRepo.ResolveReport(ctx, reportID, status, &adminID, now)
+	return u.moderationRepo.ResolveReport(ctx, reportID, status, &adminID, now)
 }
 
 func (u *moderationUsecase) RequestDeletion(ctx context.Context, beerID, userID string, input model.BeerDeletionRequestInput) error {
@@ -75,11 +73,11 @@ func (u *moderationUsecase) RequestDeletion(ctx context.Context, beerID, userID 
 		Status:    model.DeletionStatusPending,
 		CreatedAt: time.Now().UTC(),
 	}
-	return u.deletionRepo.CreateDeletionRequest(ctx, req)
+	return u.moderationRepo.CreateDeletionRequest(ctx, req)
 }
 
 func (u *moderationUsecase) GetDeletionRequests(ctx context.Context, filter model.DeletionRequestFilter) ([]model.BeerDeletionRequest, int, error) {
-	return u.deletionRepo.GetDeletionRequests(ctx, filter)
+	return u.moderationRepo.GetDeletionRequests(ctx, filter)
 }
 
 func (u *moderationUsecase) ResolveDeletionRequest(ctx context.Context, reqID, status, adminID string) error {
@@ -87,32 +85,34 @@ func (u *moderationUsecase) ResolveDeletionRequest(ctx context.Context, reqID, s
 		return errors.NewAppError(http.StatusForbidden, "only admins can resolve deletion requests", nil)
 	}
 
-	requests, _, err := u.deletionRepo.GetDeletionRequests(ctx, model.DeletionRequestFilter{
-		Limit: 1,
-		Offset: 0,
-	})
-	if err != nil {
-		return err
-	}
-	var target *model.BeerDeletionRequest
-	for i := range requests {
-		if requests[i].ID == reqID {
-			target = &requests[i]
-			break
+	return u.moderationRepo.ExecInTx(ctx, func(ctx context.Context, txRepo repository.ModerationRepository, txBeerRepo repository.BeerRepository) error {
+		requests, _, err := txRepo.GetDeletionRequests(ctx, model.DeletionRequestFilter{
+			Limit: 1,
+			Offset: 0,
+		})
+		if err != nil {
+			return err
 		}
-	}
-	if target == nil {
-		return errors.NewAppError(404, "deletion request not found", nil)
-	}
+		var target *model.BeerDeletionRequest
+		for i := range requests {
+			if requests[i].ID == reqID {
+				target = &requests[i]
+				break
+			}
+		}
+		if target == nil {
+			return errors.NewAppError(404, "deletion request not found", nil)
+		}
 
-	now := time.Now().UTC()
-	if err := u.deletionRepo.ResolveDeletionRequest(ctx, reqID, status, &adminID, now); err != nil {
-		return err
-	}
-	if status == string(model.DeletionStatusApproved) {
-		if err := u.beerRepo.Delete(ctx, target.BeerID); err != nil {
-			return errors.NewAppError(500, "failed to delete beer after approving request", err)
+		now := time.Now().UTC()
+		if err := txRepo.ResolveDeletionRequest(ctx, reqID, status, &adminID, now); err != nil {
+			return err
 		}
-	}
-	return nil
+		if status == string(model.DeletionStatusApproved) {
+			if err := txBeerRepo.Delete(ctx, target.BeerID); err != nil {
+				return errors.NewAppError(500, "failed to delete beer after approving request", err)
+			}
+		}
+		return nil
+	})
 }

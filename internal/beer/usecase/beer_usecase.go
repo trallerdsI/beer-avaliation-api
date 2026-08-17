@@ -194,14 +194,20 @@ func (u *beerUsecase) AddComment(ctx context.Context, id string, comment model.C
 	if err := u.unavailable(); err != nil {
 		return err
 	}
-	beer, err := u.repo.GetByID(ctx, id)
-	if err != nil {
-		return errors.NewAppError(404, "Beer not found", err)
-	}
 
-	beer.Comments = append(beer.Comments, comment)
-	if err := u.repo.Update(ctx, id, beer); err != nil {
-		return errors.NewAppError(500, "Failed to update beer with new comment", err)
+	if err := u.repo.ExecInTx(ctx, func(ctx context.Context, txRepo repository.BeerRepository) error {
+		beer, err := txRepo.GetByID(ctx, id)
+		if err != nil {
+			return errors.NewAppError(404, "Beer not found", err)
+		}
+
+		beer.Comments = append(beer.Comments, comment)
+		if err := txRepo.Update(ctx, id, beer); err != nil {
+			return errors.NewAppError(500, "Failed to update beer with new comment", err)
+		}
+		return nil
+	}); err != nil {
+		return err
 	}
 
 	u.publish(realtime.Event{
@@ -217,27 +223,38 @@ func (u *beerUsecase) DeleteComment(ctx context.Context, id string, commentID st
 	if err := u.unavailable(); err != nil {
 		return err
 	}
-	beer, err := u.repo.GetByID(ctx, id)
-	if err != nil {
-		return errors.NewAppError(404, "Beer not found", err)
-	}
 
 	var owner string
-	for i, c := range beer.Comments {
-		if c.ID == commentID {
-			owner = c.CreatedBy
-			beer.Comments = append(beer.Comments[:i], beer.Comments[i+1:]...)
-			break
+	if err := u.repo.ExecInTx(ctx, func(ctx context.Context, txRepo repository.BeerRepository) error {
+		beer, err := txRepo.GetByID(ctx, id)
+		if err != nil {
+			return errors.NewAppError(404, "Beer not found", err)
 		}
-	}
 
-	// AuthZ: só o autor do comentário ou um admin podem apagar.
-	if !canModify(ctx, owner) {
-		return errors.NewAppError(403, "you are not allowed to delete this comment", nil)
-	}
+		var found bool
+		for i, c := range beer.Comments {
+			if c.ID == commentID {
+				owner = c.CreatedBy
+				beer.Comments = append(beer.Comments[:i], beer.Comments[i+1:]...)
+				found = true
+				break
+			}
+		}
 
-	if err := u.repo.Update(ctx, id, beer); err != nil {
-		return errors.NewAppError(500, "Failed to update beer after deleting comment", err)
+		if !found {
+			return errors.NewAppError(404, "comment not found", nil)
+		}
+
+		if !canModify(ctx, owner) {
+			return errors.NewAppError(403, "you are not allowed to delete this comment", nil)
+		}
+
+		if err := txRepo.Update(ctx, id, beer); err != nil {
+			return errors.NewAppError(500, "Failed to update beer after deleting comment", err)
+		}
+		return nil
+	}); err != nil {
+		return err
 	}
 
 	u.publish(realtime.Event{
@@ -257,45 +274,50 @@ func (u *beerUsecase) LikeComment(ctx context.Context, beerID, commentID, userID
 	if err := u.unavailable(); err != nil {
 		return err
 	}
-	beer, err := u.repo.GetByID(ctx, beerID)
-	if err != nil {
-		return errors.NewAppError(404, "Beer not found", err)
-	}
 
-	// Identidade do like: user autenticado tem precedência; senão device.
-	liker := deviceID
-	if userID != "" {
-		liker = "u:" + userID
-	}
-
-	for i, comment := range beer.Comments {
-		if comment.ID == commentID {
-			// Check if already liked by this liker
-			for _, id := range comment.LikedBy {
-				if id == liker {
-					return errors.NewAppError(400, "already liked", nil)
-				}
-			}
-
-			// Add like
-			beer.Comments[i].Likes++
-			beer.Comments[i].LikedBy = append(beer.Comments[i].LikedBy, liker)
-
-			if err := u.repo.Update(ctx, beerID, beer); err != nil {
-				return errors.NewAppError(500, "Failed to update comment likes", err)
-			}
-
-			u.publish(realtime.Event{
-				Type: "comment.liked",
-				ID:   beerID,
-				Data: map[string]any{"commentId": commentID, "likes": beer.Comments[i].Likes},
-			})
-
-			return nil
+	var likes int
+	if err := u.repo.ExecInTx(ctx, func(ctx context.Context, txRepo repository.BeerRepository) error {
+		beer, err := txRepo.GetByID(ctx, beerID)
+		if err != nil {
+			return errors.NewAppError(404, "Beer not found", err)
 		}
+
+		liker := deviceID
+		if userID != "" {
+			liker = "u:" + userID
+		}
+
+		for i, comment := range beer.Comments {
+			if comment.ID == commentID {
+				for _, id := range comment.LikedBy {
+					if id == liker {
+						return errors.NewAppError(400, "already liked", nil)
+					}
+				}
+
+				beer.Comments[i].Likes++
+				beer.Comments[i].LikedBy = append(beer.Comments[i].LikedBy, liker)
+				likes = beer.Comments[i].Likes
+
+				if err := txRepo.Update(ctx, beerID, beer); err != nil {
+					return errors.NewAppError(500, "Failed to update comment likes", err)
+				}
+				return nil
+			}
+		}
+
+		return errors.NewAppError(404, "Comment not found", nil)
+	}); err != nil {
+		return err
 	}
 
-	return errors.NewAppError(404, "Comment not found", nil)
+	u.publish(realtime.Event{
+		Type: "comment.liked",
+		ID:   beerID,
+		Data: map[string]any{"commentId": commentID, "likes": likes},
+	})
+
+	return nil
 }
 
 // AddMedia anexa um item de mídia (imagem já carregada no storage) à cerveja.
