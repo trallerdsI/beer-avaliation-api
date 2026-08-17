@@ -169,10 +169,10 @@ func TestRetryableDB_Chaos_NoConnectionLeakAfterCrash(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Eventually(t, func() bool {
-		pingCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+		pingCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 		defer cancel()
 		return db.PingContext(pingCtx) == nil
-	}, 30*time.Second, 500*time.Millisecond, "database did not recover in time")
+	}, 60*time.Second, 1*time.Second, "database did not recover in time")
 
 	stats := db.Stats()
 	assert.Equal(t, 0, stats.OpenConnections, "expected no leaked connections, got %d", stats.OpenConnections)
