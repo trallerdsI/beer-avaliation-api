@@ -265,17 +265,21 @@ func TestAddComment(t *testing.T) {
 		}
 	})
 
-	// Test case 3: Missing rating
-	t.Run("Missing Rating", func(t *testing.T) {
-		comment := model.Comment{Text: "Great beer!"}
+	// Test case 4: Inappropriate content blocked by moderation
+	t.Run("Inappropriate Content Blocked", func(t *testing.T) {
+		mockBeerUsecase.On("AddComment", context.Background(), "1", mock.Anything).
+			Return(errors.NewAppErrorWithCode(http.StatusUnprocessableEntity, "O comentário viola as diretrizes de conteúdo da comunidade.", "INAPPROPRIATE_CONTENT")).
+			Once()
+		comment := model.Comment{Text: "discurso de ódio", Rating: 1}
 		body, _ := json.Marshal(comment)
 		req := httptest.NewRequest("POST", "/beers/1/comments", bytes.NewBuffer(body))
+		req.SetPathValue("id", "1")
 		rr := httptest.NewRecorder()
 
 		controller.AddComment(rr, req)
 
-		if status := rr.Code; status != http.StatusBadRequest {
-			t.Errorf("handler returned wrong status code: got %v want %v", status, http.StatusBadRequest)
+		if status := rr.Code; status != http.StatusUnprocessableEntity {
+			t.Errorf("handler returned wrong status code: got %v want %v", status, http.StatusUnprocessableEntity)
 		}
 	})
 }

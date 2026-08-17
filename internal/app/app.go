@@ -18,6 +18,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"beer-review-app/pkg/database"
+	"beer-review-app/pkg/moderation"
 	beerHttp "beer-review-app/internal/beer/delivery/http"
 	beerRepository "beer-review-app/internal/beer/repository"
 	beerUsecasePkg "beer-review-app/internal/beer/usecase"
@@ -65,7 +66,8 @@ func BuildRouterWithDBErr(db *database.RetryableDB, dbErr error, logger *slog.Lo
 	userRepo := newUserRepo(db)
 
 	eventHub = realtime.NewHub(64)
-	beerUsecase := beerUsecasePkg.NewBeerUsecase(beerRepo, eventHub)
+	moderator := newModerator()
+	beerUsecase := beerUsecasePkg.NewBeerUsecase(beerRepo, eventHub, moderator)
 	moderationRepo, err := beerRepository.NewPostgresModerationRepository(db)
 	if err != nil {
 		slog.Error("falha ao inicializar repositório de moderação", "err", err)
@@ -165,6 +167,18 @@ func newUserRepo(db *database.RetryableDB) userRepository.UserRepository {
 		return nil
 	}
 	return repo
+}
+
+func newModerator() moderation.Moderator {
+	apiKey := os.Getenv("OPENAI_API_KEY")
+	if strings.TrimSpace(apiKey) != "" {
+		mod, err := moderation.NewOpenAIModerator(apiKey)
+		if err == nil {
+			return mod
+		}
+		slog.Warn("falha ao criar OpenAI Moderator; usando Noop", "err", err)
+	}
+	return moderation.NewNoopModerator()
 }
 
 func InitDBFromEnv() (*database.RetryableDB, error) {

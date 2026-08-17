@@ -14,6 +14,7 @@ import (
 	usermodel "beer-review-app/internal/user/model"
 	appErrors "beer-review-app/pkg/errors"
 	"beer-review-app/pkg/middleware"
+	"beer-review-app/pkg/moderation"
 	"beer-review-app/pkg/realtime"
 
 	"github.com/stretchr/testify/require"
@@ -35,7 +36,7 @@ func TestIntegration_BeerUsecase_RBAC(t *testing.T) {
 	require.NoError(t, err)
 
 	hub := realtime.NewHub(64)
-	uc := NewBeerUsecase(beerRepo, hub)
+	uc := NewBeerUsecase(beerRepo, hub, moderation.NewNoopModerator())
 
 	ownerCtx := middleware.WithUserID(ctx, "user-1", "")
 	adminCtx := middleware.WithUserID(ctx, "admin-1", usermodel.RoleAdmin)

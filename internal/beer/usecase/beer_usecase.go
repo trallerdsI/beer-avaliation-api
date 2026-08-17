@@ -2,12 +2,14 @@ package usecase
 
 import (
 	"context"
+	"net/http"
 	"time"
 
 	"beer-review-app/internal/beer/model"
 	"beer-review-app/internal/beer/repository"
 	"beer-review-app/pkg/errors"
 	"beer-review-app/pkg/middleware"
+	"beer-review-app/pkg/moderation"
 	"beer-review-app/pkg/realtime"
 	"beer-review-app/pkg/uuid"
 )
@@ -27,17 +29,25 @@ type BeerUsecase interface {
 }
 
 type beerUsecase struct {
-	repo repository.BeerRepository
-	hub  *realtime.Hub // opcional: nil em testes/serverless desativa eventos SSE
+	repo      repository.BeerRepository
+	hub       *realtime.Hub // opcional: nil em testes/serverless desativa eventos SSE
+	moderator moderation.Moderator
 }
 
 // NewBeerUsecase creates a new instance of BeerUsecase.
 // hub pode ser nil (ex: testes, serverless) — neste caso nenhum evento SSE é emitido.
-func NewBeerUsecase(repo repository.BeerRepository, hub *realtime.Hub) BeerUsecase {
-	return &beerUsecase{
+// moderator pode ser nil (ex: testes offline); neste caso a moderação é ignorada.
+func NewBeerUsecase(repo repository.BeerRepository, hub *realtime.Hub, moderator moderation.Moderator) BeerUsecase {
+	u := &beerUsecase{
 		repo: repo,
 		hub:  hub,
 	}
+	if moderator != nil {
+		u.moderator = moderator
+	} else {
+		u.moderator = moderation.NewNoopModerator()
+	}
+	return u
 }
 
 // publish emite um evento SSE se o hub estiver configurado. Non-blocking:
@@ -193,6 +203,13 @@ func canModify(ctx context.Context, ownerID string) bool {
 func (u *beerUsecase) AddComment(ctx context.Context, id string, comment model.Comment) error {
 	if err := u.unavailable(); err != nil {
 		return err
+	}
+
+	if allowed, err := u.moderator.IsContentAllowed(ctx, comment.Text); !allowed || err != nil {
+		if !allowed {
+			return errors.NewAppErrorWithCode(http.StatusUnprocessableEntity, "O comentário viola as diretrizes de conteúdo da comunidade.", "INAPPROPRIATE_CONTENT")
+		}
+		return errors.NewAppError(500, "Moderation check failed", err)
 	}
 
 	if err := u.repo.ExecInTx(ctx, func(ctx context.Context, txRepo repository.BeerRepository) error {

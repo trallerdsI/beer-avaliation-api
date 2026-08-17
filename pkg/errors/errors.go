@@ -13,6 +13,11 @@ var ErrMissingSecret = errors.New("jwt secret is not configured")
 // 503 de forma determinística em vez de derrubar o processo.
 var ErrDatabaseUnavailable = errors.New("database unavailable")
 
+// ErrInappropriateContent é retornado quando o conteúdo de um comentário
+// viola as diretrizes de conteúdo da comunidade (discurso de ódio, assédio,
+// violência, spam etc.) detectado pela API de moderação.
+var ErrInappropriateContent = errors.New("inappropriate content")
+
 // NewUnavailableError devolve um AppError 503 para o caso de DB ausente.
 func NewUnavailableError() *AppError {
 	return NewAppError(503, "database is not ready", ErrDatabaseUnavailable)
