@@ -110,6 +110,42 @@ jobs:
           docker images beer-avaliation-api:${{ github.sha }}
           echo "Imagem Docker construída com sucesso."
 
+      - name: Run Trivy vulnerability scanner (filesystem)
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          severity: 'CRITICAL,HIGH'
+          exit-code: '1'
+          format: 'sarif'
+          output: 'trivy-fs-results.sarif'
+
+      - name: Run Trivy vulnerability scanner (image)
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'image'
+          image: beer-avaliation-api:${{ github.sha }}
+          severity: 'CRITICAL,HIGH'
+          exit-code: '1'
+          format: 'sarif'
+          output: 'trivy-image-results.sarif'
+
+      - name: Generate SBOM with Syft
+        uses: anchore/syft-action@v0.14.0
+        with:
+          image: beer-avaliation-api:${{ github.sha }}
+          format: spdx-json
+          output: sbom.spdx.json
+
+      - name: Upload security artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-artifacts
+          path: |
+            trivy-fs-results.sarif
+            trivy-image-results.sarif
+            sbom.spdx.json
+
   deploy-staging:
     name: 4. Deploy to Staging
     needs: build-image
