@@ -174,7 +174,7 @@ func newModerator() moderation.Moderator {
 	if strings.TrimSpace(apiKey) != "" {
 		mod, err := moderation.NewOpenAIModerator(apiKey)
 		if err == nil {
-			return mod
+			return moderation.NewModeratorWithCache(mod)
 		}
 		slog.Warn("falha ao criar OpenAI Moderator; usando Noop", "err", err)
 	}

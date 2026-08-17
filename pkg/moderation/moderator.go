@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
-	"sync"
 	"time"
 )
 
@@ -168,28 +167,27 @@ func (m *NoopModerator) IsContentAllowed(_ context.Context, _ string) (bool, err
 	return true, nil
 }
 
-// CachedOpenAIModerator wraps an OpenAIModerator with in-memory caching
+// CachedOpenAIModerator wraps a Moderator with caching
 // to reduce API calls for duplicate content.
 type CachedOpenAIModerator struct {
-	moderator *OpenAIModerator
-	mu        sync.RWMutex
-	cache     map[string]bool
+	moderator Moderator
+	cache     ModerationCache
 }
 
-// NewCachedOpenAIModerator creates a new cached moderator.
-func NewCachedOpenAIModerator(moderator *OpenAIModerator) *CachedOpenAIModerator {
+// NewCachedOpenAIModerator creates a new cached moderator with the given cache backend.
+func NewCachedOpenAIModerator(moderator Moderator, cache ModerationCache) *CachedOpenAIModerator {
 	return &CachedOpenAIModerator{
 		moderator: moderator,
-		cache:     make(map[string]bool),
+		cache:     cache,
 	}
 }
 
 // IsContentAllowed checks the cache first, then delegates to the underlying moderator.
 func (m *CachedOpenAIModerator) IsContentAllowed(ctx context.Context, text string) (bool, error) {
-	m.mu.RLock()
-	cached, found := m.cache[text]
-	m.mu.RUnlock()
-
+	cached, found, err := m.cache.Get(ctx, text)
+	if err != nil {
+		return true, err
+	}
 	if found {
 		return cached, nil
 	}
@@ -199,9 +197,9 @@ func (m *CachedOpenAIModerator) IsContentAllowed(ctx context.Context, text strin
 		return true, err // fail-open
 	}
 
-	m.mu.Lock()
-	m.cache[text] = allowed
-	m.mu.Unlock()
+	if setErr := m.cache.Set(ctx, text, allowed); setErr != nil {
+		return true, setErr
+	}
 
 	return allowed, nil
 }

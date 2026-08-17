@@ -417,18 +417,30 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Beer'
-        '400':
-          description: Invalid comment payload
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Problem'
-        '404':
-          description: Beer not found
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Problem'
+         '400':
+           description: Invalid comment payload
+           content:
+             application/json:
+               schema:
+                 $ref: '#/components/schemas/Problem'
+         '403':
+           description: Forbidden (not owner/admin)
+           content:
+             application/json:
+               schema:
+                 $ref: '#/components/schemas/Problem'
+         '404':
+           description: Beer not found
+           content:
+             application/json:
+               schema:
+                 $ref: '#/components/schemas/Problem'
+         '422':
+           description: Content rejected by moderation
+           content:
+             application/json:
+               schema:
+                 $ref: '#/components/schemas/Problem'
 
   /api/v1/beers/{id}/comments/{commentId}:
     delete:

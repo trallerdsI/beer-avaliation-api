@@ -10,13 +10,24 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
-const (
+var (
 	defaultMaxRetries = 3
 	defaultBaseDelay  = 100 * time.Millisecond
 	envMaxRetries     = "RETRY_MAX_RETRIES"
 	envBaseDelay      = "RETRY_BASE_DELAY"
+)
+
+var DBRetryAttemptsTotal = promauto.NewCounterVec(
+	prometheus.CounterOpts{
+		Name: "db_retry_attempts_total",
+		Help: "Total number of database retry attempts by operation",
+	},
+	[]string{"operation"},
 )
 
 // RetryableDB wraps *sql.DB with retry/backoff for transient errors.
@@ -93,7 +104,7 @@ func IsTransientError(err error) bool {
 }
 
 // retryExec executes a function with exponential backoff + jitter.
-func retryExec[T any](ctx context.Context, maxRetries int, baseDelay time.Duration, fn func() (T, error)) (T, error) {
+func retryExec[T any](ctx context.Context, maxRetries int, baseDelay time.Duration, operation string, fn func() (T, error)) (T, error) {
 	var lastErr error
 	for attempt := 0; attempt <= maxRetries; attempt++ {
 		if ctx.Err() != nil {
@@ -113,6 +124,7 @@ func retryExec[T any](ctx context.Context, maxRetries int, baseDelay time.Durati
 		lastErr = err
 
 		if attempt < maxRetries {
+			DBRetryAttemptsTotal.WithLabelValues(operation).Inc()
 			jitter := time.Duration(rand.Int63n(int64(baseDelay))) //nosec
 			delay := time.Duration(math.Pow(2, float64(attempt)))*baseDelay + jitter
 
@@ -131,21 +143,21 @@ func retryExec[T any](ctx context.Context, maxRetries int, baseDelay time.Durati
 
 // ExecContext executes a query with retry logic.
 func (r *RetryableDB) ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
-	return retryExec(ctx, r.maxRetries, r.baseDelay, func() (sql.Result, error) {
+	return retryExec(ctx, r.maxRetries, r.baseDelay, "exec", func() (sql.Result, error) {
 		return r.DB.ExecContext(ctx, query, args...)
 	})
 }
 
 // QueryContext executes a query with retry logic.
 func (r *RetryableDB) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
-	return retryExec(ctx, r.maxRetries, r.baseDelay, func() (*sql.Rows, error) {
+	return retryExec(ctx, r.maxRetries, r.baseDelay, "query", func() (*sql.Rows, error) {
 		return r.DB.QueryContext(ctx, query, args...)
 	})
 }
 
 // QueryRowContext executes a query row with retry logic.
 func (r *RetryableDB) QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row {
-	row, err := retryExec(ctx, r.maxRetries, r.baseDelay, func() (*sql.Row, error) {
+	row, err := retryExec(ctx, r.maxRetries, r.baseDelay, "queryrow", func() (*sql.Row, error) {
 		return r.DB.QueryRowContext(ctx, query, args...), nil
 	})
 	if err != nil {
@@ -156,14 +168,14 @@ func (r *RetryableDB) QueryRowContext(ctx context.Context, query string, args ..
 
 // BeginTx starts a transaction with retry logic.
 func (r *RetryableDB) BeginTx(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, error) {
-	return retryExec(ctx, r.maxRetries, r.baseDelay, func() (*sql.Tx, error) {
+	return retryExec(ctx, r.maxRetries, r.baseDelay, "begintx", func() (*sql.Tx, error) {
 		return r.DB.BeginTx(ctx, opts)
 	})
 }
 
 // PingContext pings the database with retry logic.
 func (r *RetryableDB) PingContext(ctx context.Context) error {
-	_, err := retryExec(ctx, r.maxRetries, r.baseDelay, func() (struct{}, error) {
+	_, err := retryExec(ctx, r.maxRetries, r.baseDelay, "ping", func() (struct{}, error) {
 		return struct{}{}, r.DB.PingContext(ctx)
 	})
 	return err

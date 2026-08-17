@@ -80,7 +80,7 @@ func TestRetryExec_SucceedsOnFirstTry(t *testing.T) {
 		return 42, nil
 	}
 
-	result, err := retryExec(context.Background(), 3, 10*time.Millisecond, fn)
+	result, err := retryExec(context.Background(), 3, 10*time.Millisecond, "test", fn)
 	assert.NoError(t, err)
 	assert.Equal(t, 42, result)
 	assert.Equal(t, 1, callCount)
@@ -96,7 +96,7 @@ func TestRetryExec_RetriesOnTransientError(t *testing.T) {
 		return 42, nil
 	}
 
-	result, err := retryExec(context.Background(), 3, 10*time.Millisecond, fn)
+	result, err := retryExec(context.Background(), 3, 10*time.Millisecond, "test", fn)
 	assert.NoError(t, err)
 	assert.Equal(t, 42, result)
 	assert.Equal(t, 3, callCount)
@@ -107,7 +107,7 @@ func TestRetryExec_ReturnsNonTransientError(t *testing.T) {
 		return 0, errors.New("syntax error")
 	}
 
-	result, err := retryExec(context.Background(), 3, 10*time.Millisecond, fn)
+	result, err := retryExec(context.Background(), 3, 10*time.Millisecond, "test", fn)
 	assert.Error(t, err)
 	assert.Equal(t, 0, result)
 	assert.Contains(t, err.Error(), "syntax error")
@@ -120,7 +120,7 @@ func TestRetryExec_RespectsMaxRetries(t *testing.T) {
 		return 0, driver.ErrBadConn
 	}
 
-	result, err := retryExec(context.Background(), 2, 10*time.Millisecond, fn)
+	result, err := retryExec(context.Background(), 2, 10*time.Millisecond, "test", fn)
 	assert.Error(t, err)
 	assert.Equal(t, 0, result)
 	assert.Equal(t, 3, callCount) // initial + 2 retries
@@ -136,7 +136,7 @@ func TestRetryExec_RespectsContextCancellation(t *testing.T) {
 		return 0, driver.ErrBadConn
 	}
 
-	result, err := retryExec(ctx, 3, 10*time.Millisecond, fn)
+	result, err := retryExec(ctx, 3, 10*time.Millisecond, "test", fn)
 	assert.Error(t, err)
 	assert.Equal(t, context.Canceled, err)
 	assert.Equal(t, 0, result)
