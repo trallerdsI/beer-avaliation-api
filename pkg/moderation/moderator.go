@@ -186,7 +186,7 @@ func NewCachedOpenAIModerator(moderator Moderator, cache ModerationCache) *Cache
 func (m *CachedOpenAIModerator) IsContentAllowed(ctx context.Context, text string) (bool, error) {
 	cached, found, err := m.cache.Get(ctx, text)
 	if err != nil {
-		return true, err
+		return true, nil // fail-open on cache error
 	}
 	if found {
 		return cached, nil
@@ -198,7 +198,7 @@ func (m *CachedOpenAIModerator) IsContentAllowed(ctx context.Context, text strin
 	}
 
 	if setErr := m.cache.Set(ctx, text, allowed); setErr != nil {
-		return true, setErr
+		return true, setErr // fail-open on cache set error
 	}
 
 	return allowed, nil
