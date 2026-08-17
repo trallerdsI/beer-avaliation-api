@@ -16,14 +16,19 @@ RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o main cmd/ser
 # Imagem final mínima e segura (sem shell, sem pacotes extras)
 FROM gcr.io/distroless/static-debian12
 
-WORKDIR /root/
+WORKDIR /
 
-COPY --from=builder /app/main /root/main
-COPY --from=builder /app/internal/app/migrations/ /root/migrations/
+COPY --from=builder /app/main /main
 
-# Porta exposta (mantém 8082 para alinhar com SERVER_PORT padrão)
+RUN chmod +x /main
+
 EXPOSE 8082
 
-USER nonroot:nonroot
+USER 65532:65532
 
-CMD ["/root/main"]
+LABEL org.opencontainers.image.title="beer-avaliation-api" \
+      org.opencontainers.image.description="Beer catalog API with moderation" \
+      org.opencontainers.image.vendor="Beer Review" \
+      org.opencontainers.image.licenses="MIT"
+
+CMD ["/main"]
