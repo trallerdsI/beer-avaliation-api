@@ -2,6 +2,7 @@ package usecase
 
 import (
 	"context"
+	"time"
 
 	"beer-review-app/internal/beer/model"
 	"beer-review-app/internal/beer/repository"
@@ -89,4 +90,47 @@ func (m *MockBeerRepository) GetUserStats(ctx context.Context, userID string) (*
 func (m *MockBeerRepository) AddMedia(ctx context.Context, id string, item model.MediaItem) ([]model.MediaItem, error) {
 	args := m.Called(ctx, id, item)
 	return args.Get(0).([]model.MediaItem), args.Error(1)
+}
+
+type MockReportRepository struct {
+	mock.Mock
+}
+
+func (m *MockReportRepository) CreateReport(ctx context.Context, report *model.BeerReport) error {
+	args := m.Called(ctx, report)
+	return args.Error(0)
+}
+
+func (m *MockReportRepository) GetReportsByBeerID(ctx context.Context, beerID string, limit, offset int) ([]model.BeerReport, int, error) {
+	args := m.Called(ctx, beerID, limit, offset)
+	return args.Get(0).([]model.BeerReport), args.Get(1).(int), args.Error(2)
+}
+
+func (m *MockReportRepository) GetReports(ctx context.Context, filter model.ReportFilter) ([]model.BeerReport, int, error) {
+	args := m.Called(ctx, filter)
+	return args.Get(0).([]model.BeerReport), args.Get(1).(int), args.Error(2)
+}
+
+func (m *MockReportRepository) ResolveReport(ctx context.Context, reportID, status string, resolvedBy *string, resolvedAt time.Time) error {
+	args := m.Called(ctx, reportID, status, resolvedBy, resolvedAt)
+	return args.Error(0)
+}
+
+type MockDeletionRequestRepository struct {
+	mock.Mock
+}
+
+func (m *MockDeletionRequestRepository) CreateDeletionRequest(ctx context.Context, req *model.BeerDeletionRequest) error {
+	args := m.Called(ctx, req)
+	return args.Error(0)
+}
+
+func (m *MockDeletionRequestRepository) GetDeletionRequests(ctx context.Context, filter model.DeletionRequestFilter) ([]model.BeerDeletionRequest, int, error) {
+	args := m.Called(ctx, filter)
+	return args.Get(0).([]model.BeerDeletionRequest), args.Get(1).(int), args.Error(2)
+}
+
+func (m *MockDeletionRequestRepository) ResolveDeletionRequest(ctx context.Context, reqID, status string, reviewedBy *string, reviewedAt time.Time) error {
+	args := m.Called(ctx, reqID, status, reviewedBy, reviewedAt)
+	return args.Error(0)
 }
