@@ -5,12 +5,16 @@ package usecase
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"os"
 	"testing"
 
-	"beer-review-app/internal/app"
 	"beer-review-app/internal/beer/model"
+	"beer-review-app/internal/beer/repository"
+	usermodel "beer-review-app/internal/user/model"
 	appErrors "beer-review-app/pkg/errors"
+	"beer-review-app/pkg/middleware"
+	"beer-review-app/pkg/realtime"
 
 	"github.com/stretchr/testify/require"
 )
@@ -27,14 +31,14 @@ func TestIntegration_BeerUsecase_RBAC(t *testing.T) {
 	err := applyMigrations(db)
 	require.NoError(t, err)
 
-	beerRepo, err := NewPostgresBeerRepository(db)
+	beerRepo, err := repository.NewPostgresBeerRepository(db)
 	require.NoError(t, err)
 
-	hub := NewHub(64)
+	hub := realtime.NewHub(64)
 	uc := NewBeerUsecase(beerRepo, hub)
 
 	ownerCtx := middleware.WithUserID(ctx, "user-1", "")
-	adminCtx := middleware.WithUserID(ctx, "admin-1", model.RoleAdmin)
+	adminCtx := middleware.WithUserID(ctx, "admin-1", usermodel.RoleAdmin)
 	intruderCtx := middleware.WithUserID(ctx, "intruder-2", "")
 
 	beer := model.Beer{
