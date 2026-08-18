@@ -1,0 +1,225 @@
+{
+  "dashboard": {
+    "title": "Beer Avaliation API - Observability",
+    "uid": "beer-api-observability",
+    "timezone": "browser",
+    "schemaVersion": 38,
+    "version": 1,
+    "refresh": "5s",
+    "time": {
+      "from": "now-15m",
+      "to": "now"
+    },
+    "panels": [
+      {
+        "id": 1,
+        "title": "HTTP Requests (RED)",
+        "type": "timeseries",
+        "gridPos": { "x": 0, "y": 0, "w": 12, "h": 8 },
+        "datasource": "Prometheus",
+        "targets": [
+          {
+            "expr": "sum by (route, method, status) (http_requests_total)",
+            "legendFormat": "{{route}} {{method}} {{status}}",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "reqps",
+            "custom": {
+              "fillOpacity": 20
+            }
+          }
+        }
+      },
+      {
+        "id": 2,
+        "title": "HTTP Latency (p50, p90, p99)",
+        "type": "timeseries",
+        "gridPos": { "x": 12, "y": 0, "w": 12, "h": 8 },
+        "datasource": "Prometheus",
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.5, sum by (route) (rate(http_request_duration_seconds_bucket[5m])))",
+            "legendFormat": "p50 {{route}}",
+            "refId": "A"
+          },
+          {
+            "expr": "histogram_quantile(0.9, sum by (route) (rate(http_request_duration_seconds_bucket[5m])))",
+            "legendFormat": "p90 {{route}}",
+            "refId": "B"
+          },
+          {
+            "expr": "histogram_quantile(0.99, sum by (route) (rate(http_request_duration_seconds_bucket[5m])))",
+            "legendFormat": "p99 {{route}}",
+            "refId": "C"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "s",
+            "custom": {
+              "fillOpacity": 10
+            }
+          }
+        }
+      },
+      {
+        "id": 3,
+        "title": "Database Retries by Operation",
+        "type": "timeseries",
+        "gridPos": { "x": 0, "y": 8, "w": 12, "h": 8 },
+        "datasource": "Prometheus",
+        "targets": [
+          {
+            "expr": "sum by (operation) (rate(db_retry_attempts_total[5m]))",
+            "legendFormat": "{{operation}}",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "ops",
+            "custom": {
+              "fillOpacity": 30
+            }
+          }
+        }
+      },
+      {
+        "id": 4,
+        "title": "DB Connection Pool (USE)",
+        "type": "timeseries",
+        "gridPos": { "x": 12, "y": 8, "w": 12, "h": 8 },
+        "datasource": "Prometheus",
+        "targets": [
+          {
+            "expr": "go_sql_db_connections_open",
+            "legendFormat": "Open",
+            "refId": "A"
+          },
+          {
+            "expr": "go_sql_db_connections_in_use",
+            "legendFormat": "In Use",
+            "refId": "B"
+          },
+          {
+            "expr": "go_sql_db_connections_idle",
+            "legendFormat": "Idle",
+            "refId": "C"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "short",
+            "min": 0,
+            "custom": {
+              "fillOpacity": 20
+            }
+          }
+        }
+      },
+      {
+        "id": 5,
+        "title": "Moderation Requests",
+        "type": "timeseries",
+        "gridPos": { "x": 0, "y": 16, "w": 12, "h": 8 },
+        "datasource": "Prometheus",
+        "targets": [
+          {
+            "expr": "sum by (status) (rate(moderation_requests_total[5m]))",
+            "legendFormat": "{{status}}",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "reqps",
+            "custom": {
+              "fillOpacity": 30
+            }
+          }
+        }
+      },
+      {
+        "id": 6,
+        "title": "Moderation Cache Hits by Backend",
+        "type": "timeseries",
+        "gridPos": { "x": 12, "y": 16, "w": 12, "h": 8 },
+        "datasource": "Prometheus",
+        "targets": [
+          {
+            "expr": "sum by (backend) (rate(moderation_cache_hits_total[5m]))",
+            "legendFormat": "{{backend}}",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "hits",
+            "custom": {
+              "fillOpacity": 30
+            }
+          }
+        }
+      },
+      {
+        "id": 7,
+        "title": "Active SSE Connections",
+        "type": "gauge",
+        "gridPos": { "x": 0, "y": 24, "w": 8, "h": 6 },
+        "datasource": "Prometheus",
+        "targets": [
+          {
+            "expr": "sse_active_connections",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "short",
+            "min": 0,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "value": 0, "color": "green" },
+                { "value": 50, "color": "yellow" },
+                { "value": 100, "color": "red" }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 8,
+        "title": "Traces (Tempo)",
+        "type": "traces",
+        "gridPos": { "x": 8, "y": 24, "w": 16, "h": 6 },
+        "datasource": "Tempo",
+        "targets": [
+          {
+            "datasource": {
+              "type": "tempo",
+              "uid": "Tempo"
+            },
+            "queryType": "traceql",
+            "refId": "A"
+          }
+        ]
+      }
+    ],
+    "links": [
+      {
+        "title": "Explore Traces",
+        "url": "/explore?left=%5B%22now-15m%22,%22now%22,%22Tempo%22,%7B%22query%22:%22%22%7D%5D",
+        "type": "link"
+      },
+      {
+        "title": "Explore Logs",
+        "url": "/explore?left=%5B%22now-15m%22,%22now%22,%22Loki%22,%7B%22query%22:%22%7Bapp%3D~%5C%22beer-avaliation-api.*%5C%22%7D%22%7D%5D",
+        "type": "link"
+      }
+    ]
+  }
+}

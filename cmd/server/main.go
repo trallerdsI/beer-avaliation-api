@@ -15,11 +15,12 @@ import (
 
 	"beer-review-app/internal/app"
 	"beer-review-app/pkg/database"
+	"beer-review-app/pkg/logging"
 	"beer-review-app/pkg/telemetry"
 )
 
 func main() {
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, logging.SanitizeOptions(&slog.HandlerOptions{Level: slog.LevelInfo})))
 	slog.SetDefault(logger)
 
 	serverPort := os.Getenv("SERVER_PORT")
