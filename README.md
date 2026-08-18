@@ -179,7 +179,22 @@ docker run -p 8082:8082 \
 | `SUPABASE_SERVICE_ROLE_KEY` | Service role key do Supabase Storage |
 | `OPENAI_API_KEY` | API key para moderação de conteúdo (opcional) |
 | `REDIS_URL` | URL do Redis para cache compartilhado de moderação (opcional) |
-| `OPENAI_API_KEY` | API key para moderação de conteúdo (opcional) |
+
+#### Observabilidade (Prometheus / Grafana)
+
+A aplicação expõe métricas no endpoint `/metrics` (formato Prometheus).
+
+| Métrica | Tipo | Labels | Descrição |
+|---------|------|--------|-----------|
+| `http_request_duration_seconds` | Histogram | `route`, `method`, `status` | Duração das requisições HTTP |
+| `http_requests_total` | Counter | `route`, `method`, `status` | Total de requisições por rota |
+| `db_retry_attempts_total` | Counter | `operation` | Tentativas de retry no banco (`exec`, `query`, `queryrow`, `begintx`, `ping`) |
+| `db_retry_attempts_total` | Counter | `operation` | Tentativas de retry no banco (`exec`, `query`, `queryrow`, `begintx`, `ping`) |
+| `moderation_requests_total` | Counter | `status` | Requisições de moderação (`allowed` / `denied`) |
+| `go_sql_db_connections_open` | Gauge | — | Conexões abertas no pool |
+| `go_sql_db_connections_in_use` | Gauge | — | Conexões em uso |
+| `go_sql_db_connections_idle` | Gauge | — | Conexões idle |
+| `go_sql_db_wait_count_total` | Counter | — | Requests que esperaram por conexão |
 
 #### Deploy em produção
 
