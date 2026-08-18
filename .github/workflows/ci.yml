@@ -37,8 +37,38 @@ jobs:
           go install github.com/securego/gosec/v2/cmd/gosec@latest
           gosec -exclude-dir=.history -exclude-dir=.kilo -exclude=G101,G115,G404,G120 ./...
 
-      - name: Run unit tests with race detector
-        run: go test -race -short ./...
+      - name: Run unit tests with race detector and coverage
+        run: go test -race -short -coverprofile=coverage.out -covermode=atomic ./...
+
+      - name: Check coverage threshold
+        run: |
+          COVERAGE=$(go tool cover -func=coverage.out | grep total | awk '{print $3}' | sed 's/%//')
+          echo "Coverage: ${COVERAGE}%"
+          if (( $(echo "$COVERAGE < 65" | bc -l) )); then
+            echo "Coverage ${COVERAGE}% is below 65% threshold"
+            exit 1
+          fi
+
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage.out
+          retention-days: 30
+
+  vulnerability-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.6"
+          cache: true
+
+      - name: Run govulncheck
+        run: |
+          go run golang.org/x/vuln/cmd/govulncheck@latest ./...
 
   integration-test:
     if: ${{ vars.TEST_DATABASE_URL != '' }}
@@ -83,3 +113,17 @@ jobs:
 
       - name: Run chaos tests with testcontainers
         run: go test -race -timeout 180s ./pkg/database/
+
+  vulnerability-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.6"
+          cache: true
+
+      - name: Run govulncheck
+        run: |
+          go run golang.org/x/vuln/cmd/govulncheck@latest ./...
