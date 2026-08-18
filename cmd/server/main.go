@@ -9,8 +9,13 @@ import (
 	"syscall"
 	"time"
 
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	"go.opentelemetry.io/otel"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+
 	"beer-review-app/internal/app"
 	"beer-review-app/pkg/database"
+	"beer-review-app/pkg/telemetry"
 )
 
 func main() {
@@ -33,9 +38,26 @@ func main() {
 	// operacionais para diagnóstico (em vez de um 503 global em tudo).
 	var router http.Handler = app.BuildRouter(db, logger)
 
+	var tracerProvider *sdktrace.TracerProvider
+	if os.Getenv("OTEL_TRACES_EXPORTER") != "none" {
+		tp, err := telemetry.InitTracerProvider("beer-avaliation-api")
+		if err != nil {
+			slog.Warn("failed to init OpenTelemetry tracer", "err", err)
+		} else {
+			tracerProvider = tp
+		}
+	}
+
+	handler := router
+	if tracerProvider != nil {
+		handler = otelhttp.NewHandler(router, "beer-avaliation-api",
+			otelhttp.WithPropagators(otel.GetTextMapPropagator()),
+		)
+	}
+
 	server := &http.Server{
 		Addr:         ":" + serverPort,
-		Handler:      router,
+		Handler:      handler,
 		ReadTimeout:  30 * time.Second,
 		WriteTimeout: 30 * time.Second,
 		IdleTimeout:  120 * time.Second,
@@ -62,4 +84,8 @@ func main() {
 	}
 
 	slog.Info("servidor finalizado")
+
+	if tracerProvider != nil {
+		telemetry.Shutdown(tracerProvider)
+	}
 }

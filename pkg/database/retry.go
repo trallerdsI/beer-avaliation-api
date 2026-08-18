@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 
+	"go.opentelemetry.io/otel"
+
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
@@ -112,7 +114,10 @@ func retryExec[T any](ctx context.Context, maxRetries int, baseDelay time.Durati
 			return zero, ctx.Err()
 		}
 
+		_, span := otel.Tracer("database").Start(ctx, "db."+operation)
 		result, err := fn()
+		span.End()
+
 		if err == nil {
 			return result, nil
 		}

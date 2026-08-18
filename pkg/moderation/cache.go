@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
+
+	"beer-review-app/pkg/metrics"
 )
 
 // ModerationCache defines the interface for caching moderation results.
@@ -31,6 +33,9 @@ func (c *InMemoryModerationCache) Get(_ context.Context, key string) (bool, bool
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	val, ok := c.cache[key]
+	if ok {
+		metrics.ModerationCacheHitsTotal.WithLabelValues("memory").Inc()
+	}
 	return val, ok, nil
 }
 
@@ -66,6 +71,7 @@ func (c *RedisModerationCache) Get(ctx context.Context, key string) (bool, bool,
 	if err != nil {
 		return false, false, fmt.Errorf("redis bool conversion: %w", err)
 	}
+	metrics.ModerationCacheHitsTotal.WithLabelValues("redis").Inc()
 	return val, true, nil
 }
 

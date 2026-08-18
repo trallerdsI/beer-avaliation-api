@@ -33,6 +33,12 @@ var (
 		},
 		[]string{"route", "method", "status"},
 	)
+
+	// SSEActiveConnections conta conexões SSE ativas no hub realtime.
+	SSEActiveConnections = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "sse_active_connections",
+		Help: "Current number of active SSE connections",
+	})
 )
 
 // RecordMetrics regista (ou loga, em serverless) as métricas de requisição.
@@ -52,6 +58,7 @@ func RecordMetrics(ctx context.Context, pattern, method, status string, duration
 
 	RequestDuration.WithLabelValues(pattern, method, status).Observe(duration)
 	TotalRequests.WithLabelValues(pattern, method, status).Inc()
+	SSEActiveConnections.Set(0)
 }
 
 // IsServerlessRuntime devolve true quando a aplicação corre em modo serverless.
@@ -76,6 +83,11 @@ var (
 		Name: "go_sql_db_wait_count_total",
 		Help: "Total number of requests that waited for a free connection",
 	})
+
+	ModerationCacheHitsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "moderation_cache_hits_total",
+		Help: "Total number of moderation cache hits by backend",
+	}, []string{"backend"})
 )
 
 // RecordDBStats updates Prometheus gauges/counters from database/sql stats.
@@ -84,4 +96,12 @@ func RecordDBStats(stats sql.DBStats) {
 	DBConnectionsInUse.Set(float64(stats.InUse))
 	DBConnectionsIdle.Set(float64(stats.Idle))
 	DBWaitCount.Add(float64(stats.WaitCount))
+}
+
+func IncSSEConnections() {
+	SSEActiveConnections.Inc()
+}
+
+func DecSSEConnections() {
+	SSEActiveConnections.Dec()
 }

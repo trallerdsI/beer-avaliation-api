@@ -1,0 +1,69 @@
+version: '3'
+
+services:
+  prometheus:
+    image: prom/prometheus:v2.52.0
+    restart: always
+    volumes:
+      - ./observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+    ports:
+      - "9090:9090"
+    networks:
+      - observability
+
+  loki:
+    image: grafana/loki:3.0.0
+    restart: always
+    volumes:
+      - ./observability/loki/loki.yml:/etc/loki/local-config.yaml
+      - loki-data:/loki
+    command: -config.file=/etc/loki/local-config.yaml
+    ports:
+      - "3100:3100"
+    networks:
+      - observability
+
+  tempo:
+    image: grafana/tempo:2.4.1
+    restart: always
+    volumes:
+      - ./observability/tempo/tempo.yml:/etc/tempo/tempo.yml
+      - tempo-data:/tmp/tempo
+    command: -config.file=/etc/tempo/tempo.yml
+    ports:
+      - "4317:4317"
+      - "4318:4318"
+    networks:
+      - observability
+
+  grafana:
+    image: grafana/grafana:11.0.0
+    restart: always
+    volumes:
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning
+      - grafana-data:/var/lib/grafana
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    ports:
+      - "3000:3000"
+    networks:
+      - observability
+    depends_on:
+      - prometheus
+      - loki
+      - tempo
+
+volumes:
+  prometheus-data:
+  loki-data:
+  tempo-data:
+  grafana-data:
+
+networks:
+  observability:
+    driver: bridge

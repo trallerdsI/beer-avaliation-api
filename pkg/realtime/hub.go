@@ -12,6 +12,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"sync"
+
+	"beer-review-app/pkg/metrics"
 )
 
 // Event é a unidade de dados transmitida ao cliente móvel via SSE.
@@ -72,6 +74,8 @@ func (h *Hub) Subscribe(parent context.Context) (<-chan Event, func()) {
 	h.subs[s] = struct{}{}
 	h.mu.Unlock()
 
+	metrics.IncSSEConnections()
+
 	go func() {
 		// Termina quando o caller cancela OU quando o Hub é desligado.
 		select {
@@ -92,6 +96,7 @@ func (h *Hub) unsubscribe(s *subscriber) {
 		close(s.ch)
 	}
 	h.mu.Unlock()
+	metrics.DecSSEConnections()
 }
 
 // Publish difunde um evento a todos os clientes subscritos de forma síncrona.
