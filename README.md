@@ -180,7 +180,7 @@ docker run -p 8082:8082 \
 | `OPENAI_API_KEY` | API key para moderação de conteúdo (opcional) |
 | `REDIS_URL` | URL do Redis para cache compartilhado de moderação (opcional) |
 
-#### Observabilidade (Prometheus / Grafana)
+#### Observabilidade (Prometheus / Grafana / Tempo / Loki)
 
 A aplicação expõe métricas no endpoint `/metrics` (formato Prometheus).
 
@@ -189,12 +189,36 @@ A aplicação expõe métricas no endpoint `/metrics` (formato Prometheus).
 | `http_request_duration_seconds` | Histogram | `route`, `method`, `status` | Duração das requisições HTTP |
 | `http_requests_total` | Counter | `route`, `method`, `status` | Total de requisições por rota |
 | `db_retry_attempts_total` | Counter | `operation` | Tentativas de retry no banco (`exec`, `query`, `queryrow`, `begintx`, `ping`) |
-| `db_retry_attempts_total` | Counter | `operation` | Tentativas de retry no banco (`exec`, `query`, `queryrow`, `begintx`, `ping`) |
 | `moderation_requests_total` | Counter | `status` | Requisições de moderação (`allowed` / `denied`) |
+| `moderation_cache_hits_total` | Counter | `backend` | Hits no cache (`redis` ou `memory`) |
+| `sse_active_connections` | Gauge | — | Conexões SSE ativas |
 | `go_sql_db_connections_open` | Gauge | — | Conexões abertas no pool |
 | `go_sql_db_connections_in_use` | Gauge | — | Conexões em uso |
 | `go_sql_db_connections_idle` | Gauge | — | Conexões idle |
 | `go_sql_db_wait_count_total` | Counter | — | Requests que esperaram por conexão |
+
+##### Stack local
+
+```bash
+docker compose -f docker-compose.observability.yaml up -d
+```
+
+Acesse:
+- **Grafana:** http://localhost:3000 (admin/admin)
+- **Prometheus:** http://localhost:9090
+- **Tempo:** http://localhost:3200
+- **Loki:** http://localhost:3100
+
+##### Validação automatizada
+
+O script `scripts/observability_load_test.sh` gera carga na API e valida métricas, traces e dashboard:
+
+```bash
+# Suba a API e a stack de observabilidade
+BASE_URL=http://localhost:8082 ./scripts/observability_load_test.sh
+```
+
+Variáveis opcionais: `PROM_URL`, `TEMPO_URL`, `GRAFANA_URL`, `GRAFANA_USER`, `GRAFANA_PASSWORD`.
 
 #### Deploy em produção
 
