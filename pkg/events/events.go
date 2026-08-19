@@ -1,0 +1,100 @@
+package events
+
+import (
+	"context"
+	"encoding/json"
+	"strconv"
+	"time"
+
+	"github.com/redis/go-redis/v9"
+)
+
+const (
+	// Event types emitted by the beer domain.
+	TypeBeerCreated     = "beer.created"
+	TypeBeerUpdated     = "beer.updated"
+	TypeBeerDeleted     = "beer.deleted"
+	TypeCommentAdded    = "comment.added"
+	TypeCommentDeleted  = "comment.deleted"
+	TypeCommentLiked    = "comment.liked"
+	TypeMediaAdded      = "beer.media.added"
+)
+
+// Event represents a domain event emitted when beer data changes.
+type Event struct {
+	Type      string                 `json:"type"`
+	ID        string                 `json:"id"`
+	BeerID    string                 `json:"beerId"`
+	Data      map[string]any         `json:"data"`
+	Timestamp time.Time              `json:"timestamp"`
+}
+
+// Publisher emits domain events to an event store.
+type Publisher interface {
+	Publish(ctx context.Context, beerID string, ev Event) error
+}
+
+// Store reads domain events for a given beer, optionally after a timestamp.
+type Store interface {
+	ListSince(ctx context.Context, beerID string, since time.Time) ([]Event, error)
+}
+
+// redisStore implements Publisher and Store using a Redis sorted set per beer.
+type redisStore struct {
+	client *redis.Client
+	prefix string
+	ttl    time.Duration
+}
+
+// NewRedisStore creates a Publisher/Store backed by Redis.
+// ttl is the retention period for events per beer key.
+func NewRedisStore(client *redis.Client, prefix string, ttl time.Duration) Publisher {
+	return &redisStore{client: client, prefix: prefix, ttl: ttl}
+}
+
+func (s *redisStore) key(beerID string) string {
+	return s.prefix + ":beer:" + beerID
+}
+
+func (s *redisStore) Publish(ctx context.Context, beerID string, ev Event) error {
+	if ev.Timestamp.IsZero() {
+		ev.Timestamp = time.Now()
+	}
+	payload, err := json.Marshal(ev)
+	if err != nil {
+		return err
+	}
+	score := float64(ev.Timestamp.UnixNano())
+	key := s.key(beerID)
+	if err := s.client.ZAdd(ctx, key, redis.Z{Score: score, Member: payload}).Err(); err != nil {
+		return err
+	}
+	if s.ttl > 0 {
+		_ = s.client.Expire(ctx, key, s.ttl)
+	}
+	return nil
+}
+
+func (s *redisStore) ListSince(ctx context.Context, beerID string, since time.Time) ([]Event, error) {
+	key := s.key(beerID)
+	min := "-inf"
+	if !since.IsZero() {
+		min = strconv.FormatInt(since.UnixNano(), 10)
+	}
+	cmd := s.client.ZRangeByScore(ctx, key, &redis.ZRangeBy{
+		Min: min,
+		Max: "+inf",
+	})
+	if cmd.Err() != nil {
+		return nil, cmd.Err()
+	}
+	events := make([]Event, 0, len(cmd.Val()))
+	for _, raw := range cmd.Val() {
+		var ev Event
+		if err := json.Unmarshal([]byte(raw), &ev); err != nil {
+			continue
+		}
+		events = append(events, ev)
+	}
+	return events, nil
+}

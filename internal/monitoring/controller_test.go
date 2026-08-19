@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"beer-review-app/internal/beer/model"
 	"beer-review-app/pkg/errors"
@@ -46,6 +47,9 @@ func (f *fakeBeerUsecase) AddMedia(ctx context.Context, id string, item model.Me
 }
 func (f *fakeBeerUsecase) SearchBeers(ctx context.Context, filters model.BeerFilters) ([]model.Beer, int, bool, error) {
 	return nil, 0, false, nil
+}
+func (f *fakeBeerUsecase) ListBeerEvents(ctx context.Context, beerID string, since time.Time) ([]model.BeerEvent, error) {
+	return nil, nil
 }
 
 func TestHealthCheckNilDB(t *testing.T) {

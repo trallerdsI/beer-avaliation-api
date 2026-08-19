@@ -21,7 +21,7 @@ import (
 // a causa raiz (Gap1).
 func TestCreateBeerDuplicate409(t *testing.T) {
 	mockBeerUsecase := new(MockBeerUsecase)
-	controller := NewBeerController(mockBeerUsecase, mockLogger, nil)
+	controller := NewBeerController(mockBeerUsecase, mockLogger, nil, nil)
 
 	suggestions := []errors.ProblemDetail{{Code: "BEER_SUGGESTION", Detail: "Heineken Long Neck", Field: "name"}}
 	mockBeerUsecase.On("Create", context.Background(), mock.Anything).
@@ -53,7 +53,7 @@ func TestCreateBeerDuplicate409(t *testing.T) {
 // averageRating/totalReviews (Decisão B) são expostos no JSON de resposta.
 func TestGetBeerByIDAggregation(t *testing.T) {
 	mockBeerUsecase := new(MockBeerUsecase)
-	controller := NewBeerController(mockBeerUsecase, mockLogger, nil)
+	controller := NewBeerController(mockBeerUsecase, mockLogger, nil, nil)
 
 	beer := model.Beer{
 		ID:            "1",
@@ -88,7 +88,7 @@ func TestGetBeerByIDAggregation(t *testing.T) {
 // traz o CreatedBy do utilizador autenticado (AuthZ obrigatória, Decisão A).
 func TestAddCommentAuthZCreatedBy(t *testing.T) {
 	mockBeerUsecase := new(MockBeerUsecase)
-	controller := NewBeerController(mockBeerUsecase, mockLogger, nil)
+	controller := NewBeerController(mockBeerUsecase, mockLogger, nil, nil)
 
 	var captured model.Comment
 	mockBeerUsecase.On("AddComment", mock.Anything, "1", mock.Anything).
@@ -117,7 +117,7 @@ func TestAddCommentAuthZCreatedBy(t *testing.T) {
 // sanitizado antes da validação (evita gravar XSS vazio).
 func TestAddCommentXSSSanitized(t *testing.T) {
 	mockBeerUsecase := new(MockBeerUsecase)
-	controller := NewBeerController(mockBeerUsecase, mockLogger, nil)
+	controller := NewBeerController(mockBeerUsecase, mockLogger, nil, nil)
 
 	var captured model.Comment
 	mockBeerUsecase.On("AddComment", mock.Anything, "1", mock.Anything).

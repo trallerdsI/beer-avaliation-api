@@ -25,6 +25,7 @@ import (
 	"beer-review-app/pkg/response"
 	"beer-review-app/pkg/storage"
 	"beer-review-app/pkg/validation"
+	"beer-review-app/pkg/events"
 )
 
 // validate é um validador de structs de stack (zero-allocation por request no
@@ -83,17 +84,18 @@ func newValidator() *validator.Validate {
 
 // BeerController handles HTTP requests related to beers.
 type BeerController struct {
-	usecase  usecase.BeerUsecase
-	logger   *slog.Logger
-	uploader storage.Uploader // opcional: nil desativa upload de mídia (404 no endpoint)
+	usecase   usecase.BeerUsecase
+	logger    *slog.Logger
+	uploader  storage.Uploader // opcional: nil desativa upload de mídia (404 no endpoint)
+	eventPub  events.Publisher // opcional: nil desativa publicação de eventos
 }
 
 // NewBeerController makes a new controller for beer
-func NewBeerController(u usecase.BeerUsecase, logger *slog.Logger, uploader storage.Uploader) *BeerController {
+func NewBeerController(u usecase.BeerUsecase, logger *slog.Logger, uploader storage.Uploader, eventPub events.Publisher) *BeerController {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &BeerController{usecase: u, logger: logger, uploader: uploader}
+	return &BeerController{usecase: u, logger: logger, uploader: uploader, eventPub: eventPub}
 }
 
 // maxPageSize limita o tamanho de página para proteger o servidor contra
@@ -616,4 +618,33 @@ func (c *BeerController) UploadBeerMedia(w http.ResponseWriter, r *http.Request)
 	}
 
 	response.SendResponse(w, http.StatusOK, media)
+}
+
+func (c *BeerController) ListBeerEvents(w http.ResponseWriter, r *http.Request) {
+	beerID := r.PathValue("id")
+	if beerID == "" {
+		response.SendProblem(w, appErrors.NewProblem(http.StatusBadRequest, "invalid_request", "beer id is required"))
+		return
+	}
+
+	since := r.URL.Query().Get("since")
+	var sinceTime time.Time
+	if since != "" {
+		if ts, err := strconv.ParseInt(since, 10, 64); err == nil {
+			sinceTime = time.Unix(ts, 0)
+		}
+	}
+
+	events, err := c.usecase.ListBeerEvents(r.Context(), beerID, sinceTime)
+	if err != nil {
+		handleError(w, r.Context(), c.logger, err, "Failed to list events", http.StatusInternalServerError)
+		return
+	}
+	if events == nil {
+		events = []model.BeerEvent{}
+	}
+	response.SendResponse(w, http.StatusOK, map[string]any{
+		"events": events,
+		"since":  sinceTime.Unix(),
+	})
 }

@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"beer-review-app/internal/beer/model"
 	"beer-review-app/internal/beer/usecase"
@@ -84,6 +85,14 @@ func (m *MockBeerUsecase) SearchBeers(ctx context.Context, filters model.BeerFil
 	return args.Get(0).([]model.Beer), args.Int(1), args.Bool(2), args.Error(3)
 }
 
+func (m *MockBeerUsecase) ListBeerEvents(ctx context.Context, beerID string, since time.Time) ([]model.BeerEvent, error) {
+	args := m.Called(ctx, beerID, since)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]model.BeerEvent), args.Error(1)
+}
+
 func (m *MockBeerUsecase) GetByID(ctx context.Context, id string) (model.Beer, error) {
 	args := m.Called(ctx, id)
 	return args.Get(0).(model.Beer), args.Error(1)
@@ -92,7 +101,7 @@ func (m *MockBeerUsecase) GetByID(ctx context.Context, id string) (model.Beer, e
 // TestGetBeer tests the GET /beers/{id} endpoint for retrieving a beer by its ID.
 func TestGetBeer(t *testing.T) {
 	mockBeerUsecase = new(MockBeerUsecase)
-	controller := NewBeerController(mockBeerUsecase, mockLogger, nil)
+	controller := NewBeerController(mockBeerUsecase, mockLogger, nil, nil)
 
 	// Set up a helper function to send a request and check the status code
 	makeRequest := func(url string) *httptest.ResponseRecorder {
@@ -153,7 +162,7 @@ func TestGetBeer(t *testing.T) {
 // TestCreateBeer tests the POST /beers endpoint for creating a new beer.
 func TestCreateBeer(t *testing.T) {
 	mockBeerUsecase = new(MockBeerUsecase)
-	controller := NewBeerController(mockBeerUsecase, mockLogger, nil)
+	controller := NewBeerController(mockBeerUsecase, mockLogger, nil, nil)
 
 	// Test for successful beer creation
 	mockBeerUsecase.On("Create", context.Background(), mock.Anything).Return(nil).Once()
@@ -188,7 +197,7 @@ func TestCreateBeer(t *testing.T) {
 // TestUpdateBeer tests the PUT /beers/{id} endpoint for updating an existing beer.
 func TestUpdateBeer(t *testing.T) {
 	mockBeerUsecase = new(MockBeerUsecase)
-	controller := NewBeerController(mockBeerUsecase, mockLogger, nil)
+	controller := NewBeerController(mockBeerUsecase, mockLogger, nil, nil)
 
 	// Test for successful update
 	mockBeerUsecase.On("Update", context.Background(), "1", mock.Anything).Return(nil).Once()
@@ -212,7 +221,7 @@ func TestUpdateBeer(t *testing.T) {
 // TestDeleteBeer tests the DELETE /beers/{id} endpoint for deleting a beer.
 func TestDeleteBeer(t *testing.T) {
 	mockBeerUsecase = new(MockBeerUsecase)
-	controller := NewBeerController(mockBeerUsecase, mockLogger, nil)
+	controller := NewBeerController(mockBeerUsecase, mockLogger, nil, nil)
 
 	// Test for successful deletion
 	mockBeerUsecase.On("Delete", context.Background(), "1").Return(nil).Once()
@@ -233,7 +242,7 @@ func TestDeleteBeer(t *testing.T) {
 // TestAddComment tests the POST /beers/{id}/comments endpoint for adding a comment to a beer.
 func TestAddComment(t *testing.T) {
 	mockBeerUsecase = new(MockBeerUsecase)
-	controller := NewBeerController(mockBeerUsecase, mockLogger, nil)
+	controller := NewBeerController(mockBeerUsecase, mockLogger, nil, nil)
 
 	// Test case 1: Valid comment
 	t.Run("Valid Comment", func(t *testing.T) {
@@ -287,7 +296,7 @@ func TestAddComment(t *testing.T) {
 // TestLikeComment tests the POST /beers/{id}/comments/{commentId}/like endpoint for liking a comment.
 func TestLikeComment(t *testing.T) {
 	mockBeerUsecase = new(MockBeerUsecase)
-	controller := NewBeerController(mockBeerUsecase, mockLogger, nil)
+	controller := NewBeerController(mockBeerUsecase, mockLogger, nil, nil)
 
 	// Like exige login (middleware.Auth). Injeta user_id no contexto.
 	withUser := func(r *http.Request) *http.Request {
@@ -333,7 +342,7 @@ func TestLikeComment(t *testing.T) {
 // TestDeleteComment tests the DELETE /beers/{id}/comments/{commentId} endpoint for deleting a comment.
 func TestDeleteComment(t *testing.T) {
 	mockBeerUsecase = new(MockBeerUsecase)
-	controller := NewBeerController(mockBeerUsecase, mockLogger, nil)
+	controller := NewBeerController(mockBeerUsecase, mockLogger, nil, nil)
 
 	// Test case 1: Successfully delete a comment
 	t.Run("Successful Delete", func(t *testing.T) {
@@ -371,7 +380,7 @@ func TestDeleteComment(t *testing.T) {
 // sem o prefixo interno "Error 400: invalid beer:" (regressão do Bug 2).
 func TestCreateBeerValidationFailure(t *testing.T) {
 	mockBeerUsecase = new(MockBeerUsecase)
-	controller := NewBeerController(mockBeerUsecase, mockLogger, nil)
+	controller := NewBeerController(mockBeerUsecase, mockLogger, nil, nil)
 
 	abv := 5.0
 	beer := model.Beer{
@@ -472,7 +481,7 @@ func TestGetAllBeersRegressionNullSlice(t *testing.T) {
 			mockBeerUsecase.On("GetPaginated", mock.Anything, 1, 10).
 				Return(tt.beers, tt.total, tt.repoErr).Once()
 
-			controller := NewBeerController(mockBeerUsecase, mockLogger, nil)
+			controller := NewBeerController(mockBeerUsecase, mockLogger, nil, nil)
 			req := httptest.NewRequest(http.MethodGet, "/api/v1/beers?page=1&pageSize=10", nil)
 			rr := httptest.NewRecorder()
 
@@ -499,7 +508,7 @@ func TestGetAllBeersRegressionNullSlice(t *testing.T) {
 
 func TestDeleteBeer_NotFound(t *testing.T) {
 	mockBeerUsecase = new(MockBeerUsecase)
-	controller := NewBeerController(mockBeerUsecase, mockLogger, nil)
+	controller := NewBeerController(mockBeerUsecase, mockLogger, nil, nil)
 
 	mockBeerUsecase.On("Delete", mock.Anything, "999").Return(errors.NewAppError(http.StatusNotFound, "beer not found", nil)).Once()
 
@@ -516,7 +525,7 @@ func TestDeleteBeer_NotFound(t *testing.T) {
 
 func TestUpdateBeer_ValidationFailure(t *testing.T) {
 	mockBeerUsecase = new(MockBeerUsecase)
-	controller := NewBeerController(mockBeerUsecase, mockLogger, nil)
+	controller := NewBeerController(mockBeerUsecase, mockLogger, nil, nil)
 
 	beer := model.Beer{Name: "ab", Style: "IPA", Description: "desc", ImageUrl: "https://x.com/a.jpg", Alcohol: float64Ptr(5.0), Taste: "Doce", Aroma: "Floral", Color: "Clara", Body: "Leve", Carbonation: "Baixa", Finish: "Seco"}
 	body, _ := json.Marshal(beer)
@@ -534,7 +543,7 @@ func TestUpdateBeer_ValidationFailure(t *testing.T) {
 
 func TestSearchBeers_AlcoholFilters(t *testing.T) {
 	mockBeerUsecase = new(MockBeerUsecase)
-	controller := NewBeerController(mockBeerUsecase, mockLogger, nil)
+	controller := NewBeerController(mockBeerUsecase, mockLogger, nil, nil)
 
 	mockBeerUsecase.On("SearchBeers", mock.Anything, model.BeerFilters{
 		Query:      "",

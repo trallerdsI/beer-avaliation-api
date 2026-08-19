@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"beer-review-app/internal/beer/model"
 	"beer-review-app/pkg/middleware"
@@ -47,6 +48,9 @@ func (f *fuzzBeerUsecase) AddMedia(ctx context.Context, id string, item model.Me
 func (f *fuzzBeerUsecase) SearchBeers(ctx context.Context, filters model.BeerFilters) ([]model.Beer, int, bool, error) {
 	return nil, 0, false, nil
 }
+func (f *fuzzBeerUsecase) ListBeerEvents(ctx context.Context, beerID string, since time.Time) ([]model.BeerEvent, error) {
+	return nil, nil
+}
 
 func FuzzCreateBeerHandler(f *testing.F) {
 	f.Add(`{"name":"IPA","style":"Ale","alcohol":5.5,"taste":"Doce","aroma":"Floral","color":"Clara","body":"Leve","carbonation":"Baixa","finish":"Seco"}`)
@@ -55,7 +59,7 @@ func FuzzCreateBeerHandler(f *testing.F) {
 	f.Add(`{"alcohol":999}`)
 	f.Add(`{"name":"<script>alert(1)</script>"}`)
 
-	controller := NewBeerController(&fuzzBeerUsecase{}, mockLogger, nil)
+	controller := NewBeerController(&fuzzBeerUsecase{}, mockLogger, nil, nil)
 
 	f.Fuzz(func(t *testing.T, data string) {
 		body := bytes.NewReader([]byte(data))
@@ -74,7 +78,7 @@ func FuzzUpdateBeerHandler(f *testing.F) {
 	f.Add(`{"name":""}`)
 	f.Add(`{"alcohol":999}`)
 
-	controller := NewBeerController(&fuzzBeerUsecase{}, mockLogger, nil)
+	controller := NewBeerController(&fuzzBeerUsecase{}, mockLogger, nil, nil)
 
 	f.Fuzz(func(t *testing.T, data string) {
 		body := bytes.NewReader([]byte(data))
@@ -94,7 +98,7 @@ func FuzzAddCommentHandler(f *testing.F) {
 	f.Add(`{"rating":-1}`)
 	f.Add(`{"text":"<script>alert(1)</script>","rating":5}`)
 
-	controller := NewBeerController(&fuzzBeerUsecase{}, mockLogger, nil)
+	controller := NewBeerController(&fuzzBeerUsecase{}, mockLogger, nil, nil)
 
 	f.Fuzz(func(t *testing.T, data string) {
 		body := bytes.NewReader([]byte(data))

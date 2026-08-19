@@ -66,7 +66,7 @@ func TestSearchBeers(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mockBeerUsecase = new(MockBeerUsecase)
-			controller := NewBeerController(mockBeerUsecase, mockLogger, nil)
+			controller := NewBeerController(mockBeerUsecase, mockLogger, nil, nil)
 			tt.setupMock()
 
 			req := httptest.NewRequest(http.MethodGet, tt.query, nil)
@@ -85,7 +85,7 @@ func TestSearchBeers(t *testing.T) {
 
 func TestGetEnums(t *testing.T) {
 	mockBeerUsecase = new(MockBeerUsecase)
-	controller := NewBeerController(mockBeerUsecase, mockLogger, nil)
+	controller := NewBeerController(mockBeerUsecase, mockLogger, nil, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/beers/enums", nil)
 	rr := httptest.NewRecorder()
@@ -130,7 +130,7 @@ func TestUploadBeerMedia(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mockBeerUsecase = new(MockBeerUsecase)
-			controller := NewBeerController(mockBeerUsecase, mockLogger, nil)
+			controller := NewBeerController(mockBeerUsecase, mockLogger, nil, nil)
 			if tt.setupMock != nil {
 				tt.setupMock()
 			}
@@ -152,7 +152,7 @@ func TestUploadBeerMedia(t *testing.T) {
 
 func TestGetHomeFeed(t *testing.T) {
 	mockBeerUsecase = new(MockBeerUsecase)
-	controller := NewBeerController(mockBeerUsecase, mockLogger, nil)
+	controller := NewBeerController(mockBeerUsecase, mockLogger, nil, nil)
 
 	mockBeerUsecase.On("GetPaginated", mock.Anything, 1, 20).Return([]model.Beer{}, 0, nil).Once()
 

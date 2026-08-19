@@ -29,6 +29,9 @@ import (
 	middleware "beer-review-app/pkg/middleware"
 	"beer-review-app/pkg/moderation"
 	"beer-review-app/pkg/storage"
+
+	"github.com/redis/go-redis/v9"
+	"beer-review-app/pkg/events"
 )
 
 //go:embed all:migrations/*.sql
@@ -56,7 +59,22 @@ func BuildRouterWithDBErr(db *database.RetryableDB, dbErr error, logger *slog.Lo
 	userRepo := newUserRepo(db)
 
 	moderator := newModerator()
-	beerUsecase := beerUsecasePkg.NewBeerUsecase(beerRepo, nil, moderator)
+
+	var eventPub events.Publisher
+	if db != nil {
+		redisURL := os.Getenv("REDIS_URL")
+		if redisURL != "" {
+			opt, err := redis.ParseURL(redisURL)
+			if err == nil {
+				client := redis.NewClient(opt)
+				if err := client.Ping(context.Background()).Err(); err == nil {
+					eventPub = events.NewRedisStore(client, "beer-api", 72*time.Hour)
+				}
+			}
+		}
+	}
+
+	beerUsecase := beerUsecasePkg.NewBeerUsecase(beerRepo, nil, moderator, eventPub)
 	moderationRepo, err := beerRepository.NewPostgresModerationRepository(db)
 	if err != nil {
 		slog.Error("falha ao inicializar repositório de moderação", "err", err)
@@ -75,7 +93,7 @@ func BuildRouterWithDBErr(db *database.RetryableDB, dbErr error, logger *slog.Lo
 		slog.Error("falha no seed de admin", "err", err)
 	}
 
-	beerController := beerHttp.NewBeerController(beerUsecase, logger, uploader)
+	beerController := beerHttp.NewBeerController(beerUsecase, logger, uploader, eventPub)
 	userController := userHttp.NewUserController(userUsecase, logger)
 	monitoringController := monitoring.NewMonitoringController(beerUsecase, beerRepo, userRepo, logger, db, dbErr)
 	moderationController := beerHttp.NewModerationController(moderationUsecase, logger)
@@ -89,6 +107,7 @@ func BuildRouterWithDBErr(db *database.RetryableDB, dbErr error, logger *slog.Lo
 	mux.HandleFunc("DELETE /api/v1/beers/{id}", middleware.Auth(beerController.DeleteBeer))
 	mux.HandleFunc("POST /api/v1/beers/{id}/media", middleware.Auth(beerController.UploadBeerMedia))
 	mux.HandleFunc("GET /api/v1/beers/search", beerController.SearchBeers)
+	mux.HandleFunc("GET /api/v1/beers/{id}/events", beerController.ListBeerEvents)
 	mux.HandleFunc("POST /api/v1/beers/{id}/comments", middleware.Auth(beerController.AddComment))
 	mux.HandleFunc("DELETE /api/v1/beers/{id}/comments/{commentId}", middleware.Auth(beerController.DeleteComment))
 	mux.HandleFunc("POST /api/v1/beers/{id}/comments/{commentId}/like", middleware.Auth(beerController.LikeComment))

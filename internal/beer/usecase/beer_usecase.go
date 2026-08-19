@@ -11,6 +11,7 @@ import (
 	"beer-review-app/pkg/middleware"
 	"beer-review-app/pkg/moderation"
 	"beer-review-app/pkg/uuid"
+	"beer-review-app/pkg/events"
 )
 
 type BeerUsecase interface {
@@ -25,18 +26,22 @@ type BeerUsecase interface {
 	LikeComment(ctx context.Context, beerID, commentID, userID, deviceID string) error
 	AddMedia(ctx context.Context, id string, item model.MediaItem) ([]model.MediaItem, error)
 	SearchBeers(ctx context.Context, filters model.BeerFilters) ([]model.Beer, int, bool, error)
+	ListBeerEvents(ctx context.Context, beerID string, since time.Time) ([]model.BeerEvent, error)
 }
 
 type beerUsecase struct {
 	repo      repository.BeerRepository
 	moderator moderation.Moderator
+	events    events.Publisher
 }
 
 // NewBeerUsecase creates a new instance of BeerUsecase.
 // moderator pode ser nil (ex: testes offline); neste caso a moderação é ignorada.
-func NewBeerUsecase(repo repository.BeerRepository, _ interface{}, moderator moderation.Moderator) BeerUsecase {
+// events pode ser nil (ex: testes, serverless); neste caso nenhum evento é emitido.
+func NewBeerUsecase(repo repository.BeerRepository, _ interface{}, moderator moderation.Moderator, events events.Publisher) BeerUsecase {
 	u := &beerUsecase{
-		repo: repo,
+		repo:   repo,
+		events: events,
 	}
 	if moderator != nil {
 		u.moderator = moderator
@@ -337,4 +342,29 @@ func (u *beerUsecase) SearchBeers(ctx context.Context, filters model.BeerFilters
 	}
 
 	return beers, total, fuzzyMatch, nil
+}
+
+// ListBeerEvents returns domain events for a beer since a given timestamp.
+func (u *beerUsecase) ListBeerEvents(ctx context.Context, beerID string, since time.Time) ([]model.BeerEvent, error) {
+	if u.events == nil {
+		return []model.BeerEvent{}, nil
+	}
+	store, ok := u.events.(interface{ ListSince(ctx context.Context, beerID string, since time.Time) ([]model.BeerEvent, error) })
+	if !ok {
+		return []model.BeerEvent{}, nil
+	}
+	return store.ListSince(ctx, beerID, since)
+}
+
+func (u *beerUsecase) publishBeerEvent(ctx context.Context, beerID, eventType string, data map[string]any) {
+	if u.events == nil {
+		return
+	}
+	_ = u.events.Publish(ctx, beerID, events.Event{
+		Type:      eventType,
+		ID:        uuid.MustNewV7(),
+		BeerID:    beerID,
+		Data:      data,
+		Timestamp: time.Now(),
+	})
 }
