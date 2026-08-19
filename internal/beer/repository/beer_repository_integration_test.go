@@ -104,12 +104,12 @@ func TestIntegration_BeerRepository_SearchAndStats(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	results, total, err := repo.SearchBeers(ctx, model.BeerFilters{Query: "IPA", Page: 1, PageSize: 10})
+	results, total, _, err := repo.SearchBeers(ctx, model.BeerFilters{Query: "IPA", Page: 1, PageSize: 10})
 	require.NoError(t, err)
 	require.Equal(t, 2, total)
 	require.Len(t, results, 2)
 
-	results, total, err = repo.SearchBeers(ctx, model.BeerFilters{Style: "Stout", Page: 1, PageSize: 10})
+	results, total, _, err = repo.SearchBeers(ctx, model.BeerFilters{Style: "Stout", Page: 1, PageSize: 10})
 	require.NoError(t, err)
 	require.Equal(t, 1, total)
 	require.Len(t, results, 1)
@@ -160,6 +160,7 @@ func applyMigrations(db *sql.DB) error {
 		"add_beer_reports.sql",
 		"add_beer_deletion_requests.sql",
 		"add_moderation_rls.sql",
+		"add_beer_fts.sql",
 	}
 	for _, name := range order {
 		data, err := os.ReadFile(migrationDir + "/" + name)

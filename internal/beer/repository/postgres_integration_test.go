@@ -112,6 +112,21 @@ func runMigrations(ctx context.Context, t *testing.T, db *sql.DB) {
 	CREATE INDEX IF NOT EXISTS idx_beers_name ON beers(name);
 	CREATE INDEX IF NOT EXISTS idx_beers_style ON beers(style);
 	CREATE INDEX IF NOT EXISTS idx_beers_created_by ON beers(created_by);
+
+	ALTER TABLE beers ADD COLUMN IF NOT EXISTS search_vector tsvector
+	  GENERATED ALWAYS AS (
+	    setweight(to_tsvector('portuguese', COALESCE(name, '')), 'A') ||
+	    setweight(to_tsvector('portuguese', COALESCE(style, '')), 'B') ||
+	    setweight(to_tsvector('portuguese', COALESCE(aroma, '')), 'C') ||
+	    setweight(to_tsvector('portuguese', COALESCE(color, '')), 'C') ||
+	    setweight(to_tsvector('portuguese', COALESCE(body, '')), 'C') ||
+	    setweight(to_tsvector('portuguese', COALESCE(description, '')), 'D')
+	  ) STORED;
+
+	DROP INDEX IF EXISTS idx_beers_fts;
+	CREATE INDEX idx_beers_fts ON beers USING GIN (search_vector);
+
+	CREATE EXTENSION IF NOT EXISTS pg_trgm;
 	`
 
 	if _, err := db.ExecContext(ctx, schema); err != nil {
