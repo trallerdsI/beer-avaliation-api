@@ -1,12 +1,46 @@
+# Git e histórico
 .git
 .history
-.env*
+.gitignore
+
+# Ambientes e segredos
+.env
+.env.*
+!.env.example
+
+# Artefatos de build e teste
 coverage.*
-logs/
-ignore
+*.test
+*.out
 *.db
+logs/
+ignore/
+
+# Ferramentas de desenvolvimento
 Makefile
 docs/
 lib/
 pkg/vercel/
 openapi.yaml
+
+# IDEs e editores
+.idea
+.vscode
+*.swp
+*.swo
+*~
+
+# Sistema operacional
+.DS_Store
+Thumbs.db
+
+# Dependências baixadas
+vendor/
+
+# Scripts locais (manter apenas scripts/ de produção)
+scripts/*.sh
+!scripts/healthcheck.sh
+
+# Arquivos temporários
+tmp/
+temp/
