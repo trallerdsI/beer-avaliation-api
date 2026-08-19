@@ -14,19 +14,41 @@ import (
 	"beer-review-app/pkg/events"
 )
 
-type BeerUsecase interface {
+type BeerReader interface {
 	GetAll(ctx context.Context) ([]model.Beer, error)
-	Create(ctx context.Context, beer *model.Beer) error
 	GetByID(ctx context.Context, id string) (model.Beer, error)
 	GetPaginated(ctx context.Context, page, pageSize int) ([]model.Beer, int, error)
+	SearchBeers(ctx context.Context, filters model.BeerFilters) ([]model.Beer, int, bool, error)
+}
+
+type BeerWriter interface {
+	Create(ctx context.Context, beer *model.Beer) error
 	Update(ctx context.Context, id string, beer model.Beer) error
 	Delete(ctx context.Context, id string) error
+}
+
+type BeerCommentService interface {
 	AddComment(ctx context.Context, id string, comment model.Comment) error
 	DeleteComment(ctx context.Context, id string, commentID string) error
 	LikeComment(ctx context.Context, beerID, commentID, userID, deviceID string) error
+}
+
+type BeerMediaService interface {
 	AddMedia(ctx context.Context, id string, item model.MediaItem) ([]model.MediaItem, error)
-	SearchBeers(ctx context.Context, filters model.BeerFilters) ([]model.Beer, int, bool, error)
+}
+
+type BeerEventLister interface {
 	ListBeerEvents(ctx context.Context, beerID string, since time.Time) ([]model.BeerEvent, error)
+}
+
+// BeerUsecase is the composite interface for the beer domain.
+// It embeds focused interfaces following the Interface Segregation Principle.
+type BeerUsecase interface {
+	BeerReader
+	BeerWriter
+	BeerCommentService
+	BeerMediaService
+	BeerEventLister
 }
 
 type beerUsecase struct {

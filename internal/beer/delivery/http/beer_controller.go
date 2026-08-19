@@ -643,8 +643,34 @@ func (c *BeerController) ListBeerEvents(w http.ResponseWriter, r *http.Request) 
 	if events == nil {
 		events = []model.BeerEvent{}
 	}
+
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Vary", "Accept-Encoding, If-None-Match")
+
+	if len(events) == 0 {
+		if match := r.Header.Get("If-None-Match"); match != "" {
+			w.Header().Set("ETag", match)
+			w.WriteHeader(http.StatusNotModified)
+			return
+		}
+		response.SendResponse(w, http.StatusOK, map[string]any{
+			"events": events,
+			"since":  sinceTime.Unix(),
+		})
+		return
+	}
+
+	latest := events[len(events)-1]
+	etag := fmt.Sprintf(`"%s"`, latest.ID)
+	if match := r.Header.Get("If-None-Match"); match == etag {
+		w.Header().Set("ETag", etag)
+		w.WriteHeader(http.StatusNotModified)
+		return
+	}
+
+	w.Header().Set("ETag", etag)
 	response.SendResponse(w, http.StatusOK, map[string]any{
 		"events": events,
-		"since":  sinceTime.Unix(),
+		"since":  latest.Timestamp.Unix(),
 	})
 }

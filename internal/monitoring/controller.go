@@ -37,7 +37,6 @@ type HealthResponse struct {
 }
 
 type MonitoringController struct {
-	beerUsecase usecase.BeerUsecase
 	beerRepo    beerRepo.BeerRepository
 	userRepo    userRepo.UserRepository
 	logger      *slog.Logger
@@ -46,12 +45,11 @@ type MonitoringController struct {
 	dbErr       error
 }
 
-func NewMonitoringController(bu usecase.BeerUsecase, beerRepo beerRepo.BeerRepository, userRepo userRepo.UserRepository, logger *slog.Logger, db *database.RetryableDB, dbErr error) *MonitoringController {
+func NewMonitoringController(_ usecase.BeerUsecase, beerRepo beerRepo.BeerRepository, userRepo userRepo.UserRepository, logger *slog.Logger, db *database.RetryableDB, dbErr error) *MonitoringController {
 	if logger == nil {
 		logger = slog.Default()
 	}
 	return &MonitoringController{
-		beerUsecase: bu,
 		beerRepo:    beerRepo,
 		userRepo:    userRepo,
 		logger:      logger,
