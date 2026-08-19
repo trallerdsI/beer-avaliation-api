@@ -478,14 +478,14 @@ func (c *BeerController) SearchBeers(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if minAlc := query.Get("minAlcohol"); minAlc != "" {
-		if val, err := strconv.ParseFloat(minAlc, 64); err == nil {
-			filters.MinAlcohol = new(float64(val))
+		if f, err := strconv.ParseFloat(minAlc, 64); err == nil {
+			filters.MinAlcohol = &f
 		}
 	}
 
 	if maxAlc := query.Get("maxAlcohol"); maxAlc != "" {
-		if val, err := strconv.ParseFloat(maxAlc, 64); err == nil {
-			filters.MaxAlcohol = new(float64(val))
+		if f, err := strconv.ParseFloat(maxAlc, 64); err == nil {
+			filters.MaxAlcohol = &f
 		}
 	}
 

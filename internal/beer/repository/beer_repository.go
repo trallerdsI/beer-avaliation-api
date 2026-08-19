@@ -66,10 +66,6 @@ func isNilQuerier(q querier) bool {
 	return false
 }
 
-func (r *PostgresBeerRepository) withTx(tx *sql.Tx) *PostgresBeerRepository {
-	return &PostgresBeerRepository{db: tx}
-}
-
 // Create adds a new beer to the PostgreSQL database.
 // O id é um UUIDv7 (RFC 9562) gerado pela aplicação e já preenchido em
 // beer.ID antes da chamada (ver beerUsecase.Create). Isto garante IDs
@@ -389,7 +385,6 @@ func (r *PostgresBeerRepository) SearchBeers(ctx context.Context, filters model.
 		qb.WriteString(fmt.Sprintf(" AND taste = $%d", argPosition))
 		cb.WriteString(fmt.Sprintf(" AND taste = $%d", argPosition))
 		args = append(args, filters.Taste)
-		argPosition++
 	}
 
 	// Get total count of filtered beers
@@ -625,7 +620,7 @@ func (r *PostgresBeerRepository) ExecInTx(ctx context.Context, fn func(ctx conte
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	txRepo := &PostgresBeerRepository{db: tx}
 	if err := fn(ctx, txRepo); err != nil {

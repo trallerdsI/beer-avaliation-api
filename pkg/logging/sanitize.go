@@ -29,11 +29,6 @@ func sanitizeReplaceAttr(_ []string, a slog.Attr) slog.Attr {
 
 // NewSanitizedHandler cria um handler JSON com ReplaceAttr para redigir segredos.
 func NewSanitizedHandler(options *slog.HandlerOptions) *slog.JSONHandler {
-	h := slog.NewJSONHandler(nil, options)
-	if h != nil {
-		// JSONHandler não expõe ReplaceAttr diretamente no construtor público,
-		// então usamos uma abordagem alternativa: wrappear com HandlerOptions
-	}
 	return slog.NewJSONHandler(nil, options)
 }
 

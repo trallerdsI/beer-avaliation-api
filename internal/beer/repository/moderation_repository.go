@@ -322,7 +322,7 @@ func (r *PostgresModerationRepository) ExecInTx(ctx context.Context, fn func(ctx
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	txModerationRepo := r.withTx(tx)
 	txBeerRepo := &PostgresBeerRepository{db: tx}

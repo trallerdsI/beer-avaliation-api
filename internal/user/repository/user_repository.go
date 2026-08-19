@@ -376,7 +376,7 @@ func (r *PostgresUserRepository) ExecInTx(ctx context.Context, fn func(ctx conte
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	txRepo := r.withTx(tx)
 	if err := fn(ctx, txRepo); err != nil {
