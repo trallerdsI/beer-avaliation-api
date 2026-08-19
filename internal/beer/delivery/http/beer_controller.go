@@ -465,6 +465,12 @@ func (c *BeerController) LikeComment(w http.ResponseWriter, r *http.Request) {
 func (c *BeerController) SearchBeers(w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query()
 
+	if len(query.Get("q")) > maxSearchQueryLength {
+		response.SendProblem(w, appErrors.NewProblem(http.StatusBadRequest, "invalid_request",
+			fmt.Sprintf("Search query exceeds maximum length of %d characters", maxSearchQueryLength)))
+		return
+	}
+
 	filters := model.BeerFilters{
 		Query:    query.Get("q"),
 		Style:    query.Get("style"),
@@ -540,6 +546,10 @@ func (c *BeerController) GetEnums(w http.ResponseWriter, r *http.Request) {
 // maxUploadBytes limita o tamanho do ficheiro de mídia (5MB) para evitar DoS
 // de memória no upload (RFC 7578). Imagens comprimidas raramente passam disso.
 const maxUploadBytes = 5 << 20
+
+// maxSearchQueryLength limita o tamanho da query FTS para evitar DoS por
+// consumo excessivo de CPU no PostgreSQL (pg_trgm / tsvector).
+const maxSearchQueryLength = 200
 
 // UploadBeerMedia recebe uma imagem via multipart/form-data (RFC 7578), valida
 // o binário por magic bytes (não só extensão), faz upload para o object storage
@@ -639,52 +649,35 @@ func (c *BeerController) ListBeerEvents(w http.ResponseWriter, r *http.Request) 
 	w.Header().Set("Vary", "Accept-Encoding, If-None-Match")
 
 	store, ok := c.usecase.(interface {
-		ListSinceWithLatest(ctx context.Context, beerID string, since time.Time) (events []model.BeerEvent, latestMember string, err error)
+		LatestEvent(ctx context.Context, beerID string) (score float64, member string, err error)
+		ListSince(ctx context.Context, beerID string, since time.Time) ([]model.BeerEvent, error)
 	})
 	if ok {
-		events, latestMember, err := store.ListSinceWithLatest(r.Context(), beerID, sinceTime)
+		_, latestMember, err := store.LatestEvent(r.Context(), beerID)
 		if err != nil {
-			handleError(w, r.Context(), c.logger, err, "Failed to list events", http.StatusInternalServerError)
+			handleError(w, r.Context(), c.logger, err, "Failed to get latest event", http.StatusInternalServerError)
 			return
 		}
 
-		etag := fmt.Sprintf(`W/%q`, latestMember)
+		etag := events.SanitizeETag(latestMember)
 		w.Header().Set("ETag", etag)
 		if match := r.Header.Get("If-None-Match"); match == etag {
 			w.WriteHeader(http.StatusNotModified)
 			return
 		}
-
-		if events == nil {
-			events = []model.BeerEvent{}
-		}
-		if len(events) == 0 {
-			response.SendResponse(w, http.StatusOK, map[string]any{
-				"events": events,
-				"since":  sinceTime.Unix(),
-			})
-			return
-		}
-
-		latest := events[len(events)-1]
-		response.SendResponse(w, http.StatusOK, map[string]any{
-			"events": events,
-			"since":  latest.Timestamp.Unix(),
-		})
-		return
 	}
 
-	events, err := c.usecase.ListBeerEvents(r.Context(), beerID, sinceTime)
+	evts, err := c.usecase.ListBeerEvents(r.Context(), beerID, sinceTime)
 	if err != nil {
 		handleError(w, r.Context(), c.logger, err, "Failed to list events", http.StatusInternalServerError)
 		return
 	}
-	if events == nil {
-		events = []model.BeerEvent{}
+	if evts == nil {
+		evts = []model.BeerEvent{}
 	}
-	if len(events) > 0 {
-		latest := events[len(events)-1]
-		etag := fmt.Sprintf(`W/%q`, latest.ID)
+	if len(evts) > 0 {
+		latest := evts[len(evts)-1]
+		etag := events.SanitizeETag(latest.ID)
 		w.Header().Set("ETag", etag)
 		if match := r.Header.Get("If-None-Match"); match == etag {
 			w.WriteHeader(http.StatusNotModified)
@@ -692,7 +685,7 @@ func (c *BeerController) ListBeerEvents(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 	response.SendResponse(w, http.StatusOK, map[string]any{
-		"events": events,
+		"events": evts,
 		"since":  sinceTime.Unix(),
 	})
 }

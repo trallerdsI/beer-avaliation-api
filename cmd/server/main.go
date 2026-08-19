@@ -78,10 +78,16 @@ func main() {
 
 	app.Shutdown()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := server.Shutdown(ctx); err != nil {
 		slog.Error("erro ao desligar o servidor", "err", err)
+	}
+
+	if db != nil {
+		if err := db.Close(); err != nil {
+			slog.Error("erro ao fechar conexão com banco", "err", err)
+		}
 	}
 
 	slog.Info("servidor finalizado")

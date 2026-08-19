@@ -61,14 +61,15 @@ func BuildRouterWithDBErr(db *database.RetryableDB, dbErr error, logger *slog.Lo
 	moderator := newModerator()
 
 	var eventPub events.Publisher
+	var redisClient *redis.Client
 	if db != nil {
 		redisURL := os.Getenv("REDIS_URL")
 		if redisURL != "" {
 			opt, err := redis.ParseURL(redisURL)
 			if err == nil {
-				client := redis.NewClient(opt)
-				if err := client.Ping(context.Background()).Err(); err == nil {
-					eventPub = events.NewRedisStore(client, "beer-api", 72*time.Hour)
+				redisClient = redis.NewClient(opt)
+				if err := redisClient.Ping(context.Background()).Err(); err == nil {
+					eventPub = events.NewRedisStore(redisClient, "beer-api", 72*time.Hour)
 				}
 			}
 		}
@@ -95,7 +96,7 @@ func BuildRouterWithDBErr(db *database.RetryableDB, dbErr error, logger *slog.Lo
 
 	beerController := beerHttp.NewBeerController(beerUsecase, logger, uploader, eventPub)
 	userController := userHttp.NewUserController(userUsecase, logger)
-	monitoringController := monitoring.NewMonitoringController(beerRepo, userRepo, logger, db, dbErr)
+	monitoringController := monitoring.NewMonitoringController(beerRepo, userRepo, logger, db, dbErr, redisClient)
 	moderationController := beerHttp.NewModerationController(moderationUsecase, logger)
 
 	mux := http.NewServeMux()

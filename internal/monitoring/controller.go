@@ -12,6 +12,8 @@ import (
 	"beer-review-app/pkg/errors"
 	"beer-review-app/pkg/middleware"
 	"beer-review-app/pkg/response"
+
+	"github.com/redis/go-redis/v9"
 )
 
 // Structs de resposta para tipagem forte e melhor documentação Swagger
@@ -42,9 +44,10 @@ type MonitoringController struct {
 	startTime   time.Time
 	db          *database.RetryableDB
 	dbErr       error
+	redisClient *redis.Client
 }
 
-func NewMonitoringController(beerRepo beerRepo.BeerRepository, userRepo userRepo.UserRepository, logger *slog.Logger, db *database.RetryableDB, dbErr error) *MonitoringController {
+func NewMonitoringController(beerRepo beerRepo.BeerRepository, userRepo userRepo.UserRepository, logger *slog.Logger, db *database.RetryableDB, dbErr error, redisClient *redis.Client) *MonitoringController {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -55,6 +58,7 @@ func NewMonitoringController(beerRepo beerRepo.BeerRepository, userRepo userRepo
 		startTime:   time.Now(),
 		db:          db,
 		dbErr:       dbErr,
+		redisClient: redisClient,
 	}
 }
 
@@ -93,9 +97,11 @@ func (c *MonitoringController) GetStats(w http.ResponseWriter, r *http.Request) 
 // @Router /health [get]
 func (c *MonitoringController) HealthCheck(w http.ResponseWriter, r *http.Request) {
 	dbStatus := c.checkDatabaseHealth(r.Context())
+	redisStatus := c.checkRedisHealth(r.Context())
 	status := http.StatusOK
 	overall := "healthy"
 	dbDetail := ""
+	redisDetail := ""
 	if dbStatus != "up" {
 		overall = "degraded"
 		status = http.StatusServiceUnavailable
@@ -107,6 +113,11 @@ func (c *MonitoringController) HealthCheck(w http.ResponseWriter, r *http.Reques
 			dbDetail = "connection failed"
 		}
 	}
+	if redisStatus != "up" {
+		overall = "degraded"
+		status = http.StatusServiceUnavailable
+		redisDetail = "connection failed"
+	}
 
 	health := HealthResponse{
 		Status:  overall,
@@ -114,10 +125,14 @@ func (c *MonitoringController) HealthCheck(w http.ResponseWriter, r *http.Reques
 		Uptime:  time.Since(c.startTime).Truncate(time.Second).String(),
 		Dependencies: map[string]string{
 			"database": dbStatus,
+			"redis":    redisStatus,
 		},
 	}
 	if dbDetail != "" {
 		health.Dependencies["database_detail"] = dbDetail
+	}
+	if redisDetail != "" {
+		health.Dependencies["redis_detail"] = redisDetail
 	}
 
 	response.SendResponse(w, status, health)
@@ -264,14 +279,15 @@ func (c *MonitoringController) ReadinessProbe(w http.ResponseWriter, r *http.Req
 	defer cancel()
 
 	dbStatus := c.checkDatabaseHealth(ctx)
-	if dbStatus != "up" {
-		response.SendProblem(w, errors.NewProblem(http.StatusServiceUnavailable, "service_unavailable", "Database not ready"))
+	redisStatus := c.checkRedisHealth(ctx)
+	if dbStatus != "up" || redisStatus != "up" {
+		response.SendProblem(w, errors.NewProblem(http.StatusServiceUnavailable, "service_unavailable", "Dependencies not ready"))
 		return
 	}
 
 	response.SendResponse(w, http.StatusOK, HealthResponse{
 		Status:       "ready",
-		Dependencies: map[string]string{"database": "up"},
+		Dependencies: map[string]string{"database": "up", "redis": "up"},
 	})
 }
 
@@ -281,6 +297,17 @@ func (c *MonitoringController) checkDatabaseHealth(ctx context.Context) string {
 	}
 	if err := c.db.PingContext(ctx); err != nil {
 		c.logger.WarnContext(ctx, "database health check failed", "err", err)
+		return "down"
+	}
+	return "up"
+}
+
+func (c *MonitoringController) checkRedisHealth(ctx context.Context) string {
+	if c.redisClient == nil {
+		return "not_configured"
+	}
+	if err := c.redisClient.Ping(ctx).Err(); err != nil {
+		c.logger.WarnContext(ctx, "redis health check failed", "err", err)
 		return "down"
 	}
 	return "up"
