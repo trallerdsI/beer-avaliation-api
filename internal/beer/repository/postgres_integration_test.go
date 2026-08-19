@@ -5,6 +5,8 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"fmt"
+	"math/rand"
 	"testing"
 	"time"
 
@@ -455,4 +457,110 @@ func TestIntegration_BeerRepository_RBAC_Ownership(t *testing.T) {
 
 func tcFloat64Ptr(v float64) *float64 {
 	return &v
+}
+
+// Seed100kBeers insere 100.000 beers de forma otimizada via COPY e ajusta
+// parâmetros de memória do PostgreSQL para evitar gargalos de I/O durante a
+// criação do índice GIN em testes de carga.
+func Seed100kBeers(ctx context.Context, t *testing.T, db *sql.DB, userID string) int {
+	t.Helper()
+	t.Log("Configuring PostgreSQL memory for 100k beer seed...")
+	_, _ = db.ExecContext(ctx, `
+		SET shared_buffers = '256MB';
+		SET maintenance_work_mem = '256MB';
+		SET work_mem = '64MB';
+		SET random_page_cost = 1.0;
+	`)
+
+	t.Log("Creating temporary table for COPY...")
+	_, err := db.ExecContext(ctx, `
+		CREATE TEMP TABLE tmp_beer_seed (
+			name VARCHAR(100),
+			style VARCHAR(50),
+			description TEXT,
+			alcohol NUMERIC(4,1),
+			taste VARCHAR(50),
+			aroma VARCHAR(50),
+			color VARCHAR(50),
+			body VARCHAR(50),
+			carbonation VARCHAR(50),
+			finish VARCHAR(50),
+			created_by UUID
+		) ON COMMIT DROP;
+	`)
+	require.NoError(t, err)
+
+	t.Log("Building 100k rows in memory...")
+	rows := make([][]interface{}, 0, 100000)
+	styles := []string{"IPA", "Stout", "Pilsner", "Wheat", "Porter", "Ale", "Lager", "Sour", "Barleywine", "Saison"}
+	tastes := []string{"Doce", "Amargo", "Equilibrado", "Frutado", "Floral", "Malte", "Cítrico", "Herbal"}
+	aromas := []string{"Cítrico", "Floral", "Malte", "Herbal", "Frutado", "Caramelo", "Torrado"}
+	colors := []string{"Clara", "Âmbar", "Escura", "Rubi", "Dourada"}
+	bodies := []string{"Leve", "Médio", "Corpo", "Intenso"}
+	carbonations := []string{"Baixa", "Média", "Alta"}
+	finishes := []string{"Seco", "Doce", "Amargo", "Suave", "Cremoso"}
+
+	for i := 0; i < 100000; i++ {
+		style := styles[i%len(styles)]
+		rows = append(rows, []interface{}{
+			fmt.Sprintf("Beer %d - %s", i, style),
+			style,
+			fmt.Sprintf("Description for beer %d", i),
+			randFloat(4, 1),
+			tastes[i%len(tastes)],
+			aromas[i%len(aromas)],
+			colors[i%len(colors)],
+			bodies[i%len(bodies)],
+			carbonations[i%len(carbonations)],
+			finishes[i%len(finishes)],
+			userID,
+		})
+	}
+
+	t.Log("COPYing 100k rows into temp table...")
+	copyCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+	defer cancel()
+
+	tx, err := db.BeginTx(copyCtx, nil)
+	require.NoError(t, err)
+	defer tx.Rollback()
+
+	stmt, err := tx.PrepareContext(copyCtx, pq.CopyIn("tmp_beer_seed",
+		"name", "style", "description", "alcohol", "taste", "aroma", "color", "body", "carbonation", "finish", "created_by",
+	))
+	require.NoError(t, err)
+
+	for _, row := range rows {
+		_, err = stmt.ExecContext(copyCtx, row...)
+		require.NoError(t, err)
+	}
+	_, err = stmt.ExecContext(copyCtx)
+	require.NoError(t, err)
+	require.NoError(t, stmt.Close())
+
+	require.NoError(t, tx.Commit())
+
+	t.Log("Inserting from temp table with tsvector...")
+	_, err = db.ExecContext(ctx, `
+		INSERT INTO beers (name, style, description, alcohol, taste, aroma, color, body, carbonation, finish, created_by, created_at, updated_at)
+		SELECT name, style, description, alcohol, taste, aroma, color, body, carbonation, finish, created_by, NOW(), NOW()
+		FROM tmp_beer_seed
+	`)
+	require.NoError(t, err)
+
+	t.Log("Creating GIN index on 100k beers...")
+	_, err = db.ExecContext(ctx, `
+		DROP INDEX IF EXISTS idx_beers_fts;
+		CREATE INDEX CONCURRENTLY idx_beers_fts ON beers USING GIN (search_vector);
+	`)
+	require.NoError(t, err)
+
+	count := 0
+	require.NoError(t, db.QueryRowContext(ctx, "SELECT COUNT(*) FROM beers").Scan(&count))
+	t.Logf("Seeded %d beers", count)
+	return count
+}
+
+func randFloat(max int, prec int) float64 {
+	return float64(rand.Intn(max*10)) / float64(10)
 }

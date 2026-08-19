@@ -131,7 +131,7 @@ func TestGetAdminStatsSuccess(t *testing.T) {
 		TopStyles:  []repository.StyleCount{{Style: "IPA", Count: 20}},
 		TotalLikes: 300,
 	}
-	c := NewMonitoringController(&fakeBeerUsecase{}, &fakeBeerRepo{stats: stats}, &fakeUserRepo{}, nil, nil, nil)
+	c := NewMonitoringController( &fakeBeerRepo{stats: stats}, &fakeUserRepo{}, nil, nil, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/stats", nil)
 	ctx := middleware.WithUserID(req.Context(), "user1", "admin")
@@ -152,7 +152,7 @@ func TestGetAdminStatsSuccess(t *testing.T) {
 }
 
 func TestGetAdminStatsRepoError(t *testing.T) {
-	c := NewMonitoringController(&fakeBeerUsecase{}, &fakeBeerRepo{err: errors.ErrDatabaseUnavailable}, &fakeUserRepo{}, nil, nil, nil)
+	c := NewMonitoringController( &fakeBeerRepo{err: errors.ErrDatabaseUnavailable}, &fakeUserRepo{}, nil, nil, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/stats", nil)
 	ctx := middleware.WithUserID(req.Context(), "user1", "admin")
@@ -169,7 +169,7 @@ func TestGetAdminStatsRepoError(t *testing.T) {
 func TestGetUserStatsSuccess(t *testing.T) {
 	beerRepo := &fakeBeerRepo{}
 	userRepo := &fakeUserRepo{memberSince: time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)}
-	c := NewMonitoringController(&fakeBeerUsecase{}, beerRepo, userRepo, nil, nil, nil)
+	c := NewMonitoringController( beerRepo, userRepo, nil, nil, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/users/me/stats", nil)
 	ctx := middleware.WithUserID(req.Context(), "user1", "user")
@@ -189,7 +189,7 @@ func TestGetUserStatsSuccess(t *testing.T) {
 func TestGetUserStatsRepoError(t *testing.T) {
 	beerRepo := &fakeBeerRepo{err: errors.ErrDatabaseUnavailable}
 	userRepo := &fakeUserRepo{}
-	c := NewMonitoringController(&fakeBeerUsecase{}, beerRepo, userRepo, nil, nil, nil)
+	c := NewMonitoringController( beerRepo, userRepo, nil, nil, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/users/me/stats", nil)
 	ctx := middleware.WithUserID(req.Context(), "user1", "user")

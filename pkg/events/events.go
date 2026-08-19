@@ -37,6 +37,7 @@ type Publisher interface {
 // Store reads domain events for a given beer, optionally after a timestamp.
 type Store interface {
 	ListSince(ctx context.Context, beerID string, since time.Time) ([]Event, error)
+	LatestEvent(ctx context.Context, beerID string) (score float64, member string, err error)
 }
 
 // redisStore implements Publisher and Store using a Redis sorted set per beer.
@@ -97,4 +98,28 @@ func (s *redisStore) ListSince(ctx context.Context, beerID string, since time.Ti
 		events = append(events, ev)
 	}
 	return events, nil
+}
+
+// LatestEvent returns the score and raw member of the most recent event
+// without deserializing the JSON payload. O(1) for ETag calculation.
+func (s *redisStore) LatestEvent(ctx context.Context, beerID string) (float64, string, error) {
+	key := s.key(beerID)
+	cmd := s.client.ZRevRangeByScore(ctx, key, &redis.ZRangeBy{
+		Min:    "-inf",
+		Max:    "+inf",
+		Offset: 0,
+		Count:  1,
+	})
+	if cmd.Err() != nil {
+		return 0, "", cmd.Err()
+	}
+	if len(cmd.Val()) == 0 {
+		return 0, "", nil
+	}
+	member := cmd.Val()[0]
+	scores, err := s.client.ZScore(ctx, key, member).Result()
+	if err != nil {
+		return 0, "", err
+	}
+	return scores, member, nil
 }

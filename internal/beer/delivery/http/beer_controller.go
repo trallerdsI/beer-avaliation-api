@@ -635,6 +635,24 @@ func (c *BeerController) ListBeerEvents(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Vary", "Accept-Encoding, If-None-Match")
+
+	store, ok := c.usecase.(interface {
+		LatestEvent(ctx context.Context, beerID string) (float64, string, error)
+	})
+	if ok {
+		if _, member, err := store.LatestEvent(r.Context(), beerID); err == nil && member != "" {
+			etag := fmt.Sprintf(`"%s"`, member)
+			w.Header().Set("ETag", etag)
+			if match := r.Header.Get("If-None-Match"); match == etag {
+				w.WriteHeader(http.StatusNotModified)
+				return
+			}
+			w.Header().Set("ETag", etag)
+		}
+	}
+
 	events, err := c.usecase.ListBeerEvents(r.Context(), beerID, sinceTime)
 	if err != nil {
 		handleError(w, r.Context(), c.logger, err, "Failed to list events", http.StatusInternalServerError)
@@ -644,15 +662,7 @@ func (c *BeerController) ListBeerEvents(w http.ResponseWriter, r *http.Request) 
 		events = []model.BeerEvent{}
 	}
 
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Vary", "Accept-Encoding, If-None-Match")
-
 	if len(events) == 0 {
-		if match := r.Header.Get("If-None-Match"); match != "" {
-			w.Header().Set("ETag", match)
-			w.WriteHeader(http.StatusNotModified)
-			return
-		}
 		response.SendResponse(w, http.StatusOK, map[string]any{
 			"events": events,
 			"since":  sinceTime.Unix(),
@@ -661,14 +671,6 @@ func (c *BeerController) ListBeerEvents(w http.ResponseWriter, r *http.Request) 
 	}
 
 	latest := events[len(events)-1]
-	etag := fmt.Sprintf(`"%s"`, latest.ID)
-	if match := r.Header.Get("If-None-Match"); match == etag {
-		w.Header().Set("ETag", etag)
-		w.WriteHeader(http.StatusNotModified)
-		return
-	}
-
-	w.Header().Set("ETag", etag)
 	response.SendResponse(w, http.StatusOK, map[string]any{
 		"events": events,
 		"since":  latest.Timestamp.Unix(),

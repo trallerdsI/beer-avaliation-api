@@ -53,7 +53,7 @@ func (f *fakeBeerUsecase) ListBeerEvents(ctx context.Context, beerID string, sin
 }
 
 func TestHealthCheckNilDB(t *testing.T) {
-	c := NewMonitoringController(&fakeBeerUsecase{}, nil, nil, nil, nil, nil)
+	c := NewMonitoringController( nil, nil, nil, nil, nil)
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodGet, "/api/v1/health", nil)
 
@@ -66,7 +66,7 @@ func TestHealthCheckNilDB(t *testing.T) {
 
 func TestHealthCheckDBError(t *testing.T) {
 	dbErr := errors.NewAppError(500, "db down", nil)
-	c := NewMonitoringController(&fakeBeerUsecase{}, nil, nil, nil, nil, dbErr)
+	c := NewMonitoringController( nil, nil, nil, nil, dbErr)
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodGet, "/api/v1/health", nil)
 
@@ -78,7 +78,7 @@ func TestHealthCheckDBError(t *testing.T) {
 }
 
 func TestGetStatsRepoNil(t *testing.T) {
-	c := NewMonitoringController(&fakeBeerUsecase{}, nil, nil, nil, nil, nil)
+	c := NewMonitoringController( nil, nil, nil, nil, nil)
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodGet, "/api/v1/stats", nil)
 
@@ -90,7 +90,7 @@ func TestGetStatsRepoNil(t *testing.T) {
 }
 
 func TestGetAdminStatsForbidden(t *testing.T) {
-	c := NewMonitoringController(&fakeBeerUsecase{}, nil, nil, nil, nil, nil)
+	c := NewMonitoringController( nil, nil, nil, nil, nil)
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodGet, "/api/v1/admin/stats", nil)
 
@@ -102,7 +102,7 @@ func TestGetAdminStatsForbidden(t *testing.T) {
 }
 
 func TestGetUserStatsUnauthorized(t *testing.T) {
-	c := NewMonitoringController(&fakeBeerUsecase{}, nil, nil, nil, nil, nil)
+	c := NewMonitoringController( nil, nil, nil, nil, nil)
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodGet, "/api/v1/users/me/stats", nil)
 

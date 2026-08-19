@@ -95,7 +95,7 @@ func BuildRouterWithDBErr(db *database.RetryableDB, dbErr error, logger *slog.Lo
 
 	beerController := beerHttp.NewBeerController(beerUsecase, logger, uploader, eventPub)
 	userController := userHttp.NewUserController(userUsecase, logger)
-	monitoringController := monitoring.NewMonitoringController(beerUsecase, beerRepo, userRepo, logger, db, dbErr)
+	monitoringController := monitoring.NewMonitoringController(beerRepo, userRepo, logger, db, dbErr)
 	moderationController := beerHttp.NewModerationController(moderationUsecase, logger)
 
 	mux := http.NewServeMux()

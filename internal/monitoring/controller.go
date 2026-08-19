@@ -7,7 +7,6 @@ import (
 	"time"
 
 	beerRepo "beer-review-app/internal/beer/repository"
-	"beer-review-app/internal/beer/usecase"
 	userRepo "beer-review-app/internal/user/repository"
 	"beer-review-app/pkg/database"
 	"beer-review-app/pkg/errors"
@@ -45,7 +44,7 @@ type MonitoringController struct {
 	dbErr       error
 }
 
-func NewMonitoringController(_ usecase.BeerUsecase, beerRepo beerRepo.BeerRepository, userRepo userRepo.UserRepository, logger *slog.Logger, db *database.RetryableDB, dbErr error) *MonitoringController {
+func NewMonitoringController(beerRepo beerRepo.BeerRepository, userRepo userRepo.UserRepository, logger *slog.Logger, db *database.RetryableDB, dbErr error) *MonitoringController {
 	if logger == nil {
 		logger = slog.Default()
 	}
