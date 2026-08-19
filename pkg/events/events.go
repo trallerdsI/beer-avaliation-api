@@ -38,6 +38,10 @@ type Publisher interface {
 type Store interface {
 	ListSince(ctx context.Context, beerID string, since time.Time) ([]Event, error)
 	LatestEvent(ctx context.Context, beerID string) (score float64, member string, err error)
+	// ListSinceWithLatest returns events and the latest event metadata in a
+	// single Redis pipeline round-trip. Use this to avoid double-fetch on
+	// cache misses.
+	ListSinceWithLatest(ctx context.Context, beerID string, since time.Time) (events []Event, latestMember string, err error)
 }
 
 // redisStore implements Publisher and Store using a Redis sorted set per beer.
@@ -122,4 +126,52 @@ func (s *redisStore) LatestEvent(ctx context.Context, beerID string) (float64, s
 		return 0, "", err
 	}
 	return scores, member, nil
+}
+
+// ListSinceWithLatest returns events since a timestamp and the raw member of
+// the most recent event in a single Redis pipeline round-trip. This avoids
+// the double-fetch penalty on cache misses.
+func (s *redisStore) ListSinceWithLatest(ctx context.Context, beerID string, since time.Time) ([]Event, string, error) {
+	key := s.key(beerID)
+	min := "-inf"
+	if !since.IsZero() {
+		min = strconv.FormatInt(since.UnixNano(), 10)
+	}
+
+	pipe := s.client.Pipeline()
+	latestCmd := pipe.ZRevRangeByScore(ctx, key, &redis.ZRangeBy{
+		Min:    "-inf",
+		Max:    "+inf",
+		Offset: 0,
+		Count:  1,
+	})
+	listCmd := pipe.ZRangeByScore(ctx, key, &redis.ZRangeBy{
+		Min: min,
+		Max: "+inf",
+	})
+	_, err := pipe.Exec(ctx)
+	if err != nil {
+		return nil, "", err
+	}
+	if latestCmd.Err() != nil {
+		return nil, "", latestCmd.Err()
+	}
+	if listCmd.Err() != nil {
+		return nil, "", listCmd.Err()
+	}
+
+	var latestMember string
+	if len(latestCmd.Val()) > 0 {
+		latestMember = latestCmd.Val()[0]
+	}
+
+	events := make([]Event, 0, len(listCmd.Val()))
+	for _, raw := range listCmd.Val() {
+		var ev Event
+		if err := json.Unmarshal([]byte(raw), &ev); err != nil {
+			continue
+		}
+		events = append(events, ev)
+	}
+	return events, latestMember, nil
 }

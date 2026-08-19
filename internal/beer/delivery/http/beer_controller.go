@@ -639,18 +639,39 @@ func (c *BeerController) ListBeerEvents(w http.ResponseWriter, r *http.Request) 
 	w.Header().Set("Vary", "Accept-Encoding, If-None-Match")
 
 	store, ok := c.usecase.(interface {
-		LatestEvent(ctx context.Context, beerID string) (float64, string, error)
+		ListSinceWithLatest(ctx context.Context, beerID string, since time.Time) (events []model.BeerEvent, latestMember string, err error)
 	})
 	if ok {
-		if _, member, err := store.LatestEvent(r.Context(), beerID); err == nil && member != "" {
-			etag := fmt.Sprintf(`"%s"`, member)
-			w.Header().Set("ETag", etag)
-			if match := r.Header.Get("If-None-Match"); match == etag {
-				w.WriteHeader(http.StatusNotModified)
-				return
-			}
-			w.Header().Set("ETag", etag)
+		events, latestMember, err := store.ListSinceWithLatest(r.Context(), beerID, sinceTime)
+		if err != nil {
+			handleError(w, r.Context(), c.logger, err, "Failed to list events", http.StatusInternalServerError)
+			return
 		}
+
+		etag := fmt.Sprintf(`W/%q`, latestMember)
+		w.Header().Set("ETag", etag)
+		if match := r.Header.Get("If-None-Match"); match == etag {
+			w.WriteHeader(http.StatusNotModified)
+			return
+		}
+
+		if events == nil {
+			events = []model.BeerEvent{}
+		}
+		if len(events) == 0 {
+			response.SendResponse(w, http.StatusOK, map[string]any{
+				"events": events,
+				"since":  sinceTime.Unix(),
+			})
+			return
+		}
+
+		latest := events[len(events)-1]
+		response.SendResponse(w, http.StatusOK, map[string]any{
+			"events": events,
+			"since":  latest.Timestamp.Unix(),
+		})
+		return
 	}
 
 	events, err := c.usecase.ListBeerEvents(r.Context(), beerID, sinceTime)
@@ -661,18 +682,17 @@ func (c *BeerController) ListBeerEvents(w http.ResponseWriter, r *http.Request) 
 	if events == nil {
 		events = []model.BeerEvent{}
 	}
-
-	if len(events) == 0 {
-		response.SendResponse(w, http.StatusOK, map[string]any{
-			"events": events,
-			"since":  sinceTime.Unix(),
-		})
-		return
+	if len(events) > 0 {
+		latest := events[len(events)-1]
+		etag := fmt.Sprintf(`W/%q`, latest.ID)
+		w.Header().Set("ETag", etag)
+		if match := r.Header.Get("If-None-Match"); match == etag {
+			w.WriteHeader(http.StatusNotModified)
+			return
+		}
 	}
-
-	latest := events[len(events)-1]
 	response.SendResponse(w, http.StatusOK, map[string]any{
 		"events": events,
-		"since":  latest.Timestamp.Unix(),
+		"since":  sinceTime.Unix(),
 	})
 }

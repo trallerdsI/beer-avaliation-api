@@ -14,6 +14,41 @@ type MockStore struct {
 	mock.Mock
 }
 
+// LatestEvent provides a mock function with given fields: ctx, beerID
+func (_m *MockStore) LatestEvent(ctx context.Context, beerID string) (float64, string, error) {
+	ret := _m.Called(ctx, beerID)
+
+	if len(ret) == 0 {
+		panic("no return value specified for LatestEvent")
+	}
+
+	var r0 float64
+	var r1 string
+	var r2 error
+	if rf, ok := ret.Get(0).(func(context.Context, string) (float64, string, error)); ok {
+		return rf(ctx, beerID)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, string) float64); ok {
+		r0 = rf(ctx, beerID)
+	} else {
+		r0 = ret.Get(0).(float64)
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, string) string); ok {
+		r1 = rf(ctx, beerID)
+	} else {
+		r1 = ret.Get(1).(string)
+	}
+
+	if rf, ok := ret.Get(2).(func(context.Context, string) error); ok {
+		r2 = rf(ctx, beerID)
+	} else {
+		r2 = ret.Error(2)
+	}
+
+	return r0, r1, r2
+}
+
 // ListSince provides a mock function with given fields: ctx, beerID, since
 func (_m *MockStore) ListSince(ctx context.Context, beerID string, since time.Time) ([]Event, error) {
 	ret := _m.Called(ctx, beerID, since)
@@ -42,6 +77,43 @@ func (_m *MockStore) ListSince(ctx context.Context, beerID string, since time.Ti
 	}
 
 	return r0, r1
+}
+
+// ListSinceWithLatest provides a mock function with given fields: ctx, beerID, since
+func (_m *MockStore) ListSinceWithLatest(ctx context.Context, beerID string, since time.Time) ([]Event, string, error) {
+	ret := _m.Called(ctx, beerID, since)
+
+	if len(ret) == 0 {
+		panic("no return value specified for ListSinceWithLatest")
+	}
+
+	var r0 []Event
+	var r1 string
+	var r2 error
+	if rf, ok := ret.Get(0).(func(context.Context, string, time.Time) ([]Event, string, error)); ok {
+		return rf(ctx, beerID, since)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, string, time.Time) []Event); ok {
+		r0 = rf(ctx, beerID, since)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]Event)
+		}
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, string, time.Time) string); ok {
+		r1 = rf(ctx, beerID, since)
+	} else {
+		r1 = ret.Get(1).(string)
+	}
+
+	if rf, ok := ret.Get(2).(func(context.Context, string, time.Time) error); ok {
+		r2 = rf(ctx, beerID, since)
+	} else {
+		r2 = ret.Error(2)
+	}
+
+	return r0, r1, r2
 }
 
 // NewMockStore creates a new instance of MockStore. It also registers a testing interface on the mock and a cleanup function to assert the mocks expectations.

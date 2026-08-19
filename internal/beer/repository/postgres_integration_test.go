@@ -460,13 +460,16 @@ func tcFloat64Ptr(v float64) *float64 {
 }
 
 // Seed100kBeers insere 100.000 beers de forma otimizada via COPY e ajusta
-// parâmetros de memória do PostgreSQL para evitar gargalos de I/O durante a
-// criação do índice GIN em testes de carga.
+// parâmetros de memória do PostgreSQL (sessão) para evitar gargalos de I/O
+// durante a criação do índice GIN em testes de carga.
+//
+// NOTA: shared_buffers é um parâmetro POSTMASTER e não pode ser alterado via
+// SET em sessão. Se necessário, passe -c shared_buffers=256MB ao iniciar o
+// contêiner Postgres. Aqui ajustamos apenas parâmetros de sessão válidos.
 func Seed100kBeers(ctx context.Context, t *testing.T, db *sql.DB, userID string) int {
 	t.Helper()
-	t.Log("Configuring PostgreSQL memory for 100k beer seed...")
+	t.Log("Configuring PostgreSQL session memory for 100k beer seed...")
 	_, _ = db.ExecContext(ctx, `
-		SET shared_buffers = '256MB';
 		SET maintenance_work_mem = '256MB';
 		SET work_mem = '64MB';
 		SET random_page_cost = 1.0;
