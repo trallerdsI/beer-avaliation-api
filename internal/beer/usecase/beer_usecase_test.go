@@ -44,7 +44,7 @@ func TestCreateDuplicate(t *testing.T) {
 	beer := model.Beer{ID: "1", Name: "Heineken"}
 	existing := []model.Beer{{ID: "12", Name: "Heineken Long Neck"}}
 
-	mockRepo.On("SearchBeers", mock.Anything, mock.Anything).Return(existing, 1, nil)
+	mockRepo.On("SearchBeers", mock.Anything, mock.Anything).Return(existing, 1, false, nil)
 
 	err := usecase.Create(context.Background(), &beer)
 
@@ -62,7 +62,7 @@ func TestCreate(t *testing.T) {
 	beer := model.Beer{ID: "1", Name: "Beer1"}
 
 	// Sem duplicados: Create faz search antes de inserir.
-	mockRepo.On("SearchBeers", mock.Anything, mock.Anything).Return([]model.Beer{}, 0, nil)
+	mockRepo.On("SearchBeers", mock.Anything, mock.Anything).Return([]model.Beer{}, 0, false, nil)
 	mockRepo.On("Create", mock.Anything, &beer).Return(nil)
 
 	err := usecase.Create(context.Background(), &beer)
@@ -186,13 +186,14 @@ func TestSearchBeers(t *testing.T) {
 	beers := []model.Beer{{ID: "1", Name: "Beer1"}}
 	total := 1
 
-	mockRepo.On("SearchBeers", mock.Anything, filters).Return(beers, total, nil)
+	mockRepo.On("SearchBeers", mock.Anything, filters).Return(beers, total, false, nil)
 
-	result, totalCount, err := usecase.SearchBeers(context.Background(), filters)
+	result, totalCount, fuzzyMatch, err := usecase.SearchBeers(context.Background(), filters)
 
 	assert.NoError(t, err)
 	assert.Equal(t, beers, result)
 	assert.Equal(t, total, totalCount)
+	assert.False(t, fuzzyMatch)
 	mockRepo.AssertExpectations(t)
 }
 
@@ -202,9 +203,9 @@ func TestSearchBeersPropagatesError(t *testing.T) {
 	uc := NewBeerUsecase(mockRepo, nil, moderation.NewNoopModerator())
 
 	filters := model.BeerFilters{Query: "x", Page: 1, PageSize: 10}
-	mockRepo.On("SearchBeers", mock.Anything, filters).Return([]model.Beer{}, 0, stderrors.New("db boom"))
+	mockRepo.On("SearchBeers", mock.Anything, filters).Return([]model.Beer{}, 0, false, stderrors.New("db boom"))
 
-	_, _, err := uc.SearchBeers(context.Background(), filters)
+	_, _, _, err := uc.SearchBeers(context.Background(), filters)
 	assert.Error(t, err)
 	var appErr *appErrors.AppError
 	assert.ErrorAs(t, err, &appErr)
@@ -232,7 +233,7 @@ func TestCreateSuccessNoDuplicate(t *testing.T) {
 	uc := NewBeerUsecase(mockRepo, nil, moderation.NewNoopModerator())
 
 	beer := model.Beer{ID: "1", Name: "Unica"}
-	mockRepo.On("SearchBeers", mock.Anything, mock.Anything).Return([]model.Beer{}, 0, nil)
+	mockRepo.On("SearchBeers", mock.Anything, mock.Anything).Return([]model.Beer{}, 0, false, nil)
 	mockRepo.On("Create", mock.Anything, &beer).Return(nil)
 
 	ctx := middleware.WithUserID(context.Background(), "owner-1", "")
@@ -251,7 +252,7 @@ func TestCreateDuplicateWithSuggestions(t *testing.T) {
 
 	beer := model.Beer{ID: "1", Name: "Heineken"}
 	existing := []model.Beer{{ID: "12", Name: "Heineken Long Neck"}}
-	mockRepo.On("SearchBeers", mock.Anything, mock.Anything).Return(existing, 1, nil)
+	mockRepo.On("SearchBeers", mock.Anything, mock.Anything).Return(existing, 1, false, nil)
 
 	err := uc.Create(context.Background(), &beer)
 	assert.Error(t, err)
@@ -486,7 +487,7 @@ func TestCreate_PublishesSSEEvent(t *testing.T) {
 	uc := NewBeerUsecase(mockRepo, hub, moderation.NewNoopModerator())
 
 	beer := model.Beer{ID: "1", Name: "IPA"}
-	mockRepo.On("SearchBeers", mock.Anything, mock.Anything).Return([]model.Beer{}, 0, nil)
+	mockRepo.On("SearchBeers", mock.Anything, mock.Anything).Return([]model.Beer{}, 0, false, nil)
 	mockRepo.On("Create", mock.Anything, &beer).Return(nil)
 
 	events, _ := hub.Subscribe(context.Background())

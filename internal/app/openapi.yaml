@@ -205,9 +205,16 @@ paths:
       summary: Search beers by filters
       parameters:
         - in: query
-          name: query
+          name: q
           schema:
             type: string
+          description: Termo de busca em linguagem natural (FTS). Aspas para frases exatas, - para exclusão.
+        - in: query
+          name: fuzzy
+          schema:
+            type: boolean
+            default: true
+          description: Ativa fallback por similaridade (pg_trgm) quando FTS retornar zero resultados.
         - in: query
           name: style
           schema:
@@ -227,11 +234,11 @@ paths:
             minimum: 1
             default: 1
         - in: query
-          name: pageSize
+          name: limit
           schema:
             type: integer
             minimum: 1
-            default: 10
+            default: 20
       responses:
         '200':
           description: Search results
@@ -1245,6 +1252,12 @@ components:
           type: integer
         pageSize:
           type: integer
+        meta:
+          type: object
+          properties:
+            fuzzy_match:
+              type: boolean
+              description: Indica se os resultados foram obtidos via fallback de similaridade (pg_trgm).
 
     EnumsResponse:
       type: object

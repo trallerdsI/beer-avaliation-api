@@ -345,12 +345,12 @@ func TestIntegration_BeerRepository_SearchAndStats_WithTestcontainers(t *testing
 		require.NoError(t, err)
 	}
 
-	results, total, err := repo.SearchBeers(ctx, model.BeerFilters{Query: "IPA", Page: 1, PageSize: 10})
+	results, total, _, err := repo.SearchBeers(ctx, model.BeerFilters{Query: "IPA", Page: 1, PageSize: 10})
 	require.NoError(t, err)
 	require.Equal(t, 2, total)
 	require.Len(t, results, 2)
 
-	results, total, err = repo.SearchBeers(ctx, model.BeerFilters{Style: "Stout", Page: 1, PageSize: 10})
+	results, total, _, err = repo.SearchBeers(ctx, model.BeerFilters{Style: "Stout", Page: 1, PageSize: 10})
 	require.NoError(t, err)
 	require.Equal(t, 1, total)
 	require.Len(t, results, 1)

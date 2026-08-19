@@ -8,4 +8,5 @@ type BeerFilters struct {
 	Taste      string   `json:"taste"`
 	Page       int      `json:"page"`
 	PageSize   int      `json:"pageSize"`
+	Fuzzy      *bool    `json:"fuzzy,omitempty"`
 }

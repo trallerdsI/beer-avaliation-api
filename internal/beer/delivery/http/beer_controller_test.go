@@ -79,9 +79,9 @@ func (m *MockBeerUsecase) AddMedia(ctx context.Context, id string, item model.Me
 	return args.Get(0).([]model.MediaItem), args.Error(1)
 }
 
-func (m *MockBeerUsecase) SearchBeers(ctx context.Context, filters model.BeerFilters) ([]model.Beer, int, error) {
+func (m *MockBeerUsecase) SearchBeers(ctx context.Context, filters model.BeerFilters) ([]model.Beer, int, bool, error) {
 	args := m.Called(ctx, filters)
-	return args.Get(0).([]model.Beer), args.Int(1), args.Error(2)
+	return args.Get(0).([]model.Beer), args.Int(1), args.Bool(2), args.Error(3)
 }
 
 func (m *MockBeerUsecase) GetByID(ctx context.Context, id string) (model.Beer, error) {
@@ -544,7 +544,7 @@ func TestSearchBeers_AlcoholFilters(t *testing.T) {
 		PageSize:   10,
 		MinAlcohol: float64Ptr(4.0),
 		MaxAlcohol: float64Ptr(6.0),
-	}).Return([]model.Beer{{ID: "1", Name: "IPA"}}, 1, nil).Once()
+	}).Return([]model.Beer{{ID: "1", Name: "IPA"}}, 1, false, nil).Once()
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/beers/search?minAlcohol=4.0&maxAlcohol=6.0&page=1&pageSize=10", nil)
 	rr := httptest.NewRecorder()

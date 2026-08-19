@@ -44,8 +44,8 @@ func (f *fakeBeerUsecase) LikeComment(ctx context.Context, beerID, commentID, us
 func (f *fakeBeerUsecase) AddMedia(ctx context.Context, id string, item model.MediaItem) ([]model.MediaItem, error) {
 	return nil, nil
 }
-func (f *fakeBeerUsecase) SearchBeers(ctx context.Context, filters model.BeerFilters) ([]model.Beer, int, error) {
-	return nil, 0, nil
+func (f *fakeBeerUsecase) SearchBeers(ctx context.Context, filters model.BeerFilters) ([]model.Beer, int, bool, error) {
+	return nil, 0, false, nil
 }
 
 func TestHealthCheckNilDB(t *testing.T) {

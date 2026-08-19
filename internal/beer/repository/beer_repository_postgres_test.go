@@ -610,7 +610,7 @@ func TestPostgresBeerRepository_SearchBeers_CountError(t *testing.T) {
 	mock.ExpectQuery("SELECT COUNT").
 		WillReturnError(http.ErrHandlerTimeout)
 
-	_, _, err = repo.SearchBeers(context.Background(), model.BeerFilters{Query: "IPA", Page: 1, PageSize: 10})
+	_, _, _, err = repo.SearchBeers(context.Background(), model.BeerFilters{Query: "IPA", Page: 1, PageSize: 10})
 	require.Error(t, err)
 	require.NoError(t, mock.ExpectationsWereMet())
 }
@@ -627,7 +627,7 @@ func TestPostgresBeerRepository_SearchBeers_QueryError(t *testing.T) {
 	mock.ExpectQuery("SELECT").
 		WillReturnError(http.ErrHandlerTimeout)
 
-	_, _, err = repo.SearchBeers(context.Background(), model.BeerFilters{Query: "IPA", Page: 1, PageSize: 10})
+	_, _, _, err = repo.SearchBeers(context.Background(), model.BeerFilters{Query: "IPA", Page: 1, PageSize: 10})
 	require.Error(t, err)
 	require.NoError(t, mock.ExpectationsWereMet())
 }

@@ -464,11 +464,17 @@ func (c *BeerController) SearchBeers(w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query()
 
 	filters := model.BeerFilters{
-		Query:    query.Get("query"),
+		Query:    query.Get("q"),
 		Style:    query.Get("style"),
 		Taste:    query.Get("taste"),
 		Page:     getIntParam(query, "page", 1),
-		PageSize: clampPageSize(getIntParam(query, "pageSize", 10)),
+		PageSize: clampPageSize(getIntParam(query, "limit", 10)),
+	}
+
+	if fuzzy := query.Get("fuzzy"); fuzzy != "" {
+		if val, err := strconv.ParseBool(fuzzy); err == nil {
+			filters.Fuzzy = &val
+		}
 	}
 
 	if minAlc := query.Get("minAlcohol"); minAlc != "" {
@@ -483,7 +489,7 @@ func (c *BeerController) SearchBeers(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	beers, total, err := c.usecase.SearchBeers(r.Context(), filters)
+	beers, total, fuzzyMatch, err := c.usecase.SearchBeers(r.Context(), filters)
 	if err != nil {
 		handleError(w, r.Context(), c.logger, err, "Failed to search beers", http.StatusInternalServerError)
 		return
@@ -499,6 +505,9 @@ func (c *BeerController) SearchBeers(w http.ResponseWriter, r *http.Request) {
 		"total":    total,
 		"page":     filters.Page,
 		"pageSize": filters.PageSize,
+		"meta": map[string]interface{}{
+			"fuzzy_match": fuzzyMatch,
+		},
 	})
 }
 

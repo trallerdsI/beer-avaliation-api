@@ -341,6 +341,7 @@ func migrateDB(db *sql.DB) error {
 		"migrations/add_beer_reports.sql",
 		"migrations/add_beer_deletion_requests.sql",
 		"migrations/add_moderation_rls.sql",
+		"migrations/add_beer_fts.sql",
 	)
 
 	for _, file := range sqlFiles {

@@ -25,7 +25,7 @@ type BeerUsecase interface {
 	DeleteComment(ctx context.Context, id string, commentID string) error
 	LikeComment(ctx context.Context, beerID, commentID, userID, deviceID string) error
 	AddMedia(ctx context.Context, id string, item model.MediaItem) ([]model.MediaItem, error)
-	SearchBeers(ctx context.Context, filters model.BeerFilters) ([]model.Beer, int, error)
+	SearchBeers(ctx context.Context, filters model.BeerFilters) ([]model.Beer, int, bool, error)
 }
 
 type beerUsecase struct {
@@ -98,7 +98,7 @@ func (u *beerUsecase) Create(ctx context.Context, beer *model.Beer) error {
 	// Decisão C: evita poluição do catálogo. Se já existe cerveja com nome
 	// semelhante, bloqueia com 409 e devolve sugestões para o utilizador
 	// comentar na existente em vez de duplicar.
-	if existing, _, err := u.repo.SearchBeers(ctx, model.BeerFilters{
+	if existing, _, _, err := u.repo.SearchBeers(ctx, model.BeerFilters{
 		Query:    beer.Name,
 		Page:     1,
 		PageSize: 5,
@@ -372,15 +372,14 @@ func (u *beerUsecase) AddMedia(ctx context.Context, id string, item model.MediaI
 }
 
 // SearchBeers searches for beers using the provided filters
-func (u *beerUsecase) SearchBeers(ctx context.Context, filters model.BeerFilters) ([]model.Beer, int, error) {
+func (u *beerUsecase) SearchBeers(ctx context.Context, filters model.BeerFilters) ([]model.Beer, int, bool, error) {
 	if err := u.unavailable(); err != nil {
-		return nil, 0, err
+		return nil, 0, false, err
 	}
-	// get from repository
-	beers, total, err := u.repo.SearchBeers(ctx, filters)
+	beers, total, fuzzyMatch, err := u.repo.SearchBeers(ctx, filters)
 	if err != nil {
-		return nil, 0, errors.NewAppError(500, "Failed to search beers", err)
+		return nil, 0, false, errors.NewAppError(500, "Failed to search beers", err)
 	}
 
-	return beers, total, nil
+	return beers, total, fuzzyMatch, nil
 }

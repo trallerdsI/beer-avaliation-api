@@ -45,8 +45,8 @@ func (f *fakeBeerRepo) AddComment(ctx context.Context, id string, comment model.
 func (f *fakeBeerRepo) DeleteComment(ctx context.Context, id string, commentID string) error {
 	return nil
 }
-func (f *fakeBeerRepo) SearchBeers(ctx context.Context, filters model.BeerFilters) ([]model.Beer, int, error) {
-	return nil, 0, nil
+func (f *fakeBeerRepo) SearchBeers(ctx context.Context, filters model.BeerFilters) ([]model.Beer, int, bool, error) {
+	return nil, 0, false, nil
 }
 func (f *fakeBeerRepo) GetAdminStats(ctx context.Context) (*repository.AdminStats, error) {
 	if f.err != nil {

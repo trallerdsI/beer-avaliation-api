@@ -24,39 +24,39 @@ func TestSearchBeers(t *testing.T) {
 	}{
 		{
 			name:  "success",
-			query: "/api/v1/beers/search?query=IPA&page=1&pageSize=10",
+			query: "/api/v1/beers/search?q=IPA&page=1&pageSize=10",
 			setupMock: func() {
 				mockBeerUsecase.On("SearchBeers", mock.Anything, model.BeerFilters{
 					Query:    "IPA",
 					Page:     1,
 					PageSize: 10,
-				}).Return([]model.Beer{{ID: "1", Name: "IPA"}}, 1, nil).Once()
+				}).Return([]model.Beer{{ID: "1", Name: "IPA"}}, 1, false, nil).Once()
 			},
 			wantStatus: http.StatusOK,
 			wantBody:   `"beers"`,
 		},
 		{
 			name:  "empty result",
-			query: "/api/v1/beers/search?query=nonexistent",
+			query: "/api/v1/beers/search?q=nonexistent",
 			setupMock: func() {
 				mockBeerUsecase.On("SearchBeers", mock.Anything, model.BeerFilters{
 					Query:    "nonexistent",
 					Page:     1,
 					PageSize: 10,
-				}).Return([]model.Beer{}, 0, nil).Once()
+				}).Return([]model.Beer{}, 0, false, nil).Once()
 			},
 			wantStatus: http.StatusOK,
 			wantBody:   `"beers":[]`,
 		},
 		{
 			name:  "propagates error",
-			query: "/api/v1/beers/search?query=IPA",
+			query: "/api/v1/beers/search?q=IPA",
 			setupMock: func() {
 				mockBeerUsecase.On("SearchBeers", mock.Anything, model.BeerFilters{
 					Query:    "IPA",
 					Page:     1,
 					PageSize: 10,
-				}).Return([]model.Beer{}, 0, errors.NewAppError(500, "db error", nil)).Once()
+				}).Return([]model.Beer{}, 0, false, errors.NewAppError(500, "db error", nil)).Once()
 			},
 			wantStatus: http.StatusInternalServerError,
 			wantBody:   `"code":"internal_server_error"`,

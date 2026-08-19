@@ -26,7 +26,7 @@ type BeerRepository interface {
 	Delete(ctx context.Context, id string) error
 	AddComment(ctx context.Context, id string, comment model.Comment) error
 	DeleteComment(ctx context.Context, id string, commentID string) error
-	SearchBeers(ctx context.Context, filters model.BeerFilters) ([]model.Beer, int, error)
+	SearchBeers(ctx context.Context, filters model.BeerFilters) ([]model.Beer, int, bool, error)
 	GetAdminStats(ctx context.Context) (*AdminStats, error)
 	GetUserStats(ctx context.Context, userID string) (*UserStats, error)
 	ExecInTx(ctx context.Context, fn func(ctx context.Context, txRepo BeerRepository) error) error
@@ -334,24 +334,34 @@ func (r *PostgresBeerRepository) Delete(ctx context.Context, id string) error {
 	return nil
 }
 
-func (r *PostgresBeerRepository) SearchBeers(ctx context.Context, filters model.BeerFilters) ([]model.Beer, int, error) {
-	// strings.Builder com pré-alocação: evita as múltiplas realocações de
-	// string causadas por concatenação "+=" e fmt.Sprintf no hot path (Pilar 2).
+func (r *PostgresBeerRepository) SearchBeers(ctx context.Context, filters model.BeerFilters) ([]model.Beer, int, bool, error) {
 	var qb, cb strings.Builder
 	qb.Grow(256)
 	cb.Grow(128)
-	qb.WriteString("SELECT id, name, style, description, alcohol, taste, aroma, color, body, carbonation, finish, comments, created_by, created_at, updated_at, media FROM beers WHERE 1=1")
-	cb.WriteString("SELECT COUNT(*) FROM beers WHERE 1=1")
+
 	args := []interface{}{}
 	argPosition := 1
+	fuzzyMatch := false
 
-	// Add filters dynamically to query (parâmetros posicionais $N, sem concat
-	// de valores — defesa contra SQL injection, Pilar 4).
+	// FTS: busca textual com ranking
 	if filters.Query != "" {
-		qb.WriteString(fmt.Sprintf(" AND (name ILIKE $%d OR description ILIKE $%d)", argPosition, argPosition))
-		cb.WriteString(fmt.Sprintf(" AND (name ILIKE $%d OR description ILIKE $%d)", argPosition, argPosition))
-		args = append(args, "%"+filters.Query+"%")
+		qb.WriteString(fmt.Sprintf(`
+			SELECT id, name, style, description, alcohol, taste, aroma, color, body, carbonation, finish, comments, created_by, created_at, updated_at, media,
+			       ts_rank_cd(search_vector, websearch_to_tsquery('portuguese', $%d)) AS rank
+			FROM beers
+			WHERE search_vector @@ websearch_to_tsquery('portuguese', $%d)
+		`, argPosition, argPosition))
+		args = append(args, filters.Query)
 		argPosition++
+	} else {
+		qb.WriteString(`SELECT id, name, style, description, alcohol, taste, aroma, color, body, carbonation, finish, comments, created_by, created_at, updated_at, media, 0.0 AS rank FROM beers WHERE 1=1`)
+	}
+
+	cb.WriteString("SELECT COUNT(*) FROM beers WHERE 1=1")
+
+	// Filtros estruturados
+	if filters.Query != "" {
+		cb.WriteString(fmt.Sprintf(" AND search_vector @@ websearch_to_tsquery('portuguese', $%d)", argPosition-1))
 	}
 
 	if filters.Style != "" {
@@ -386,17 +396,95 @@ func (r *PostgresBeerRepository) SearchBeers(ctx context.Context, filters model.
 	var total int
 	err := r.db.QueryRowContext(ctx, cb.String(), args...).Scan(&total)
 	if err != nil {
-		return nil, 0, fmt.Errorf("failed to count beers: %w", err)
+		return nil, 0, false, fmt.Errorf("failed to count beers: %w", err)
 	}
 
-	// Add pagination
-	qb.WriteString(fmt.Sprintf(" ORDER BY name LIMIT $%d OFFSET $%d", argPosition, argPosition+1))
+	// Fallback fuzzy se FTS não retornar resultados
+	if filters.Query != "" && total == 0 {
+		fuzzyMatch = true
+		qb.Reset()
+		qb.Grow(256)
+		args = args[:0]
+		argPosition = 1
+
+		qb.WriteString(`
+			SELECT id, name, style, description, alcohol, taste, aroma, color, body, carbonation, finish, comments, created_by, created_at, updated_at, media,
+			       similarity(COALESCE(name, '') || ' ' || COALESCE(description, ''), $1) AS rank
+			FROM beers
+			WHERE COALESCE(name, '') || ' ' || COALESCE(description, '') %% $1
+		`)
+		args = append(args, filters.Query)
+
+		if filters.Style != "" {
+			qb.WriteString(fmt.Sprintf(" AND style = $%d", argPosition))
+			args = append(args, filters.Style)
+			argPosition++
+		}
+		if filters.MinAlcohol != nil {
+			qb.WriteString(fmt.Sprintf(" AND alcohol >= $%d", argPosition))
+			args = append(args, *filters.MinAlcohol)
+			argPosition++
+		}
+		if filters.MaxAlcohol != nil {
+			qb.WriteString(fmt.Sprintf(" AND alcohol <= $%d", argPosition))
+			args = append(args, *filters.MaxAlcohol)
+			argPosition++
+		}
+		if filters.Taste != "" {
+			qb.WriteString(fmt.Sprintf(" AND taste = $%d", argPosition))
+			args = append(args, filters.Taste)
+			argPosition++
+		}
+
+		qb.WriteString(fmt.Sprintf(" ORDER BY rank DESC LIMIT $%d OFFSET $%d", argPosition, argPosition+1))
+		args = append(args, filters.PageSize, (filters.Page-1)*filters.PageSize)
+
+		rows, err := r.db.QueryContext(ctx, qb.String(), args...)
+		if err != nil {
+			return nil, 0, fuzzyMatch, fmt.Errorf("failed to fuzzy search beers: %w", err)
+		}
+		defer rows.Close()
+
+		var beers []model.Beer = make([]model.Beer, 0)
+		for rows.Next() {
+			var beer model.Beer
+			var commentsJSON, mediaJSON []byte
+			var createdBy, createdAt, updatedAt sql.NullString
+			var rank sql.NullFloat64
+			err := rows.Scan(
+				&beer.ID, &beer.Name, &beer.Style, &beer.Description,
+				&beer.Alcohol, &beer.Taste, &beer.Aroma, &beer.Color,
+				&beer.Body, &beer.Carbonation, &beer.Finish,
+				&commentsJSON, &createdBy, &createdAt, &updatedAt, &mediaJSON, &rank,
+			)
+			if err != nil {
+				return nil, 0, fuzzyMatch, fmt.Errorf("failed to scan beer: %w", err)
+			}
+			beer.CreatedBy = createdBy.String
+			beer.CreatedAt = createdAt.String
+			beer.UpdatedAt = updatedAt.String
+			beer.Comments = unmarshalComments(commentsJSON)
+			beer.Media = unmarshalMedia(mediaJSON)
+			setRatingAggregates(&beer)
+			beers = append(beers, beer)
+		}
+		if err = rows.Err(); err != nil {
+			return nil, 0, fuzzyMatch, fmt.Errorf("error iterating over rows: %w", err)
+		}
+
+		return beers, total, fuzzyMatch, nil
+	}
+
+	// Ordenação normal por relevância (FTS)
+	qb.WriteString(" ORDER BY rank DESC, name ASC LIMIT $")
+	argPosition = len(args) + 1
+	qb.WriteString(fmt.Sprintf("%d OFFSET $%d", argPosition, argPosition+1))
 	args = append(args, filters.PageSize, (filters.Page-1)*filters.PageSize)
 
 	// Execute the query
 	rows, err := r.db.QueryContext(ctx, qb.String(), args...)
 	if err != nil {
-		return nil, 0, fmt.Errorf("failed to search beers: %w", err)
+		return nil, 0, fuzzyMatch, fmt.Errorf("failed to search beers: %w", err)
 	}
 	defer rows.Close()
 
@@ -405,26 +493,15 @@ func (r *PostgresBeerRepository) SearchBeers(ctx context.Context, filters model.
 		var beer model.Beer
 		var commentsJSON, mediaJSON []byte
 		var createdBy, createdAt, updatedAt sql.NullString
+		var rank sql.NullFloat64
 		err := rows.Scan(
-			&beer.ID,
-			&beer.Name,
-			&beer.Style,
-			&beer.Description,
-			&beer.Alcohol,
-			&beer.Taste,
-			&beer.Aroma,
-			&beer.Color,
-			&beer.Body,
-			&beer.Carbonation,
-			&beer.Finish,
-			&commentsJSON,
-			&createdBy,
-			&createdAt,
-			&updatedAt,
-			&mediaJSON,
+			&beer.ID, &beer.Name, &beer.Style, &beer.Description,
+			&beer.Alcohol, &beer.Taste, &beer.Aroma, &beer.Color,
+			&beer.Body, &beer.Carbonation, &beer.Finish,
+			&commentsJSON, &createdBy, &createdAt, &updatedAt, &mediaJSON, &rank,
 		)
 		if err != nil {
-			return nil, 0, fmt.Errorf("failed to scan beer: %w", err)
+			return nil, 0, fuzzyMatch, fmt.Errorf("failed to scan beer: %w", err)
 		}
 		beer.CreatedBy = createdBy.String
 		beer.CreatedAt = createdAt.String
@@ -436,10 +513,10 @@ func (r *PostgresBeerRepository) SearchBeers(ctx context.Context, filters model.
 	}
 
 	if err = rows.Err(); err != nil {
-		return nil, 0, fmt.Errorf("error iterating over rows: %w", err)
+		return nil, 0, fuzzyMatch, fmt.Errorf("error iterating over rows: %w", err)
 	}
 
-	return beers, total, nil
+	return beers, total, fuzzyMatch, nil
 }
 
 // GetAll retrieves all beers from the PostgreSQL database.

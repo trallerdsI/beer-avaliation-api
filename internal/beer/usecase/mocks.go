@@ -63,9 +63,9 @@ func (m *MockBeerRepository) DeleteComment(ctx context.Context, id string, comme
 }
 
 // SearchBeers mocks the SearchBeers method of BeerRepository
-func (m *MockBeerRepository) SearchBeers(ctx context.Context, filters model.BeerFilters) ([]model.Beer, int, error) {
+func (m *MockBeerRepository) SearchBeers(ctx context.Context, filters model.BeerFilters) ([]model.Beer, int, bool, error) {
 	args := m.Called(ctx, filters)
-	return args.Get(0).([]model.Beer), args.Get(1).(int), args.Error(2)
+	return args.Get(0).([]model.Beer), args.Get(1).(int), args.Get(2).(bool), args.Error(3)
 }
 
 // GetAdminStats mocks the GetAdminStats method of BeerRepository

@@ -44,8 +44,8 @@ func (f *fuzzBeerUsecase) LikeComment(ctx context.Context, beerID, commentID, us
 func (f *fuzzBeerUsecase) AddMedia(ctx context.Context, id string, item model.MediaItem) ([]model.MediaItem, error) {
 	return nil, nil
 }
-func (f *fuzzBeerUsecase) SearchBeers(ctx context.Context, filters model.BeerFilters) ([]model.Beer, int, error) {
-	return nil, 0, nil
+func (f *fuzzBeerUsecase) SearchBeers(ctx context.Context, filters model.BeerFilters) ([]model.Beer, int, bool, error) {
+	return nil, 0, false, nil
 }
 
 func FuzzCreateBeerHandler(f *testing.F) {

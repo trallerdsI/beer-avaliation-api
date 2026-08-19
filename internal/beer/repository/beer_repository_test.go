@@ -116,8 +116,8 @@ func (r *InMemoryBeerRepository) DeleteComment(ctx context.Context, id string, c
 	return errors.NewAppError(404, "beer not found", nil)
 }
 
-func (r *InMemoryBeerRepository) SearchBeers(ctx context.Context, filters model.BeerFilters) ([]model.Beer, int, error) {
-	return nil, 0, errors.NewAppError(501, "not implemented in memory repo", nil)
+func (r *InMemoryBeerRepository) SearchBeers(ctx context.Context, filters model.BeerFilters) ([]model.Beer, int, bool, error) {
+	return nil, 0, false, errors.NewAppError(501, "not implemented in memory repo", nil)
 }
 
 func (r *InMemoryBeerRepository) GetAdminStats(ctx context.Context) (*AdminStats, error) {
