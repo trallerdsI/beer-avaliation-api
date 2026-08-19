@@ -1,0 +1,60 @@
+version: 2
+issue-845-fix: true
+
+packages:
+  beer-review-app/internal/beer/repository:
+    config:
+      dir: .
+      filename: "mock_{{.PackageName}}.go"
+      mockname: "Mock{{.Interface}}"
+      inpackage: true
+      all: true
+      recursive: true
+  beer-review-app/internal/beer/usecase:
+    config:
+      dir: .
+      filename: "mock_{{.PackageName}}.go"
+      mockname: "Mock{{.Interface}}"
+      inpackage: true
+      all: true
+      recursive: true
+  beer-review-app/internal/user/repository:
+    config:
+      dir: .
+      filename: "mock_{{.PackageName}}.go"
+      mockname: "Mock{{.Interface}}"
+      inpackage: true
+      all: true
+      recursive: true
+  beer-review-app/internal/user/usecase:
+    config:
+      dir: .
+      filename: "mock_{{.PackageName}}.go"
+      mockname: "Mock{{.Interface}}"
+      inpackage: true
+      all: true
+      recursive: true
+  beer-review-app/pkg/moderation:
+    config:
+      dir: .
+      filename: "mock_{{.PackageName}}.go"
+      mockname: "Mock{{.Interface}}"
+      inpackage: true
+      all: true
+      recursive: true
+  beer-review-app/pkg/storage:
+    config:
+      dir: .
+      filename: "mock_{{.PackageName}}.go"
+      mockname: "Mock{{.Interface}}"
+      inpackage: true
+      all: true
+      recursive: true
+  beer-review-app/pkg/events:
+    config:
+      dir: .
+      filename: "mock_{{.PackageName}}.go"
+      mockname: "Mock{{.Interface}}"
+      inpackage: true
+      all: true
+      recursive: true

@@ -1,4 +1,4 @@
-.PHONY: all lint fmt test ci reset-db coverage
+.PHONY: all lint fmt test ci reset-db coverage mockery
 
 all: lint fmt test
 
@@ -13,6 +13,10 @@ fmt:
 # Testes com -race (Pilar 3: concorrência sem race conditions) + cobertura.
 test:
 	go test -race -coverprofile=coverage.out -covermode=atomic ./...
+
+# Gera mocks automaticamente com mockery (elimina mocks manuais).
+mockery:
+	mockery --all --inpackage
 
 # Alias para o pipeline de CI local (build + vet + fmt + race tests).
 ci:

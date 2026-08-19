@@ -8,6 +8,7 @@ import (
 	usermodel "beer-review-app/internal/user/model"
 	appErrors "beer-review-app/pkg/errors"
 	"beer-review-app/pkg/middleware"
+	beerRepo "beer-review-app/internal/beer/repository"
 	"beer-review-app/pkg/uuid"
 
 	"github.com/stretchr/testify/assert"
@@ -15,8 +16,8 @@ import (
 )
 
 func TestReportBeer(t *testing.T) {
-	mockModerationRepo := new(MockModerationRepository)
-	mockBeerRepo := new(MockBeerRepository)
+	mockModerationRepo := new(beerRepo.MockModerationRepository)
+	mockBeerRepo := new(beerRepo.MockBeerRepository)
 	uc := NewModerationUsecase(mockModerationRepo, mockBeerRepo)
 
 	ctx := middleware.WithUserID(context.Background(), "user-1", "")
@@ -37,8 +38,8 @@ func TestReportBeer(t *testing.T) {
 }
 
 func TestResolveReport_AdminOnly(t *testing.T) {
-	mockModerationRepo := new(MockModerationRepository)
-	mockBeerRepo := new(MockBeerRepository)
+	mockModerationRepo := new(beerRepo.MockModerationRepository)
+	mockBeerRepo := new(beerRepo.MockBeerRepository)
 	uc := NewModerationUsecase(mockModerationRepo, mockBeerRepo)
 
 	userCtx := middleware.WithUserID(context.Background(), "user-1", "")
@@ -57,8 +58,8 @@ func TestResolveReport_AdminOnly(t *testing.T) {
 }
 
 func TestRequestDeletion(t *testing.T) {
-	mockModerationRepo := new(MockModerationRepository)
-	mockBeerRepo := new(MockBeerRepository)
+	mockModerationRepo := new(beerRepo.MockModerationRepository)
+	mockBeerRepo := new(beerRepo.MockBeerRepository)
 	uc := NewModerationUsecase(mockModerationRepo, mockBeerRepo)
 
 	ctx := middleware.WithUserID(context.Background(), "user-1", "")
@@ -79,8 +80,8 @@ func TestRequestDeletion(t *testing.T) {
 }
 
 func TestResolveDeletionRequest_AutoDelete(t *testing.T) {
-	mockModerationRepo := new(MockModerationRepository)
-	mockBeerRepo := new(MockBeerRepository)
+	mockModerationRepo := new(beerRepo.MockModerationRepository)
+	mockBeerRepo := new(beerRepo.MockBeerRepository)
 	uc := NewModerationUsecase(mockModerationRepo, mockBeerRepo)
 
 	adminCtx := middleware.WithUserID(context.Background(), "admin-1", usermodel.RoleAdmin)
