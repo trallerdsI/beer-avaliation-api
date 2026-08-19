@@ -10,7 +10,6 @@ import (
 	"beer-review-app/pkg/errors"
 	"beer-review-app/pkg/middleware"
 	"beer-review-app/pkg/moderation"
-	"beer-review-app/pkg/realtime"
 	"beer-review-app/pkg/uuid"
 )
 
@@ -30,17 +29,14 @@ type BeerUsecase interface {
 
 type beerUsecase struct {
 	repo      repository.BeerRepository
-	hub       *realtime.Hub // opcional: nil em testes/serverless desativa eventos SSE
 	moderator moderation.Moderator
 }
 
 // NewBeerUsecase creates a new instance of BeerUsecase.
-// hub pode ser nil (ex: testes, serverless) — neste caso nenhum evento SSE é emitido.
 // moderator pode ser nil (ex: testes offline); neste caso a moderação é ignorada.
-func NewBeerUsecase(repo repository.BeerRepository, hub *realtime.Hub, moderator moderation.Moderator) BeerUsecase {
+func NewBeerUsecase(repo repository.BeerRepository, _ interface{}, moderator moderation.Moderator) BeerUsecase {
 	u := &beerUsecase{
 		repo: repo,
-		hub:  hub,
 	}
 	if moderator != nil {
 		u.moderator = moderator
@@ -48,14 +44,6 @@ func NewBeerUsecase(repo repository.BeerRepository, hub *realtime.Hub, moderator
 		u.moderator = moderation.NewNoopModerator()
 	}
 	return u
-}
-
-// publish emite um evento SSE se o hub estiver configurado. Non-blocking:
-// o Hub descarta sob back-pressure, protegendo a memória do servidor.
-func (u *beerUsecase) publish(ev realtime.Event) {
-	if u.hub != nil {
-		u.hub.Publish(ev)
-	}
 }
 
 func (u *beerUsecase) unavailable() error {
@@ -114,17 +102,10 @@ func (u *beerUsecase) Create(ctx context.Context, beer *model.Beer) error {
 	}
 
 	if err := u.repo.Create(ctx, beer); err != nil {
-		return errors.NewAppError(500, "Failed to create beer", err)
-	}
+	return errors.NewAppError(500, "Failed to create beer", err)
+}
 
-	// Evento SSE: notifica clientes móveis em tempo real (sem polling).
-	u.publish(realtime.Event{
-		Type: "beer.created",
-		ID:   beer.ID,
-		Data: map[string]any{"name": beer.Name, "style": beer.Style},
-	})
-
-	return nil
+return nil
 }
 
 // GetByID retrieves a beer by its ID.
@@ -227,12 +208,6 @@ func (u *beerUsecase) AddComment(ctx context.Context, id string, comment model.C
 		return err
 	}
 
-	u.publish(realtime.Event{
-		Type: "comment.added",
-		ID:   id,
-		Data: map[string]any{"commentId": comment.ID, "text": comment.Text},
-	})
-
 	return nil
 }
 
@@ -274,12 +249,6 @@ func (u *beerUsecase) DeleteComment(ctx context.Context, id string, commentID st
 		return err
 	}
 
-	u.publish(realtime.Event{
-		Type: "comment.deleted",
-		ID:   id,
-		Data: map[string]any{"commentId": commentID},
-	})
-
 	return nil
 }
 
@@ -292,7 +261,6 @@ func (u *beerUsecase) LikeComment(ctx context.Context, beerID, commentID, userID
 		return err
 	}
 
-	var likes int
 	if err := u.repo.ExecInTx(ctx, func(ctx context.Context, txRepo repository.BeerRepository) error {
 		beer, err := txRepo.GetByID(ctx, beerID)
 		if err != nil {
@@ -312,11 +280,10 @@ func (u *beerUsecase) LikeComment(ctx context.Context, beerID, commentID, userID
 					}
 				}
 
-				beer.Comments[i].Likes++
-				beer.Comments[i].LikedBy = append(beer.Comments[i].LikedBy, liker)
-				likes = beer.Comments[i].Likes
+			beer.Comments[i].Likes++
+			beer.Comments[i].LikedBy = append(beer.Comments[i].LikedBy, liker)
 
-				if err := txRepo.Update(ctx, beerID, beer); err != nil {
+			if err := txRepo.Update(ctx, beerID, beer); err != nil {
 					return errors.NewAppError(500, "Failed to update comment likes", err)
 				}
 				return nil
@@ -327,12 +294,6 @@ func (u *beerUsecase) LikeComment(ctx context.Context, beerID, commentID, userID
 	}); err != nil {
 		return err
 	}
-
-	u.publish(realtime.Event{
-		Type: "comment.liked",
-		ID:   beerID,
-		Data: map[string]any{"commentId": commentID, "likes": likes},
-	})
 
 	return nil
 }
@@ -361,12 +322,6 @@ func (u *beerUsecase) AddMedia(ctx context.Context, id string, item model.MediaI
 	if err := u.repo.Update(ctx, id, beer); err != nil {
 		return nil, errors.NewAppError(500, "Failed to attach media", err)
 	}
-
-	u.publish(realtime.Event{
-		Type: "beer.media.added",
-		ID:   id,
-		Data: map[string]any{"url": item.URL, "type": item.Type},
-	})
 
 	return beer.Media, nil
 }

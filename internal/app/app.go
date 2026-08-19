@@ -28,7 +28,6 @@ import (
 	appMetrics "beer-review-app/pkg/metrics"
 	middleware "beer-review-app/pkg/middleware"
 	"beer-review-app/pkg/moderation"
-	"beer-review-app/pkg/realtime"
 	"beer-review-app/pkg/storage"
 )
 
@@ -38,16 +37,7 @@ var embeddedMigrations embed.FS
 //go:embed openapi.yaml
 var embeddedOpenAPI embed.FS
 
-// eventHub is the package-level SSE hub instance. It is created during router
-// initialization and shut down gracefully on server termination.
-var eventHub *realtime.Hub
-
-// Shutdown gracefully stops the SSE hub, closing all active subscriber channels
-// before the HTTP server stops accepting connections.
 func Shutdown() {
-	if eventHub != nil {
-		eventHub.Shutdown()
-	}
 }
 
 func BuildRouter(db *database.RetryableDB, logger *slog.Logger) http.Handler {
@@ -65,9 +55,8 @@ func BuildRouterWithDBErr(db *database.RetryableDB, dbErr error, logger *slog.Lo
 	beerRepo := newBeerRepo(db)
 	userRepo := newUserRepo(db)
 
-	eventHub = realtime.NewHub(64)
 	moderator := newModerator()
-	beerUsecase := beerUsecasePkg.NewBeerUsecase(beerRepo, eventHub, moderator)
+	beerUsecase := beerUsecasePkg.NewBeerUsecase(beerRepo, nil, moderator)
 	moderationRepo, err := beerRepository.NewPostgresModerationRepository(db)
 	if err != nil {
 		slog.Error("falha ao inicializar repositório de moderação", "err", err)
@@ -113,7 +102,6 @@ func BuildRouterWithDBErr(db *database.RetryableDB, dbErr error, logger *slog.Lo
 	mux.HandleFunc("GET /api/v1/admin/deletion-requests", middleware.RequireAdmin(moderationController.GetDeletionRequests))
 	mux.HandleFunc("PATCH /api/v1/admin/deletion-requests/{id}", middleware.RequireAdmin(moderationController.ResolveDeletionRequest))
 	mux.HandleFunc("GET /api/v1/feed", beerController.GetHomeFeed)
-	mux.HandleFunc("GET /api/v1/stream", realtime.SSEHandler(eventHub))
 	mux.HandleFunc("POST /api/v1/users/register", userController.Register)
 	mux.HandleFunc("POST /api/v1/users/login", userController.Login)
 	mux.HandleFunc("POST /api/v1/users/oauth", userController.OAuth)

@@ -60,7 +60,6 @@ func TestBuildRouter_RegistersAllRoutes(t *testing.T) {
 		"/api/v1/beers/1/comments/1",
 		"/api/v1/beers/1/comments/1/like",
 		"/api/v1/feed",
-		"/api/v1/stream",
 		"/api/v1/users/register",
 		"/api/v1/users/login",
 		"/api/v1/users/oauth",
@@ -79,7 +78,6 @@ func TestBuildRouter_RegistersAllRoutes(t *testing.T) {
 	}
 
 	methods := []string{
-		http.MethodGet,
 		http.MethodGet,
 		http.MethodPost,
 		http.MethodGet,

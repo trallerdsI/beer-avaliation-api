@@ -5,14 +5,12 @@ import (
 	stderrors "errors"
 	"net/http"
 	"testing"
-	"time"
 
 	"beer-review-app/internal/beer/model"
 	usermodel "beer-review-app/internal/user/model"
 	appErrors "beer-review-app/pkg/errors"
 	"beer-review-app/pkg/middleware"
 	"beer-review-app/pkg/moderation"
-	"beer-review-app/pkg/realtime"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -480,31 +478,6 @@ func TestUnavailable_Returns503WhenRepoNil(t *testing.T) {
 	assert.ErrorAs(t, err, &appErr)
 	assert.Equal(t, http.StatusServiceUnavailable, appErr.Code)
 }
-func TestCreate_PublishesSSEEvent(t *testing.T) {
-	mockRepo := new(MockBeerRepository)
-	hub := realtime.NewHub(8)
-	defer hub.Shutdown()
-	uc := NewBeerUsecase(mockRepo, hub, moderation.NewNoopModerator())
-
-	beer := model.Beer{ID: "1", Name: "IPA"}
-	mockRepo.On("SearchBeers", mock.Anything, mock.Anything).Return([]model.Beer{}, 0, false, nil)
-	mockRepo.On("Create", mock.Anything, &beer).Return(nil)
-
-	events, _ := hub.Subscribe(context.Background())
-
-	ctx := middleware.WithUserID(context.Background(), "owner-1", "")
-	err := uc.Create(ctx, &beer)
-	assert.NoError(t, err)
-
-	select {
-	case ev := <-events:
-		assert.Equal(t, "beer.created", ev.Type)
-		assert.Equal(t, "1", ev.ID)
-	case <-time.After(100 * time.Millisecond):
-		t.Fatal("expected SSE event to be published")
-	}
-}
-
 func TestAddMedia_SyncsImageUrl(t *testing.T) {
 	mockRepo := new(MockBeerRepository)
 	uc := NewBeerUsecase(mockRepo, nil, moderation.NewNoopModerator())
