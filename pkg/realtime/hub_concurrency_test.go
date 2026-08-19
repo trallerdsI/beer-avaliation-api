@@ -65,7 +65,6 @@ func TestHub_PublishAfterUnsubscribe_NoPanic(t *testing.T) {
 	_, unsub := h.Subscribe(ctx)
 
 	unsub()
-	time.Sleep(10 * time.Millisecond)
 
 	h.Publish(Event{Type: "test", ID: "1", Data: "payload"})
 }
@@ -147,14 +146,12 @@ func TestHub_ContextCancellation_CleansUpSubscriber(t *testing.T) {
 	events, unsub := h.Subscribe(ctx)
 	defer unsub()
 
-	time.Sleep(100 * time.Millisecond)
-
 	select {
 	case _, ok := <-events:
 		if ok {
 			t.Fatal("channel should be closed after context cancellation")
 		}
-	case <-time.After(100 * time.Millisecond):
+	case <-time.After(200 * time.Millisecond):
 		t.Fatal("timeout waiting for channel close")
 	}
 }
@@ -263,12 +260,17 @@ func TestSSEHandler_DeliversEvents(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/stream", nil)
 	req = req.WithContext(ctx)
 
+	var wg sync.WaitGroup
+	wg.Add(1)
 	go func() {
-		time.Sleep(10 * time.Millisecond)
-		h.Publish(Event{Type: "test", ID: "1", Data: map[string]string{"msg": "hello"}})
+		defer wg.Done()
+		SSEHandler(h)(rr, req)
 	}()
 
-	SSEHandler(h)(rr, req)
+	time.Sleep(1 * time.Millisecond)
+	h.Publish(Event{Type: "test", ID: "1", Data: map[string]string{"msg": "hello"}})
+
+	wg.Wait()
 
 	body := rr.Body.String()
 	if !strings.Contains(body, `"type":"test"`) {
