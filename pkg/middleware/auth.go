@@ -42,7 +42,7 @@ func WithUserID(ctx context.Context, userID, role string) context.Context {
 // IsAdmin devolve true se o contexto tiver role de administrador.
 func IsAdmin(ctx context.Context) bool {
 	role, ok := RoleFromContext(ctx)
-	return ok && role == RoleAdmin
+	return ok && role == "admin"
 }
 
 // Auth é um middleware de autenticação JWT que envolve um http.HandlerFunc.
