@@ -18,7 +18,7 @@ ARG VERSION=dev
 RUN CGO_ENABLED=0 GOOS=linux go build \
     -trimpath \
     -ldflags="-s -w -buildvcs=false -X main.Version=${VERSION}" \
-    -o main cmd/server/main.go
+    -o main ./cmd/server
 
 # Imagem final mínima: distroless estático sem shell, sem libs extras
 FROM gcr.io/distroless/static-debian12
@@ -32,13 +32,6 @@ COPY --from=builder /app/main /main
 USER 65532:65532
 
 EXPOSE 8082
-
-# Labels OCI para catálogo de imagens
-LABEL org.opencontainers.image.title="beer-avaliation-api" \
-      org.opencontainers.image.description="Beer catalog API with moderation" \
-      org.opencontainers.image.vendor="Beer Review" \
-      org.opencontainers.image.licenses="MIT" \
-      org.opencontainers.image.version="${VERSION}"
 
 # Health check: endpoint /api/v1/health retorna 200 quando pronto
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
