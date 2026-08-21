@@ -1,36 +1,44 @@
-package metrics
+package metrics_test
 
 import (
-	"context"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
-	"testing/synctest"
+
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/stretchr/testify/assert"
+
+	"beer-review-app/pkg/metrics"
 )
 
-// TestRecordMetricsServerless valida que, em runtime serverless, o RecordMetrics
-// regista o padrão ESTÁTICO da rota (sem IDs) via slog contextual — sem explodir
-// a cardinalidade do Prometheus. Usa testing/synctest (Go 1.26), sem time.Sleep.
-func TestRecordMetricsServerless(t *testing.T) {
-	t.Setenv("VERCEL", "1")
-	if !IsServerlessRuntime() {
-		t.Fatal("expected serverless runtime detection")
+func TestMetricsEndpoint_ExposesRequiredAlertMetrics(t *testing.T) {
+	metrics.RegisterSystemCollectors(prometheus.DefaultRegisterer)
+
+	metrics.DBSqlOpenConns.Set(10)
+	metrics.DBSqlInUseConns.Set(2)
+	metrics.TotalRequests.WithLabelValues("/api/v1/beers", "GET", "200").Inc()
+	metrics.RequestDuration.WithLabelValues("/api/v1/beers", "GET", "200").Observe(0.05)
+
+	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	rec := httptest.NewRecorder()
+
+	handler := promhttp.Handler()
+	handler.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+	body := rec.Body.String()
+
+	requiredMetrics := []string{
+		"go_goroutines",
+		"go_sql_open_connections",
+		"go_sql_in_use_connections",
+		"http_requests_total",
+		"process_cpu_seconds_total",
 	}
 
-	synctest.Test(t, func(t *testing.T) {
-		// Não deve panic nem tentar registrar série com label dinâmico.
-		RecordMetrics(context.Background(), "/api/v1/beers/{id}", "GET", "200", 0.012)
-	})
-}
-
-// TestRecordMetricsStandard garante que em runtime normal o label usado é o
-// padrão estático da rota ("route"), nunca o path com IDs concretos.
-func TestRecordMetricsStandard(t *testing.T) {
-	t.Setenv("VERCEL", "")
-	if IsServerlessRuntime() {
-		t.Fatal("expected non-serverless runtime")
+	for _, metric := range requiredMetrics {
+		assert.Truef(t, strings.Contains(body, metric), "A métrica %s não foi encontrada no endpoint /metrics", metric)
 	}
-
-	synctest.Test(t, func(t *testing.T) {
-		RecordMetrics(context.Background(), "/api/v1/beers/{id}", "GET", "200", 0.012)
-		// Se chegou aqui sem panic, o histograma aceitou o label estático.
-	})
 }

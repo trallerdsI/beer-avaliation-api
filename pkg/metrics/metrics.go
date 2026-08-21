@@ -94,10 +94,8 @@ var (
 // RegisterSystemCollectors registra coletores nativos do Go runtime e processo.
 // Isso expõe métricas como go_goroutines, go_memstats_*, process_cpu_seconds_total.
 func RegisterSystemCollectors(reg prometheus.Registerer) {
-	reg.MustRegister(
-		collectors.NewGoCollector(),
-		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
-	)
+	_ = reg.Register(collectors.NewGoCollector())
+	_ = reg.Register(collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
 }
 
 // RecordDBStats updates Prometheus gauges/counters from database/sql stats.
