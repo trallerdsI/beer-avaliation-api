@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	_ "github.com/lib/pq"
@@ -40,7 +41,53 @@ var embeddedMigrations embed.FS
 //go:embed openapi.yaml
 var embeddedOpenAPI embed.FS
 
+var (
+	backgroundTasks sync.WaitGroup
+	shutdownOnce    sync.Once
+	shutdownCtx     context.Context
+	shutdownCancel  context.CancelFunc
+	redisClient     *redis.Client
+)
+
+func init() {
+	shutdownCtx, shutdownCancel = context.WithCancel(context.Background())
+}
+
+// ShutdownContext returns a context that is canceled when the application
+// begins graceful shutdown. Background goroutines should select on this
+// context to exit cleanly.
+func ShutdownContext() context.Context {
+	return shutdownCtx
+}
+
+// Shutdown signals all background goroutines to stop and waits for them
+// to exit. Call this before closing database/redis connections.
 func Shutdown() {
+	shutdownOnce.Do(func() {
+		if shutdownCancel != nil {
+			shutdownCancel()
+		}
+	})
+	backgroundTasks.Wait()
+}
+
+func CloseRedis() error {
+	if redisClient != nil {
+		return redisClient.Close()
+	}
+	return nil
+}
+
+// RegisterBackgroundTask increments the WaitGroup counter for a background
+// goroutine. The caller must call Done when the goroutine exits.
+func RegisterBackgroundTask() {
+	backgroundTasks.Add(1)
+}
+
+// BackgroundTaskDone decrements the WaitGroup counter. Call this when a
+// background goroutine exits.
+func BackgroundTaskDone() {
+	backgroundTasks.Done()
 }
 
 func BuildRouter(db *database.RetryableDB, logger *slog.Logger) http.Handler {
@@ -61,7 +108,6 @@ func BuildRouterWithDBErr(db *database.RetryableDB, dbErr error, logger *slog.Lo
 	moderator := newModerator()
 
 	var eventPub events.Publisher
-	var redisClient *redis.Client
 	if db != nil {
 		redisURL := os.Getenv("REDIS_URL")
 		if redisURL != "" {

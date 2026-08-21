@@ -59,8 +59,8 @@ func TestHealthCheckNilDB(t *testing.T) {
 
 	c.HealthCheck(w, r)
 
-	if w.Code != http.StatusServiceUnavailable {
-		t.Fatalf("expected 503 when db is nil, got %d", w.Code)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 for liveness probe, got %d", w.Code)
 	}
 }
 
@@ -71,6 +71,31 @@ func TestHealthCheckDBError(t *testing.T) {
 	r := httptest.NewRequest(http.MethodGet, "/api/v1/health", nil)
 
 	c.HealthCheck(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 for liveness probe, got %d", w.Code)
+	}
+}
+
+func TestReadinessProbeNilDB(t *testing.T) {
+	c := NewMonitoringController(nil, nil, nil, nil, nil, nil)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/api/v1/readyz", nil)
+
+	c.ReadinessProbe(w, r)
+
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503 when db is nil, got %d", w.Code)
+	}
+}
+
+func TestReadinessProbeDBError(t *testing.T) {
+	dbErr := errors.NewAppError(500, "db down", nil)
+	c := NewMonitoringController(nil, nil, nil, nil, dbErr, nil)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/api/v1/readyz", nil)
+
+	c.ReadinessProbe(w, r)
 
 	if w.Code != http.StatusServiceUnavailable {
 		t.Fatalf("expected 503 when dbErr is set, got %d", w.Code)

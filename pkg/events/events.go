@@ -81,14 +81,15 @@ func (s *redisStore) Publish(ctx context.Context, beerID string, ev Event) error
 	}
 	score := float64(ev.Timestamp.UnixNano())
 	key := s.key(beerID)
-	if err := s.client.ZAdd(ctx, key, redis.Z{Score: score, Member: payload}).Err(); err != nil {
-		return err
-	}
+
+	pipe := s.client.Pipeline()
+	pipe.ZAdd(ctx, key, redis.Z{Score: score, Member: payload})
+	pipe.ZRemRangeByRank(ctx, key, 0, -maxEventsPerBeer-1)
 	if s.ttl > 0 {
-		_ = s.client.Expire(ctx, key, s.ttl)
+		pipe.Expire(ctx, key, s.ttl)
 	}
-	_ = s.client.ZRemRangeByRank(ctx, key, 0, -maxEventsPerBeer-1).Err()
-	return nil
+	_, err = pipe.Exec(ctx)
+	return err
 }
 
 func (s *redisStore) ListSince(ctx context.Context, beerID string, since time.Time) ([]Event, error) {

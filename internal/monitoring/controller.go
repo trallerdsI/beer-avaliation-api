@@ -91,51 +91,14 @@ func (c *MonitoringController) GetStats(w http.ResponseWriter, r *http.Request) 
 }
 
 // @Summary Get application health status
-// @Description Check the health of the application and its dependencies
+// @Description Returns 200 OK if the process is alive (liveness probe)
 // @Produce json
 // @Success 200 {object} HealthResponse
 // @Router /health [get]
 func (c *MonitoringController) HealthCheck(w http.ResponseWriter, r *http.Request) {
-	dbStatus := c.checkDatabaseHealth(r.Context())
-	redisStatus := c.checkRedisHealth(r.Context())
-	status := http.StatusOK
-	overall := "healthy"
-	dbDetail := ""
-	redisDetail := ""
-	if dbStatus != "up" {
-		overall = "degraded"
-		status = http.StatusServiceUnavailable
-		if c.dbErr != nil {
-			dbDetail = c.dbErr.Error()
-		} else if c.db == nil {
-			dbDetail = "database not configured"
-		} else {
-			dbDetail = "connection failed"
-		}
-	}
-	if redisStatus != "up" {
-		overall = "degraded"
-		status = http.StatusServiceUnavailable
-		redisDetail = "connection failed"
-	}
-
-	health := HealthResponse{
-		Status:  overall,
-		Version: "1.0.0",
-		Uptime:  time.Since(c.startTime).Truncate(time.Second).String(),
-		Dependencies: map[string]string{
-			"database": dbStatus,
-			"redis":    redisStatus,
-		},
-	}
-	if dbDetail != "" {
-		health.Dependencies["database_detail"] = dbDetail
-	}
-	if redisDetail != "" {
-		health.Dependencies["redis_detail"] = redisDetail
-	}
-
-	response.SendResponse(w, status, health)
+	response.SendResponse(w, http.StatusOK, HealthResponse{
+		Status: "alive",
+	})
 }
 
 // @Summary Get admin statistics

@@ -84,10 +84,16 @@ func main() {
 		slog.Error("erro ao desligar o servidor", "err", err)
 	}
 
+	app.Shutdown()
+
 	if db != nil {
 		if err := db.Close(); err != nil {
 			slog.Error("erro ao fechar conexão com banco", "err", err)
 		}
+	}
+
+	if err := app.CloseRedis(); err != nil {
+		slog.Error("erro ao fechar conexão com redis", "err", err)
 	}
 
 	slog.Info("servidor finalizado")
