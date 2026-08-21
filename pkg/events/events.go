@@ -13,24 +13,24 @@ import (
 
 const (
 	// Event types emitted by the beer domain.
-	TypeBeerCreated     = "beer.created"
-	TypeBeerUpdated     = "beer.updated"
-	TypeBeerDeleted     = "beer.deleted"
-	TypeCommentAdded    = "comment.added"
-	TypeCommentDeleted  = "comment.deleted"
-	TypeCommentLiked    = "comment.liked"
-	TypeMediaAdded      = "beer.media.added"
+	TypeBeerCreated    = "beer.created"
+	TypeBeerUpdated    = "beer.updated"
+	TypeBeerDeleted    = "beer.deleted"
+	TypeCommentAdded   = "comment.added"
+	TypeCommentDeleted = "comment.deleted"
+	TypeCommentLiked   = "comment.liked"
+	TypeMediaAdded     = "beer.media.added"
 )
 
 const maxEventsPerBeer = 1000
 
 // Event represents a domain event emitted when beer data changes.
 type Event struct {
-	Type      string                 `json:"type"`
-	ID        string                 `json:"id"`
-	BeerID    string                 `json:"beerId"`
-	Data      map[string]any         `json:"data"`
-	Timestamp time.Time              `json:"timestamp"`
+	Type      string         `json:"type"`
+	ID        string         `json:"id"`
+	BeerID    string         `json:"beerId"`
+	Data      map[string]any `json:"data"`
+	Timestamp time.Time      `json:"timestamp"`
 }
 
 // Publisher emits domain events to an event store.

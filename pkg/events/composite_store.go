@@ -10,7 +10,7 @@ import (
 // loss when Redis keys expire (TTL) while ensuring PostgreSQL remains the
 // source of truth.
 type CompositeStore struct {
-	primary Publisher
+	primary  Publisher
 	fallback Store
 }
 

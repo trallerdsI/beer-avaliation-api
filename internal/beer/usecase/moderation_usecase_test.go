@@ -5,10 +5,10 @@ import (
 	"testing"
 
 	"beer-review-app/internal/beer/model"
+	beerRepo "beer-review-app/internal/beer/repository"
 	usermodel "beer-review-app/internal/user/model"
 	appErrors "beer-review-app/pkg/errors"
 	"beer-review-app/pkg/middleware"
-	beerRepo "beer-review-app/internal/beer/repository"
 	"beer-review-app/pkg/uuid"
 
 	"github.com/stretchr/testify/assert"

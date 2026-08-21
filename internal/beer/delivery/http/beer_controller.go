@@ -21,11 +21,11 @@ import (
 	"beer-review-app/internal/beer/model"
 	"beer-review-app/internal/beer/usecase"
 	appErrors "beer-review-app/pkg/errors" // Alias explícito para evitar confusão
+	"beer-review-app/pkg/events"
 	"beer-review-app/pkg/middleware"
 	"beer-review-app/pkg/response"
 	"beer-review-app/pkg/storage"
 	"beer-review-app/pkg/validation"
-	"beer-review-app/pkg/events"
 )
 
 // validate é um validador de structs de stack (zero-allocation por request no
@@ -84,10 +84,10 @@ func newValidator() *validator.Validate {
 
 // BeerController handles HTTP requests related to beers.
 type BeerController struct {
-	usecase   usecase.BeerUsecase
-	logger    *slog.Logger
-	uploader  storage.Uploader // opcional: nil desativa upload de mídia (404 no endpoint)
-	eventPub  events.EventStore // opcional: nil desativa publicação e leitura de eventos
+	usecase  usecase.BeerUsecase
+	logger   *slog.Logger
+	uploader storage.Uploader  // opcional: nil desativa upload de mídia (404 no endpoint)
+	eventPub events.EventStore // opcional: nil desativa publicação e leitura de eventos
 }
 
 // NewBeerController makes a new controller for beer

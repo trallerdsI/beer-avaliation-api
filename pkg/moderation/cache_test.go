@@ -69,7 +69,7 @@ func TestCachedOpenAIModerator_CachesResult(t *testing.T) {
 	callCount := 0
 	mockModerator := &mockModerator{
 		allowed: true,
-		onCall: func() { callCount++ },
+		onCall:  func() { callCount++ },
 	}
 
 	cache := NewInMemoryModerationCache()

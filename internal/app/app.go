@@ -31,8 +31,8 @@ import (
 	"beer-review-app/pkg/moderation"
 	"beer-review-app/pkg/storage"
 
-	"github.com/redis/go-redis/v9"
 	"beer-review-app/pkg/events"
+	"github.com/redis/go-redis/v9"
 )
 
 //go:embed all:migrations/*.sql

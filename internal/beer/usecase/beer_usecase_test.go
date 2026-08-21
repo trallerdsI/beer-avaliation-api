@@ -7,11 +7,11 @@ import (
 	"testing"
 
 	"beer-review-app/internal/beer/model"
+	beerRepo "beer-review-app/internal/beer/repository"
 	usermodel "beer-review-app/internal/user/model"
 	appErrors "beer-review-app/pkg/errors"
 	"beer-review-app/pkg/middleware"
 	"beer-review-app/pkg/moderation"
-	beerRepo "beer-review-app/internal/beer/repository"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"

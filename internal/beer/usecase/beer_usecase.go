@@ -8,10 +8,10 @@ import (
 	"beer-review-app/internal/beer/model"
 	"beer-review-app/internal/beer/repository"
 	"beer-review-app/pkg/errors"
+	"beer-review-app/pkg/events"
 	"beer-review-app/pkg/middleware"
 	"beer-review-app/pkg/moderation"
 	"beer-review-app/pkg/uuid"
-	"beer-review-app/pkg/events"
 )
 
 type BeerReader interface {
@@ -135,10 +135,10 @@ func (u *beerUsecase) Create(ctx context.Context, beer *model.Beer) error {
 	}
 
 	if err := u.repo.Create(ctx, beer); err != nil {
-	return errors.NewAppError(500, "Failed to create beer", err)
-}
+		return errors.NewAppError(500, "Failed to create beer", err)
+	}
 
-return nil
+	return nil
 }
 
 // GetByID retrieves a beer by its ID.
@@ -313,10 +313,10 @@ func (u *beerUsecase) LikeComment(ctx context.Context, beerID, commentID, userID
 					}
 				}
 
-			beer.Comments[i].Likes++
-			beer.Comments[i].LikedBy = append(beer.Comments[i].LikedBy, liker)
+				beer.Comments[i].Likes++
+				beer.Comments[i].LikedBy = append(beer.Comments[i].LikedBy, liker)
 
-			if err := txRepo.Update(ctx, beerID, beer); err != nil {
+				if err := txRepo.Update(ctx, beerID, beer); err != nil {
 					return errors.NewAppError(500, "Failed to update comment likes", err)
 				}
 				return nil
