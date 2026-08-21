@@ -19,8 +19,8 @@ COPY . .
 ARG VERSION=dev
 RUN go version && go env && \
     go vet ./... && \
-    go build -v -trimpath \
-    -ldflags="-s -w -buildvcs=false -X main.Version=${VERSION}" \
+    go build -v -trimpath -buildvcs=false \
+    -ldflags="-s -w -X main.Version=${VERSION}" \
     -o main ./cmd/server
 
 # Imagem final mínima: distroless estático sem shell, sem libs extras
