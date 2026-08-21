@@ -2,76 +2,89 @@ version: '3.8'
 
 services:
   postgres:
-    image: postgres:17-alpine
-    restart: always
+    image: postgres:16-alpine
+    container_name: beer_postgres
     environment:
-      POSTGRES_USER: ${DB_USER:-postgres}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-beer_secure_password123}
-      POSTGRES_DB: ${DB_NAME:-beer_review_db}
+      POSTGRES_USER: beer_user
+      POSTGRES_PASSWORD: beer_password
+      POSTGRES_DB: beer_db
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-    networks:
-      - app-network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres}"]
-      interval: 10s
-      timeout: 5s
+      test: ["CMD-SHELL", "pg_isready -U beer_user -d beer_db"]
+      interval: 5s
+      timeout: 3s
       retries: 5
-      start_period: 30s
 
-  api:
+  redis:
+    image: redis:7-alpine
+    container_name: beer_redis
+    command: redis-server --maxmemory 256mb --maxmemory-policy volatile-lru
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  app:
     build:
       context: .
       dockerfile: Dockerfile
-      args:
-        VERSION: ${VERSION:-dev}
-    restart: always
+    container_name: beer_api
+    ports:
+      - "8080:8080"
     environment:
-      DBConnString: ${DB_CONN_STRING:-postgres://postgres:beer_secure_password123@postgres:5432/beer_review_db?sslmode=disable}
-      SERVER_PORT: ${SERVER_PORT:-8082}
-      JWT_SECRET: ${JWT_SECRET}
-      OPENAI_API_KEY: ${OPENAI_API_KEY}
-      REDIS_URL: ${REDIS_URL:-}
-      SUPABASE_URL: ${SUPABASE_URL:-}
-      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:-}
-      SUPABASE_STORAGE_BUCKET: ${SUPABASE_STORAGE_BUCKET:-beer-media}
-      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:3000,http://localhost:8080}
-      DB_RESET_SCHEMA: ${DB_RESET_SCHEMA:-false}
+      PORT: "8080"
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_USER: beer_user
+      DB_PASSWORD: beer_password
+      DB_NAME: beer_db
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      JWT_SECRET: "local_dev_secret_key_change_in_prod_32bytes"
     depends_on:
       postgres:
         condition: service_healthy
-    networks:
-      - app-network
-    ports:
-      - "${SERVER_PORT:-8082}:${SERVER_PORT:-8082}"
-    volumes:
-      - /tmp
+      redis:
+        condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:${SERVER_PORT:-8082}/api/v1/health"]
-      interval: 30s
-      timeout: 5s
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/readyz"]
+      interval: 5s
+      timeout: 2s
       retries: 3
-      start_period: 20s
-    deploy:
-      resources:
-        limits:
-          cpus: '2'
-          memory: 512M
-        reservations:
-          cpus: '0.5'
-          memory: 128M
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-        tag: "beer-api"
+
+  prometheus:
+    image: prom/prometheus:v2.48.0
+    container_name: beer_prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./observability/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+    depends_on:
+      - app
+
+  grafana:
+    image: grafana/grafana:10.2.0
+    container_name: beer_grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - ./observability/grafana/dashboard.json:/var/lib/grafana/dashboards/dashboard.json:ro
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      - prometheus
 
 volumes:
   postgres_data:
-
-networks:
-  app-network:
-    driver: bridge
+  redis_data:
+  grafana_data:

@@ -14,6 +14,9 @@ A modern, scalable REST API for managing beer reviews and ratings built with Go.
 - 🛡️ Rate limiting (429), CORS, gzip/brotli compression, request ID tracing
 - 🔔 Push subscriptions (Web Push / Push API)
 - 📤 Media upload via multipart/form-data (RFC 7578) to Supabase Storage
+- 🔄 Event store com fallback Redis → PostgreSQL (TTL + fonte da verdade)
+- 🛡️ Moderação de conteúdo (reports, deletion requests, admin resolve)
+- 📈 Observabilidade completa (Prometheus + Grafana + Alertas)
 
 ## Architecture
 
@@ -35,7 +38,10 @@ beer-review-app/
 │   │   ├── repository/
 │   │   ├── usecase/
 │   │   └── model/
-│   └── monitoring/      # Health + stats controllers
+│   ├── monitoring/      # Health + stats controllers
+│   ├── moderation/      # Moderation domain (reports, deletion requests)
+│   ├── events/          # Event store (Redis ZSET + PostgreSQL fallback)
+│   ├── comment/         # Comment domain model
 ├── pkg/
 │   ├── middleware/      # HTTP middleware (auth, metrics, request-id, CORS, compression, rate-limit)
 │   ├── auth/            # JWT helpers (HS256 session + RS256 OIDC validation)
@@ -50,7 +56,7 @@ beer-review-app/
 ## Tech Stack
 
 - **Go 1.26.6** — `net/http` native routing (`log/slog`); **zero-dependency** where possible (UUIDv7 stdlib)
-- **PostgreSQL 17+ (Supabase)** com `lib/pq`
+- **PostgreSQL 16 (Supabase)** com `lib/pq`
 - **golang-jwt/v5** — HS256 session tokens + RS256 OIDC validation (exceção à regra Zero-Dependency)
 - **go-playground/validator/v10** — validação de domínio
 - **bluemonday** — sanitização HTML (XSS)
@@ -82,10 +88,13 @@ A API segue estes RFCs (12 de 12 implementados):
 - **`comments`** — JSONB embutido em `beers` (modelo documento, não tabela separada)
 - **`beerUsers`** — Utilizadores com `role` (`user`/`admin`), `provider` (local/google/apple), `external_sub`
 - **`push_subscriptions`** — Subscrições Web Push por utilizador
+- **`beer_events`** — Eventos de domínio (criado/atualizado/deletado/comentário) para fallback quando o Redis expira
+- **`beer_reports`** — Reports de conteúdo inadequado
+- **`beer_deletion_requests`** — Solicitações de exclusão de cerveja
 
 ## Decisões de Arquitetura
 
-- **Banco como fonte de verdade:** `DB_RESET_SCHEMA=true` (default) recria o esquema a cada arranque via `internal/app/migrations/000_reset.sql`. Defina `false`/`0`/`no` para preservar dados e aplicar apenas migrations incrementais.
+- **Banco como fonte da verdade:** `DB_RESET_SCHEMA=true` (default) recria o esquema a cada arranque via `internal/app/migrations/000_reset.sql`. Defina `false`/`0`/`no` para preservar dados e aplicar apenas migrations incrementais.
 - **Login social (RFC 6749 / OIDC):** `POST /api/v1/users/oauth` recebe `provider` + `id_token` (JWT RS256 do Google/Apple). Valida contra JWKS do IdP com cache e faz upsert em `beerUsers` por `(provider, external_sub)`. Devolve JWT HS256 de sessão.
 - **Migrações embutidas (`go:embed`):** os ficheiros SQL vivem em `internal/app/migrations/` e são embutidos no binário.
 - **Ligação ao Supabase (IPv4):** o host direto `db.<ref>.supabase.co` só resolve para IPv6. A resolução de DSN reescreve automaticamente para o pooler IPv4 `aws-0-<region>.pooler.supabase.com` e força `default_query_exec_mode=simple_protocol`.
@@ -93,6 +102,10 @@ A API segue estes RFCs (12 de 12 implementados):
 - **SSE sobre WebSocket (RFC 6455):** tempo real via Server-Sent Events (multiplexa sobre HTTP/2). WebSocket só para chat bidirecional privado, fora de escopo.
 - **Rate Limiter:** cleanup lazy de chaves expiradas no map `hits` para evitar OOM em serverless.
 - **Contrato de erro RFC 7807:** `code` estável (snake_case) + `detail` + `instance` (caminho da rota). O Flutter mapeia `code` para `DSLanguageError` / `DSLanguageFeedback`.
+- **Event Store (Redis + PostgreSQL):** Eventos são publicados no Redis ZSET com TTL de 72h. Se a chave expirar, o endpoint de polling consulta automaticamente o PostgreSQL (fonte da verdade). O CompositeStore garante consistência eventual.
+- **Health Checks:** `/healthz` é liveness (sempre 200 se o processo está vivo). `/readyz` é readiness (valida DB + Redis com timeout de 1s).
+- **Connection Pool:** `SetMaxOpenConns(10)`, `SetMaxIdleConns(5)`, `SetConnMaxLifetime(5m)` explicitamente configurados para evitar exaustão do PostgreSQL.
+- **JWT Secret:** Panic no boot se `JWT_SECRET` não estiver definida. Em testes, use `TESTING=true` para bypass.
 
 ## API Endpoints
 
@@ -104,10 +117,18 @@ A API segue estes RFCs (12 de 12 implementados):
 - `PUT /api/v1/beers/{id}` - Update beer
 - `DELETE /api/v1/beers/{id}` - Delete beer
 - `GET /api/v1/beers/search` - Search beers with filters
+- `GET /api/v1/beers/{id}/events` - List beer events (Redis + PostgreSQL fallback)
 - `POST /api/v1/beers/{id}/comments` - Add comment
 - `DELETE /api/v1/beers/{id}/comments/{commentId}` - Delete comment
 - `POST /api/v1/beers/{id}/comments/{commentId}/like` - Like comment
 - `POST /api/v1/beers/{id}/media` - Upload media (RFC 7578)
+- `POST /api/v1/beers/{id}/reports` - Report beer (moderation)
+- `POST /api/v1/beers/{id}/deletion-requests` - Request beer deletion (moderation)
+- `GET /api/v1/beers/{id}/reports` - Get beer reports (admin)
+- `GET /api/v1/admin/reports` - Get all reports (admin)
+- `PATCH /api/v1/admin/reports/{id}` - Resolve report (admin)
+- `GET /api/v1/admin/deletion-requests` - Get deletion requests (admin)
+- `PATCH /api/v1/admin/deletion-requests/{id}` - Resolve deletion request (admin)
 
 ### User Operations
 
@@ -123,7 +144,9 @@ A API segue estes RFCs (12 de 12 implementados):
 
 ### Monitoring
 
-- `GET /api/v1/health` - Health check
+- `GET /healthz` - Liveness probe (always 200 if process alive)
+- `GET /readyz` - Readiness probe (DB + Redis check, 503 if unavailable)
+- `GET /api/v1/health` - Legacy health check (200 OK)
 - `GET /api/v1/stats` - Public statistics (total beers + top styles)
 - `GET /api/v1/admin/stats` - Admin statistics panel (requires admin role)
 - `GET /api/v1/users/me/stats` - Authenticated user personal statistics
@@ -137,7 +160,7 @@ gofmt -l $(go list -f '{{.Dir}}' ./...) && git diff --exit-code
 
 # Trindade obrigatória de CI
 go vet ./...
-go test -race -cover ./...
+TESTING=true go test -race -cover ./...
 
 # Auditoria de vulnerabilidades
 govulncheck ./...
@@ -145,6 +168,15 @@ govulncheck ./...
 # Benchmark (serverless: alocações importam)
 go test -bench=. -benchmem ./...
 ```
+
+## CI/CD
+
+O projeto usa GitHub Actions com os seguintes jobs:
+
+1. **vulncheck**: Executa `govulncheck ./...` como passo bloqueante.
+2. **build-test**: Build, vet, fmt check e race detector tests.
+
+Arquivo: `.github/workflows/ci.yml`
 
 ## Deployment
 
@@ -192,22 +224,24 @@ A aplicação expõe métricas no endpoint `/metrics` (formato Prometheus).
 | `moderation_requests_total` | Counter | `status` | Requisições de moderação (`allowed` / `denied`) |
 | `moderation_cache_hits_total` | Counter | `backend` | Hits no cache (`redis` ou `memory`) |
 | `sse_active_connections` | Gauge | — | Conexões SSE ativas |
-| `go_sql_db_connections_open` | Gauge | — | Conexões abertas no pool |
-| `go_sql_db_connections_in_use` | Gauge | — | Conexões em uso |
-| `go_sql_db_connections_idle` | Gauge | — | Conexões idle |
-| `go_sql_db_wait_count_total` | Counter | — | Requests que esperaram por conexão |
+| `go_sql_open_connections` | Gauge | — | Conexões abertas no pool |
+| `go_sql_in_use_connections` | Gauge | — | Conexões em uso |
+| `go_sql_idle_connections` | Gauge | — | Conexões idle |
+| `go_sql_wait_count_total` | Counter | — | Requests que esperaram por conexão |
+| `go_goroutines` | Gauge | — | Goroutines ativas (coletores nativos) |
+| `process_cpu_seconds_total` | Counter | — | Tempo CPU do processo (coletores nativos) |
 
-##### Stack local
+##### Stack local unificada
 
 ```bash
-docker compose -f docker-compose.observability.yaml up -d
+docker compose up -d --build
 ```
 
 Acesse:
-- **Grafana:** http://localhost:3000 (admin/admin)
+- **API:** http://localhost:8080
+- **API / Métricas:** http://localhost:8080/metrics
 - **Prometheus:** http://localhost:9090
-- **Tempo:** http://localhost:3200
-- **Loki:** http://localhost:3100
+- **Grafana:** http://localhost:3000 (admin/admin)
 
 ##### Validação automatizada
 
@@ -215,7 +249,7 @@ O script `scripts/observability_load_test.sh` gera carga na API e valida métric
 
 ```bash
 # Suba a API e a stack de observabilidade
-BASE_URL=http://localhost:8082 ./scripts/observability_load_test.sh
+BASE_URL=http://localhost:8080 ./scripts/observability_load_test.sh
 ```
 
 Variáveis opcionais: `PROM_URL`, `TEMPO_URL`, `GRAFANA_URL`, `GRAFANA_USER`, `GRAFANA_PASSWORD`.

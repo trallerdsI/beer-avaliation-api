@@ -1,10 +1,13 @@
 global:
-  scrape_interval: 15s
-  evaluation_interval: 15s
+  scrape_interval: 5s
+  evaluation_interval: 5s
+
+rule_files:
+  - "alerts.yml"
 
 scrape_configs:
-  - job_name: 'beer-avaliation-api'
+  - job_name: "beer-avaliation-api"
     static_configs:
-      - targets: ['api:8082']
+      - targets: ["app:8080"]
     metrics_path: /metrics
     scrape_interval: 5s
