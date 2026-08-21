@@ -1,8 +1,10 @@
 # Build stage otimizado com cache de módulos via BuildKit
-FROM golang:1.26.6-alpine AS builder
+FROM golang:1.26.6-bookworm AS builder
 
 # Instala git e ca-certificates necessários para go mod download
-RUN apk add --no-cache git ca-certificates
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
