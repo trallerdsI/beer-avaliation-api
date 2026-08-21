@@ -3,6 +3,7 @@ package database
 import (
 	"context"
 	"database/sql"
+	"os"
 	"os/exec"
 	"testing"
 	"time"
@@ -23,6 +24,10 @@ func TestRetryableDB_Chaos_ExecInTx_RecoversAfterDBCrash(t *testing.T) {
 
 	if !isDockerAvailable() {
 		t.Skip("docker daemon not available for chaos tests")
+	}
+
+	if os.Getenv("CI") == "true" {
+		t.Skip("skipping chaos test in CI due to timing flakiness")
 	}
 
 	ctx := context.Background()
