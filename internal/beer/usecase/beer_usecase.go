@@ -54,13 +54,19 @@ type BeerUsecase interface {
 type beerUsecase struct {
 	repo      repository.BeerRepository
 	moderator moderation.Moderator
-	events    events.Publisher
+	events    eventStore
+}
+
+type eventStore interface {
+	events.Publisher
+	ListSince(ctx context.Context, beerID string, since time.Time) ([]events.Event, error)
+	LatestEvent(ctx context.Context, beerID string) (score float64, member string, err error)
 }
 
 // NewBeerUsecase creates a new instance of BeerUsecase.
 // moderator pode ser nil (ex: testes offline); neste caso a moderação é ignorada.
 // events pode ser nil (ex: testes, serverless); neste caso nenhum evento é emitido.
-func NewBeerUsecase(repo repository.BeerRepository, _ interface{}, moderator moderation.Moderator, events events.Publisher) BeerUsecase {
+func NewBeerUsecase(repo repository.BeerRepository, _ interface{}, moderator moderation.Moderator, events eventStore) BeerUsecase {
 	u := &beerUsecase{
 		repo:   repo,
 		events: events,
@@ -371,11 +377,21 @@ func (u *beerUsecase) ListBeerEvents(ctx context.Context, beerID string, since t
 	if u.events == nil {
 		return []model.BeerEvent{}, nil
 	}
-	store, ok := u.events.(interface{ ListSince(ctx context.Context, beerID string, since time.Time) ([]model.BeerEvent, error) })
-	if !ok {
-		return []model.BeerEvent{}, nil
+	raw, err := u.events.ListSince(ctx, beerID, since)
+	if err != nil {
+		return nil, err
 	}
-	return store.ListSince(ctx, beerID, since)
+	out := make([]model.BeerEvent, 0, len(raw))
+	for _, ev := range raw {
+		out = append(out, model.BeerEvent{
+			Type:      ev.Type,
+			ID:        ev.ID,
+			BeerID:    ev.BeerID,
+			Data:      ev.Data,
+			Timestamp: ev.Timestamp,
+		})
+	}
+	return out, nil
 }
 
 func (u *beerUsecase) publishBeerEvent(ctx context.Context, beerID, eventType string, data map[string]any) {

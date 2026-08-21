@@ -87,11 +87,11 @@ type BeerController struct {
 	usecase   usecase.BeerUsecase
 	logger    *slog.Logger
 	uploader  storage.Uploader // opcional: nil desativa upload de mídia (404 no endpoint)
-	eventPub  events.Publisher // opcional: nil desativa publicação de eventos
+	eventPub  events.EventStore // opcional: nil desativa publicação e leitura de eventos
 }
 
 // NewBeerController makes a new controller for beer
-func NewBeerController(u usecase.BeerUsecase, logger *slog.Logger, uploader storage.Uploader, eventPub events.Publisher) *BeerController {
+func NewBeerController(u usecase.BeerUsecase, logger *slog.Logger, uploader storage.Uploader, eventPub events.EventStore) *BeerController {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -648,12 +648,8 @@ func (c *BeerController) ListBeerEvents(w http.ResponseWriter, r *http.Request) 
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Vary", "Accept-Encoding, If-None-Match")
 
-	store, ok := c.usecase.(interface {
-		LatestEvent(ctx context.Context, beerID string) (score float64, member string, err error)
-		ListSince(ctx context.Context, beerID string, since time.Time) ([]model.BeerEvent, error)
-	})
-	if ok {
-		_, latestMember, err := store.LatestEvent(r.Context(), beerID)
+	if c.eventPub != nil {
+		_, latestMember, err := c.eventPub.LatestEvent(r.Context(), beerID)
 		if err != nil {
 			handleError(w, r.Context(), c.logger, err, "Failed to get latest event", http.StatusInternalServerError)
 			return

@@ -406,7 +406,7 @@ func (r *PostgresBeerRepository) SearchBeers(ctx context.Context, filters model.
 			SELECT id, name, style, description, alcohol, taste, aroma, color, body, carbonation, finish, comments, created_by, created_at, updated_at, media,
 			       similarity(COALESCE(name, '') || ' ' || COALESCE(description, ''), $1) AS rank
 			FROM beers
-			WHERE COALESCE(name, '') || ' ' || COALESCE(description, '') %% $1
+			WHERE COALESCE(name, '') || ' ' || COALESCE(description, '') % $1
 		`)
 		args = append(args, filters.Query)
 

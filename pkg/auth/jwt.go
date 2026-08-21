@@ -23,8 +23,11 @@ func loadJWTSecret() []byte {
 		secret = os.Getenv("JWTSecret")
 	}
 	if secret == "" {
+		if os.Getenv("TESTING") == "true" {
+			return []byte("test-secret-do-not-use-in-production")
+		}
 		slog.Error("JWT_SECRET environment variable is not set; refusing to start with an insecure default")
-		return nil
+		panic("JWT_SECRET environment variable is not set; refusing to start with an insecure default")
 	}
 	return []byte(secret)
 }

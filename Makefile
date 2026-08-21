@@ -12,7 +12,7 @@ fmt:
 
 # Testes com -race (Pilar 3: concorrência sem race conditions) + cobertura.
 test:
-	go test -race -coverprofile=coverage.out -covermode=atomic ./...
+	TESTING=true go test -race -coverprofile=coverage.out -covermode=atomic ./...
 
 # Gera mocks automaticamente com mockery (elimina mocks manuais).
 mockery:
@@ -24,7 +24,7 @@ ci:
 	go vet ./...
 	unformatted=$$(gofmt -l $$(go list -f '{{.Dir}}' ./...)); \
 	if [ -n "$$unformatted" ]; then echo "Ficheiros não formatados:"; echo "$$unformatted"; exit 1; fi
-	go test -race ./...
+	TESTING=true go test -race ./...
 
 # Gap C: limpa todas as tabelas da base apontada por DBConnString.
 # ⚠️  Apenas para bases de teste — NUNCA correr contra produção.

@@ -107,7 +107,7 @@ func BuildRouterWithDBErr(db *database.RetryableDB, dbErr error, logger *slog.Lo
 
 	moderator := newModerator()
 
-	var eventPub events.Publisher
+	var eventPub events.EventStore
 	if db != nil {
 		redisURL := os.Getenv("REDIS_URL")
 		if redisURL != "" {
@@ -115,7 +115,9 @@ func BuildRouterWithDBErr(db *database.RetryableDB, dbErr error, logger *slog.Lo
 			if err == nil {
 				redisClient = redis.NewClient(opt)
 				if err := redisClient.Ping(context.Background()).Err(); err == nil {
-					eventPub = events.NewRedisStore(redisClient, "beer-api", 72*time.Hour)
+					redisStore := events.NewRedisStore(redisClient, "beer-api", 72*time.Hour)
+					pgStore := events.NewPostgresStore(db.DB)
+					eventPub = events.NewCompositeStore(redisStore, pgStore)
 				}
 			}
 		}
@@ -396,6 +398,8 @@ func migrateDB(db *sql.DB) error {
 		"migrations/add_beer_deletion_requests.sql",
 		"migrations/add_moderation_rls.sql",
 		"migrations/add_beer_fts.sql",
+		"migrations/add_beer_trgm_index.sql",
+		"migrations/create_beer_events_table.sql",
 	)
 
 	for _, file := range sqlFiles {

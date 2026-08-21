@@ -44,6 +44,12 @@ type Store interface {
 	LatestEvent(ctx context.Context, beerID string) (score float64, member string, err error)
 }
 
+// EventStore combines Publisher and Store into a single interface.
+type EventStore interface {
+	Publisher
+	Store
+}
+
 // SanitizeETag creates a safe Weak ETag from a Redis member string.
 // It hashes the member to avoid HTTP header injection from quotes/newlines.
 func SanitizeETag(member string) string {
@@ -63,7 +69,7 @@ type redisStore struct {
 
 // NewRedisStore creates a Publisher/Store backed by Redis.
 // ttl is the retention period for events per beer key.
-func NewRedisStore(client *redis.Client, prefix string, ttl time.Duration) Publisher {
+func NewRedisStore(client *redis.Client, prefix string, ttl time.Duration) EventStore {
 	return &redisStore{client: client, prefix: prefix, ttl: ttl}
 }
 

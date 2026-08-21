@@ -24,8 +24,8 @@ func TestContract_HealthCheck(t *testing.T) {
 	router := newTestRouter()
 	router.ServeHTTP(w, req)
 
-	if w.Code != http.StatusServiceUnavailable {
-		t.Fatalf("status code incorreto: esperado %d (DB indisponível), obtido %d", http.StatusServiceUnavailable, w.Code)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status code incorreto: esperado %d (liveness), obtido %d", http.StatusOK, w.Code)
 	}
 	if ct := w.Header().Get("Content-Type"); ct != "application/json" {
 		t.Fatalf("Content-Type incorreto: esperado application/json, obtido %s", ct)
@@ -34,8 +34,32 @@ func TestContract_HealthCheck(t *testing.T) {
 	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
 		t.Fatalf("resposta não é JSON válido: %v", err)
 	}
-	if resp["status"] != "degraded" {
-		t.Fatalf("esperado status 'degraded' quando DB indisponível; obtido %v", resp["status"])
+	if resp["status"] != "alive" {
+		t.Fatalf("esperado status 'alive' no liveness probe; obtido %v", resp["status"])
+	}
+}
+
+func TestContract_ReadyCheck(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
+	w := httptest.NewRecorder()
+
+	router := newTestRouter()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status code incorreto: esperado %d (DB indisponível), obtido %d", http.StatusServiceUnavailable, w.Code)
+	}
+	ct := w.Header().Get("Content-Type")
+	if ct != "application/problem+json" && ct != "application/json" {
+		t.Fatalf("Content-Type incorreto: esperado application/problem+json ou application/json, obtido %s", ct)
+	}
+	var resp map[string]interface{}
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("resposta não é JSON válido: %v", err)
+	}
+	status, ok := resp["status"].(float64)
+	if !ok || int(status) != http.StatusServiceUnavailable {
+		t.Fatalf("esperado status %d no problem response; obtido %v", http.StatusServiceUnavailable, resp["status"])
 	}
 }
 

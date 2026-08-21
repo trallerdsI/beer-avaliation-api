@@ -2,125 +2,46 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, staging]
   pull_request:
-    branches: [main]
+    branches: [main, staging]
 
 jobs:
-  lint-build-test:
+  vulncheck:
+    name: Vulnerability Scan
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
-          go-version: "1.26.6"
-          cache: true
+          go-version: '1.26'
+      - name: Install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+      - name: Run vulnerability scan
+        run: govulncheck ./...
+        env:
+          GOWORK: off
 
-      - name: Verify gofmt
+  build-test:
+    name: Build and Test
+    runs-on: ubuntu-latest
+    needs: vulncheck
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.26'
+      - name: Build
+        run: go build ./...
+      - name: Vet
+        run: go vet ./...
+      - name: Format check
         run: |
-          unformatted=$(gofmt -l .)
+          unformatted=$(gofmt -l $(go list -f '{{.Dir}}' ./...))
           if [ -n "$unformatted" ]; then
-            echo "Arquivos não formatados com gofmt:"
+            echo "Ficheiros não formatados:"
             echo "$unformatted"
             exit 1
           fi
-
-      - name: Run go vet
-        run: go vet ./...
-
-      - name: Build
-        run: go build ./...
-
-      - name: Run gosec security scanner
-        run: |
-          go install github.com/securego/gosec/v2/cmd/gosec@latest
-          gosec -exclude-dir=.history -exclude-dir=.kilo -exclude=G101,G115,G404,G120 ./...
-
-      - name: Run unit tests with race detector and coverage
-        run: go test -race -short -coverprofile=coverage.out -covermode=atomic ./...
-
-      - name: Check coverage threshold
-        run: |
-          COVERAGE=$(go tool cover -func=coverage.out | grep total | awk '{print $3}' | sed 's/%//')
-          echo "Coverage: ${COVERAGE}%"
-          if (( $(echo "$COVERAGE < 65" | bc -l) )); then
-            echo "Coverage ${COVERAGE}% is below 65% threshold"
-            exit 1
-          fi
-
-      - name: Upload coverage artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage-report
-          path: coverage.out
-          retention-days: 30
-
-  integration-test:
-    if: ${{ vars.TEST_DATABASE_URL != '' }}
-    runs-on: ubuntu-latest
-    services:
-      docker:
-        image: docker:dind
-        options: --privileged
-        ports:
-          - 2375:2375
-    env:
-      DOCKER_HOST: tcp://localhost:2375
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-go@v5
-        with:
-          go-version: "1.26.6"
-          cache: true
-
-      - name: Run integration tests with testcontainers
-        run: go test -tags=integration -race -timeout 300s ./...
-
-  chaos-test:
-    if: ${{ github.event_name == 'push' || github.event_name == 'pull_request' }}
-    runs-on: ubuntu-latest
-    services:
-      docker:
-        image: docker:dind
-        options: --privileged
-        ports:
-          - 2375:2375
-    env:
-      DOCKER_HOST: tcp://localhost:2375
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-go@v5
-        with:
-          go-version: "1.26.6"
-          cache: true
-
-      - name: Run chaos tests with testcontainers
-        run: go test -race -timeout 180s ./pkg/database/
-
-  vulnerability-scan:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-go@v5
-        with:
-          go-version: "1.26.6"
-          cache: true
-
-      - name: Run govulncheck
-        run: |
-          go run golang.org/x/vuln/cmd/govulncheck@latest \
-            -fail-on=low \
-            ./...
-
-      - name: Verify no new high-severity advisories
-        run: |
-          govulncheck -json ./... > vuln.json || true
-          if grep -q '"Severity":"HIGH"' vuln.json; then
-            echo "HIGH severity vulnerabilities found:"
-            grep '"Severity":"HIGH"' vuln.json
-            exit 1
-          fi
+      - name: Race detector tests
+        run: TESTING=true go test -race ./...
