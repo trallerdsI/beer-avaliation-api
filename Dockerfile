@@ -17,8 +17,9 @@ COPY . .
 
 # Build otimizado: estático, sem símbolos de debug, sem paths absolutos
 ARG VERSION=dev
-RUN CGO_ENABLED=0 GOOS=linux go build \
-    -trimpath \
+RUN go version && go env && \
+    go vet ./... && \
+    go build -v -trimpath \
     -ldflags="-s -w -buildvcs=false -X main.Version=${VERSION}" \
     -o main ./cmd/server
 
