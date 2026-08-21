@@ -22,6 +22,8 @@ import (
 	"beer-review-app/pkg/telemetry"
 )
 
+var Version string
+
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, logging.SanitizeOptions(&slog.HandlerOptions{Level: slog.LevelInfo})))
 	slog.SetDefault(logger)
