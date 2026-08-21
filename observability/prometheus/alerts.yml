@@ -1,0 +1,32 @@
+groups:
+  - name: go_app_runtime_and_db
+    rules:
+      - alert: GoroutineLeakWarning
+        expr: go_goroutines > 1000
+        for: 5m
+        labels:
+          severity: warning
+          tier: backend
+        annotations:
+          summary: "Crescimento atípico de Goroutines (instância {{ $labels.instance }})"
+          description: "Goroutines acima de 1000 por 5m. Valor atual: {{ $value }}."
+
+      - alert: DBPoolSaturationWarning
+        expr: (go_sql_in_use_connections / go_sql_open_connections) >= 0.8
+        for: 3m
+        labels:
+          severity: warning
+          tier: database
+        annotations:
+          summary: "Saturação do DB Pool (>80%)"
+          description: "Conexões do DB em uso acima de 80%. Risco de contenção sob a Lei de Little."
+
+      - alert: HighHTTP5xxErrorRate
+        expr: (sum(rate(http_requests_total{status=~"5.."}[5m])) / sum(rate(http_requests_total[5m]))) * 100 > 5
+        for: 2m
+        labels:
+          severity: critical
+          tier: api
+        annotations:
+          summary: "Taxa de erro HTTP 5xx acima de 5%"
+          description: "Erros 5xx representam {{ $value | printf \"%.2f\" }}% do tráfego nos últimos 5m."

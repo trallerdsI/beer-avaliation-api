@@ -13,9 +13,12 @@ import (
 	"go.opentelemetry.io/otel"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 
+	"github.com/prometheus/client_golang/prometheus"
+
 	"beer-review-app/internal/app"
 	"beer-review-app/pkg/database"
 	"beer-review-app/pkg/logging"
+	"beer-review-app/pkg/metrics"
 	"beer-review-app/pkg/telemetry"
 )
 
@@ -27,6 +30,8 @@ func main() {
 	if serverPort == "" {
 		serverPort = "8082"
 	}
+
+	metrics.RegisterSystemCollectors(prometheus.DefaultRegisterer)
 
 	var db *database.RetryableDB
 	db, err := app.InitDBFromEnv()

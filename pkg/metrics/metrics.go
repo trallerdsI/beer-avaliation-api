@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
@@ -67,21 +68,21 @@ func IsServerlessRuntime() bool {
 }
 
 var (
-	DBConnectionsOpen = promauto.NewGauge(prometheus.GaugeOpts{
-		Name: "go_sql_db_connections_open",
-		Help: "Current number of open connections in the pool",
+	DBSqlOpenConns = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "go_sql_open_connections",
+		Help: "Número de conexões abertas no pool do banco de dados.",
 	})
-	DBConnectionsInUse = promauto.NewGauge(prometheus.GaugeOpts{
-		Name: "go_sql_db_connections_in_use",
-		Help: "Current number of connections actively executing queries",
+	DBSqlInUseConns = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "go_sql_in_use_connections",
+		Help: "Número de conexões em uso no pool do banco de dados.",
 	})
-	DBConnectionsIdle = promauto.NewGauge(prometheus.GaugeOpts{
-		Name: "go_sql_db_connections_idle",
-		Help: "Current number of idle connections in the pool",
+	DBSqlIdleConns = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "go_sql_idle_connections",
+		Help: "Número de conexões idle no pool do banco de dados.",
 	})
 	DBWaitCount = promauto.NewCounter(prometheus.CounterOpts{
-		Name: "go_sql_db_wait_count_total",
-		Help: "Total number of requests that waited for a free connection",
+		Name: "go_sql_wait_count_total",
+		Help: "Total de requisições que esperaram por uma conexão livre.",
 	})
 
 	ModerationCacheHitsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
@@ -90,11 +91,20 @@ var (
 	}, []string{"backend"})
 )
 
+// RegisterSystemCollectors registra coletores nativos do Go runtime e processo.
+// Isso expõe métricas como go_goroutines, go_memstats_*, process_cpu_seconds_total.
+func RegisterSystemCollectors(reg prometheus.Registerer) {
+	reg.MustRegister(
+		collectors.NewGoCollector(),
+		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
+	)
+}
+
 // RecordDBStats updates Prometheus gauges/counters from database/sql stats.
 func RecordDBStats(stats sql.DBStats) {
-	DBConnectionsOpen.Set(float64(stats.OpenConnections))
-	DBConnectionsInUse.Set(float64(stats.InUse))
-	DBConnectionsIdle.Set(float64(stats.Idle))
+	DBSqlOpenConns.Set(float64(stats.OpenConnections))
+	DBSqlInUseConns.Set(float64(stats.InUse))
+	DBSqlIdleConns.Set(float64(stats.Idle))
 	DBWaitCount.Add(float64(stats.WaitCount))
 }
 
