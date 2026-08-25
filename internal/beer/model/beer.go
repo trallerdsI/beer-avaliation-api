@@ -78,13 +78,15 @@ type MediaItem struct {
 // rating (1-5) é a nota individual do utilizador; a cerveja expõe
 // average_rating/total_reviews agregados a partir dos ratings dos comentários.
 type Comment struct {
-	ID        string   `json:"id"`
-	Text      string   `json:"text" validate:"required,max=2000"`
-	Rating    int      `json:"rating" validate:"required,min=1,max=5"`
-	Likes     int      `json:"likes"`
-	LikedBy   []string `json:"likedBy"`   // user IDs que deram like (AuthZ obrigatória)
-	CreatedBy string   `json:"createdBy"` // user_id do autor do comentário (AuthZ)
-	CreatedAt string   `json:"createdAt"` // timestamp ISO8601 para ordenação cronológica do feed
+	ID               string    `json:"id"`
+	Text             string    `json:"text" validate:"required,max=2000"`
+	Rating           int       `json:"rating" validate:"required,min=1,max=5"`
+	Likes            int       `json:"likes"`
+	LikedBy          []string  `json:"likedBy"`   // user IDs que deram like (AuthZ obrigatória)
+	CreatedBy        string    `json:"createdBy"` // user_id do autor do comentário (AuthZ)
+	CreatedAt        string    `json:"createdAt"` // timestamp ISO8601 para ordenação cronológica do feed
+	PurchaseLocation *string   `json:"purchaseLocation,omitempty"`
+	PurchaseMapURL   *string   `json:"purchaseMapUrl,omitempty"`
 }
 
 // Beer represents a beer object.
@@ -110,6 +112,8 @@ type Beer struct {
 	CreatedBy   string      `json:"createdBy"` // user_id do criador (AuthZ: só criador ou admin editam)
 	CreatedAt   string      `json:"createdAt"` // timestamp ISO8601 de criação da cerveja
 	UpdatedAt   string      `json:"updatedAt"` // timestamp ISO8601 da última alteração (base do ETag - RFC 9111)
+	PurchaseLocation *string `json:"purchaseLocation,omitempty"`
+	PurchaseMapURL   *string `json:"purchaseMapUrl,omitempty"`
 
 	// Campos agregados (calculados no repositório, não persistidos).
 	AverageRating float64 `json:"averageRating,omitempty"` // média dos ratings dos comentários

@@ -1,0 +1,3 @@
+ALTER TABLE beers 
+ADD COLUMN IF NOT EXISTS purchase_location VARCHAR(255),
+ADD COLUMN IF NOT EXISTS purchase_map_url TEXT;

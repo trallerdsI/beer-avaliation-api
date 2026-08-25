@@ -66,6 +66,13 @@ func isNilQuerier(q querier) bool {
 	return false
 }
 
+func nullStringPtr(ns sql.NullString) *string {
+	if ns.Valid {
+		return &ns.String
+	}
+	return nil
+}
+
 // Create adds a new beer to the PostgreSQL database.
 // O id é um UUIDv7 (RFC 9562) gerado pela aplicação e já preenchido em
 // beer.ID antes da chamada (ver beerUsecase.Create). Isto garante IDs
@@ -86,9 +93,9 @@ func (r *PostgresBeerRepository) Create(ctx context.Context, beer *model.Beer) e
 	// created_at é definido no usecase (UTC) para ordenação cronológica.
 	_, err = r.db.ExecContext(ctx, `
    INSERT INTO beers (
-      id, name, style, description, image_url, alcohol, taste, aroma, color, body, carbonation, finish, comments, created_by, created_at
-   ) VALUES ($1, $2, COALESCE($3, NULL), $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
-		beer.ID, beer.Name, beer.Style, beer.Description, beer.ImageUrl, beer.Alcohol, beer.Taste, beer.Aroma, beer.Color, beer.Body, beer.Carbonation, beer.Finish, commentsJSON, beer.CreatedBy, beer.CreatedAt)
+      id, name, style, description, image_url, alcohol, taste, aroma, color, body, carbonation, finish, comments, created_by, created_at, purchase_location, purchase_map_url
+   ) VALUES ($1, $2, COALESCE($3, NULL), $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)`,
+		beer.ID, beer.Name, beer.Style, beer.Description, beer.ImageUrl, beer.Alcohol, beer.Taste, beer.Aroma, beer.Color, beer.Body, beer.Carbonation, beer.Finish, commentsJSON, beer.CreatedBy, beer.CreatedAt, beer.PurchaseLocation, beer.PurchaseMapURL)
 	if err != nil {
 		return err
 	}
@@ -118,7 +125,9 @@ func (r *PostgresBeerRepository) GetByID(ctx context.Context, id string) (model.
             created_by,
             created_at,
             updated_at,
-            media
+            media,
+            purchase_location,
+            purchase_map_url
         FROM beers WHERE id = $1`, id).
 		Scan(
 			&beer.ID,
@@ -137,7 +146,9 @@ func (r *PostgresBeerRepository) GetByID(ctx context.Context, id string) (model.
 			&beer.CreatedBy,
 			&beer.CreatedAt,
 			&beer.UpdatedAt,
-			&mediaJSON)
+			&mediaJSON,
+			&beer.PurchaseLocation,
+			&beer.PurchaseMapURL)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return model.Beer{}, errors.NewAppError(404, "beer not found", nil)
@@ -219,7 +230,9 @@ func (r *PostgresBeerRepository) GetPaginated(ctx context.Context, page, pageSiz
             created_by,
             created_at,
             updated_at,
-            media
+            media,
+            purchase_location,
+            purchase_map_url
         FROM beers LIMIT $1 OFFSET $2`, pageSize, offset)
 	if err != nil {
 		slog.Error("error querying beers", "err", err)
@@ -230,13 +243,13 @@ func (r *PostgresBeerRepository) GetPaginated(ctx context.Context, page, pageSiz
 	for rows.Next() {
 		var beer model.Beer
 		var commentsJSON, mediaJSON []byte
-		var description, imageURL, createdBy, createdAt, updatedAt sql.NullString
+		var description, imageURL, createdBy, createdAt, updatedAt, purchaseLocation, purchaseMapURL sql.NullString
 		if err := rows.Scan(
 			&beer.ID,
 			&beer.Name,
 			&beer.Style,
-			&description,
-			&imageURL,
+			&beer.Description,
+			&beer.ImageUrl,
 			&beer.Alcohol,
 			&beer.Taste,
 			&beer.Aroma,
@@ -248,7 +261,9 @@ func (r *PostgresBeerRepository) GetPaginated(ctx context.Context, page, pageSiz
 			&createdBy,
 			&createdAt,
 			&updatedAt,
-			&mediaJSON); err != nil {
+			&mediaJSON,
+			&purchaseLocation,
+			&purchaseMapURL); err != nil {
 			slog.Error("error scanning beer", "err", err)
 			return nil, 0, err
 		}
@@ -257,6 +272,8 @@ func (r *PostgresBeerRepository) GetPaginated(ctx context.Context, page, pageSiz
 		beer.CreatedBy = createdBy.String
 		beer.CreatedAt = createdAt.String
 		beer.UpdatedAt = updatedAt.String
+		beer.PurchaseLocation = nullStringPtr(purchaseLocation)
+		beer.PurchaseMapURL = nullStringPtr(purchaseMapURL)
 		beer.Comments = unmarshalComments(commentsJSON)
 		setRatingAggregates(&beer)
 		beers = append(beers, beer)
@@ -297,8 +314,8 @@ func (r *PostgresBeerRepository) Update(ctx context.Context, id string, beer mod
 	}
 
 	result, err := r.db.ExecContext(ctx,
-		"UPDATE beers SET name=$1, style=$2, taste=$3, aroma=$4, color=$5, body=$6, carbonation=$7, alcohol=$8, finish=$9, comments=$10, media=$11, image_url=COALESCE(NULLIF($12, ''), image_url) WHERE id=$13",
-		beer.Name, beer.Style, beer.Taste, beer.Aroma, beer.Color, beer.Body, beer.Carbonation, beer.Alcohol, beer.Finish, commentsJSON, mediaJSON, beer.ImageUrl, id)
+		"UPDATE beers SET name=$1, style=$2, taste=$3, aroma=$4, color=$5, body=$6, carbonation=$7, alcohol=$8, finish=$9, comments=$10, media=$11, image_url=COALESCE(NULLIF($12, ''), image_url), purchase_location=$13, purchase_map_url=$14 WHERE id=$15",
+		beer.Name, beer.Style, beer.Taste, beer.Aroma, beer.Color, beer.Body, beer.Carbonation, beer.Alcohol, beer.Finish, commentsJSON, mediaJSON, beer.ImageUrl, beer.PurchaseLocation, beer.PurchaseMapURL, id)
 	if err != nil {
 		return err
 	}
@@ -342,7 +359,7 @@ func (r *PostgresBeerRepository) SearchBeers(ctx context.Context, filters model.
 	// FTS: busca textual com ranking
 	if filters.Query != "" {
 		qb.WriteString(fmt.Sprintf(`
-			SELECT id, name, style, description, alcohol, taste, aroma, color, body, carbonation, finish, comments, created_by, created_at, updated_at, media,
+			SELECT id, name, style, description, alcohol, taste, aroma, color, body, carbonation, finish, comments, created_by, created_at, updated_at, media, purchase_location, purchase_map_url,
 			       ts_rank_cd(search_vector, websearch_to_tsquery('portuguese', $%d)) AS rank
 			FROM beers
 			WHERE search_vector @@ websearch_to_tsquery('portuguese', $%d)
@@ -350,7 +367,7 @@ func (r *PostgresBeerRepository) SearchBeers(ctx context.Context, filters model.
 		args = append(args, filters.Query)
 		argPosition++
 	} else {
-		qb.WriteString(`SELECT id, name, style, description, alcohol, taste, aroma, color, body, carbonation, finish, comments, created_by, created_at, updated_at, media, 0.0 AS rank FROM beers WHERE 1=1`)
+		qb.WriteString(`SELECT id, name, style, description, alcohol, taste, aroma, color, body, carbonation, finish, comments, created_by, created_at, updated_at, media, purchase_location, purchase_map_url, 0.0 AS rank FROM beers WHERE 1=1`)
 	}
 
 	cb.WriteString("SELECT COUNT(*) FROM beers WHERE 1=1")
@@ -403,7 +420,7 @@ func (r *PostgresBeerRepository) SearchBeers(ctx context.Context, filters model.
 		argPosition = 1
 
 		qb.WriteString(`
-			SELECT id, name, style, description, alcohol, taste, aroma, color, body, carbonation, finish, comments, created_by, created_at, updated_at, media,
+			SELECT id, name, style, description, alcohol, taste, aroma, color, body, carbonation, finish, comments, created_by, created_at, updated_at, media, purchase_location, purchase_map_url,
 			       similarity(COALESCE(name, '') || ' ' || COALESCE(description, ''), $1) AS rank
 			FROM beers
 			WHERE COALESCE(name, '') || ' ' || COALESCE(description, '') % $1
@@ -444,13 +461,13 @@ func (r *PostgresBeerRepository) SearchBeers(ctx context.Context, filters model.
 		for rows.Next() {
 			var beer model.Beer
 			var commentsJSON, mediaJSON []byte
-			var createdBy, createdAt, updatedAt sql.NullString
+			var createdBy, createdAt, updatedAt, purchaseLocation, purchaseMapURL sql.NullString
 			var rank sql.NullFloat64
 			err := rows.Scan(
 				&beer.ID, &beer.Name, &beer.Style, &beer.Description,
 				&beer.Alcohol, &beer.Taste, &beer.Aroma, &beer.Color,
 				&beer.Body, &beer.Carbonation, &beer.Finish,
-				&commentsJSON, &createdBy, &createdAt, &updatedAt, &mediaJSON, &rank,
+				&commentsJSON, &createdBy, &createdAt, &updatedAt, &mediaJSON, &purchaseLocation, &purchaseMapURL, &rank,
 			)
 			if err != nil {
 				return nil, 0, fuzzyMatch, fmt.Errorf("failed to scan beer: %w", err)
@@ -458,6 +475,8 @@ func (r *PostgresBeerRepository) SearchBeers(ctx context.Context, filters model.
 			beer.CreatedBy = createdBy.String
 			beer.CreatedAt = createdAt.String
 			beer.UpdatedAt = updatedAt.String
+			beer.PurchaseLocation = nullStringPtr(purchaseLocation)
+			beer.PurchaseMapURL = nullStringPtr(purchaseMapURL)
 			beer.Comments = unmarshalComments(commentsJSON)
 			beer.Media = unmarshalMedia(mediaJSON)
 			setRatingAggregates(&beer)
@@ -487,13 +506,13 @@ func (r *PostgresBeerRepository) SearchBeers(ctx context.Context, filters model.
 	for rows.Next() {
 		var beer model.Beer
 		var commentsJSON, mediaJSON []byte
-		var createdBy, createdAt, updatedAt sql.NullString
+		var createdBy, createdAt, updatedAt, purchaseLocation, purchaseMapURL sql.NullString
 		var rank sql.NullFloat64
 		err := rows.Scan(
 			&beer.ID, &beer.Name, &beer.Style, &beer.Description,
 			&beer.Alcohol, &beer.Taste, &beer.Aroma, &beer.Color,
 			&beer.Body, &beer.Carbonation, &beer.Finish,
-			&commentsJSON, &createdBy, &createdAt, &updatedAt, &mediaJSON, &rank,
+			&commentsJSON, &createdBy, &createdAt, &updatedAt, &mediaJSON, &purchaseLocation, &purchaseMapURL, &rank,
 		)
 		if err != nil {
 			return nil, 0, fuzzyMatch, fmt.Errorf("failed to scan beer: %w", err)
@@ -501,6 +520,8 @@ func (r *PostgresBeerRepository) SearchBeers(ctx context.Context, filters model.
 		beer.CreatedBy = createdBy.String
 		beer.CreatedAt = createdAt.String
 		beer.UpdatedAt = updatedAt.String
+		beer.PurchaseLocation = nullStringPtr(purchaseLocation)
+		beer.PurchaseMapURL = nullStringPtr(purchaseMapURL)
 		beer.Comments = unmarshalComments(commentsJSON)
 		beer.Media = unmarshalMedia(mediaJSON)
 		setRatingAggregates(&beer)
@@ -517,7 +538,7 @@ func (r *PostgresBeerRepository) SearchBeers(ctx context.Context, filters model.
 // GetAll retrieves all beers from the PostgreSQL database.
 func (r *PostgresBeerRepository) GetAll(ctx context.Context) ([]model.Beer, error) {
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT id, name, style, description, image_url, alcohol, taste, aroma, color, body, carbonation, finish, comments, created_by, created_at, updated_at, media
+		SELECT id, name, style, description, image_url, alcohol, taste, aroma, color, body, carbonation, finish, comments, created_by, created_at, updated_at, media, purchase_location, purchase_map_url
 		FROM beers
 	`)
 	if err != nil {
@@ -529,7 +550,7 @@ func (r *PostgresBeerRepository) GetAll(ctx context.Context) ([]model.Beer, erro
 	for rows.Next() {
 		var beer model.Beer
 		var commentsJSON, mediaJSON []byte
-		var description, imageURL, createdBy, createdAt, updatedAt sql.NullString
+		var description, imageURL, createdBy, createdAt, updatedAt, purchaseLocation, purchaseMapURL sql.NullString
 		err := rows.Scan(
 			&beer.ID,
 			&beer.Name,
@@ -548,6 +569,8 @@ func (r *PostgresBeerRepository) GetAll(ctx context.Context) ([]model.Beer, erro
 			&createdAt,
 			&updatedAt,
 			&mediaJSON,
+			&purchaseLocation,
+			&purchaseMapURL,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan beer: %w", err)
@@ -557,6 +580,8 @@ func (r *PostgresBeerRepository) GetAll(ctx context.Context) ([]model.Beer, erro
 		beer.CreatedBy = createdBy.String
 		beer.CreatedAt = createdAt.String
 		beer.UpdatedAt = updatedAt.String
+		beer.PurchaseLocation = nullStringPtr(purchaseLocation)
+		beer.PurchaseMapURL = nullStringPtr(purchaseMapURL)
 		beer.Comments = unmarshalComments(commentsJSON)
 		beer.Media = unmarshalMedia(mediaJSON)
 		setRatingAggregates(&beer)
