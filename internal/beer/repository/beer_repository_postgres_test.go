@@ -225,6 +225,21 @@ func TestPostgresBeerRepository_GetPaginated(t *testing.T) {
 			},
 		},
 		{
+			name:      "success with null description/image_url",
+			page:      1,
+			pageSize:  10,
+			wantBeers: 1,
+			wantTotal: 1,
+			setup: func(m sqlmock.Sqlmock) {
+				m.ExpectQuery("SELECT").
+					WithArgs(10, 0).
+					WillReturnRows(sqlmock.NewRows([]string{"id", "name", "style", "description", "image_url", "alcohol", "taste", "aroma", "color", "body", "carbonation", "finish", "comments", "created_by", "created_at", "updated_at", "media", "purchase_location", "purchase_map_url"}).
+						AddRow("1", "IPA", "Ale", nil, nil, 5.5, "Doce", "Floral", "Clara", "Leve", "Baixa", "Seco", []byte("[]"), "u1", time.Now().Format(time.RFC3339), time.Now().Format(time.RFC3339), []byte("[]"), nil, nil))
+				m.ExpectQuery("SELECT COUNT").
+					WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
+			},
+		},
+		{
 			name:     "count query error",
 			page:     1,
 			pageSize: 10,
