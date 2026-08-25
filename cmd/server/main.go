@@ -16,6 +16,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 
 	"beer-review-app/internal/app"
+	"beer-review-app/internal/boot"
 	"beer-review-app/pkg/database"
 	"beer-review-app/pkg/logging"
 	"beer-review-app/pkg/metrics"
@@ -27,6 +28,11 @@ var Version string
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, logging.SanitizeOptions(&slog.HandlerOptions{Level: slog.LevelInfo})))
 	slog.SetDefault(logger)
+
+	if boot.IsTestingInNonLocal() {
+		slog.Error("boot bloqueado: TESTING=true não é permitido em staging/production")
+		os.Exit(1)
+	}
 
 	serverPort := os.Getenv("SERVER_PORT")
 	if serverPort == "" {
