@@ -91,6 +91,52 @@
           }
         }
       }
+    },
+    {
+      "id": 4,
+      "title": "Taxa de Bloqueio por Rota e Tipo de Chave (RPS)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "sum(rate(http_requests_rate_limited_total[1m])) by (path, key_type)",
+          "legendFormat": "{{path}} - {{key_type}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "rps",
+          "custom": { "drawStyle": "line", "lineInterpolation": "smooth" }
+        }
+      }
+    },
+    {
+      "id": 5,
+      "title": "Percentual de Requisições Descartadas (% Limit)",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 12, "x": 12, "y": 8 },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "(sum(rate(http_requests_rate_limited_total[1m])) / (sum(rate(http_requests_total[1m])) + sum(rate(http_requests_rate_limited_total[1m])))) * 100",
+          "legendFormat": "% Limit"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "max": 100,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 1 },
+              { "color": "red", "value": 5 }
+            ]
+          }
+        }
+      }
     }
   ]
 }
