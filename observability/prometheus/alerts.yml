@@ -30,3 +30,23 @@ groups:
         annotations:
           summary: "Taxa de erro HTTP 5xx acima de 5%"
           description: "Erros 5xx representam {{ $value | printf \"%.2f\" }}% do tráfego nos últimos 5m."
+
+      - alert: RateLimitSpikeWarning
+        expr: sum(rate(http_requests_rate_limited_total[5m])) > 10
+        for: 2m
+        labels:
+          severity: warning
+          tier: api
+        annotations:
+          summary: "Pico de requisições bloqueadas por rate limit ({{ $labels.instance }})"
+          description: "Mais de 10 req/min bloqueadas nos últimos 5m. Valor atual: {{ $value | printf \"%.2f\" }}/min."
+
+      - alert: RateLimitSpikeCritical
+        expr: sum(rate(http_requests_rate_limited_total[5m])) > 50
+        for: 2m
+        labels:
+          severity: critical
+          tier: api
+        annotations:
+          summary: "Pico crítico de requisições bloqueadas por rate limit ({{ $labels.instance }})"
+          description: "Mais de 50 req/min bloqueadas nos últimos 5m. Valor atual: {{ $value | printf \"%.2f\" }}/min. Possível brute-force ou scraping atípico."
