@@ -69,9 +69,9 @@ func TestPostgresBeerRepository_Create(t *testing.T) {
 			name: "success",
 			beer: &model.Beer{ID: "1", Name: "IPA", CreatedBy: "u1", CreatedAt: time.Now().Format(time.RFC3339)},
 			setup: func(m sqlmock.Sqlmock) {
-			m.ExpectExec("INSERT INTO beers").
-				WithArgs("1", "IPA", sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), "u1", sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
-				WillReturnResult(sqlmock.NewResult(1, 1))
+				m.ExpectExec("INSERT INTO beers").
+					WithArgs("1", "IPA", sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), "u1", sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
+					WillReturnResult(sqlmock.NewResult(1, 1))
 			},
 			wantErr: false,
 		},
@@ -79,9 +79,9 @@ func TestPostgresBeerRepository_Create(t *testing.T) {
 			name: "db exec error",
 			beer: &model.Beer{ID: "2", Name: "IPA", CreatedBy: "u1", CreatedAt: time.Now().Format(time.RFC3339)},
 			setup: func(m sqlmock.Sqlmock) {
-			m.ExpectExec("INSERT INTO beers").
-				WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
-				WillReturnError(http.ErrHandlerTimeout)
+				m.ExpectExec("INSERT INTO beers").
+					WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
+					WillReturnError(http.ErrHandlerTimeout)
 			},
 			wantErr: true,
 		},
@@ -205,12 +205,12 @@ func TestPostgresBeerRepository_GetPaginated(t *testing.T) {
 			wantBeers: 1,
 			wantTotal: 1,
 			setup: func(m sqlmock.Sqlmock) {
-			m.ExpectQuery("SELECT").
-				WithArgs(10, 0).
-				WillReturnRows(sqlmock.NewRows([]string{"id", "name", "style", "description", "image_url", "alcohol", "taste", "aroma", "color", "body", "carbonation", "finish", "comments", "created_by", "created_at", "updated_at", "media", "purchase_location", "purchase_map_url"}).
-					AddRow("1", "IPA", "Ale", "desc", "img.jpg", 5.5, "Doce", "Floral", "Clara", "Leve", "Baixa", "Seco", []byte("[]"), "u1", time.Now().Format(time.RFC3339), time.Now().Format(time.RFC3339), []byte("[]"), nil, nil))
-			m.ExpectQuery("SELECT COUNT").
-				WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
+				m.ExpectQuery("SELECT").
+					WithArgs(10, 0).
+					WillReturnRows(sqlmock.NewRows([]string{"id", "name", "style", "description", "image_url", "alcohol", "taste", "aroma", "color", "body", "carbonation", "finish", "comments", "created_by", "created_at", "updated_at", "media", "purchase_location", "purchase_map_url"}).
+						AddRow("1", "IPA", "Ale", "desc", "img.jpg", 5.5, "Doce", "Floral", "Clara", "Leve", "Baixa", "Seco", []byte("[]"), "u1", time.Now().Format(time.RFC3339), time.Now().Format(time.RFC3339), []byte("[]"), nil, nil))
+				m.ExpectQuery("SELECT COUNT").
+					WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
 			},
 		},
 		{
@@ -288,9 +288,9 @@ func TestPostgresBeerRepository_GetAll(t *testing.T) {
 			name:    "success",
 			wantLen: 1,
 			setup: func(m sqlmock.Sqlmock) {
-			m.ExpectQuery("SELECT").
-				WillReturnRows(sqlmock.NewRows([]string{"id", "name", "style", "description", "image_url", "alcohol", "taste", "aroma", "color", "body", "carbonation", "finish", "comments", "created_by", "created_at", "updated_at", "media", "purchase_location", "purchase_map_url"}).
-					AddRow("1", "IPA", "Ale", "desc", "img.jpg", 5.5, "Doce", "Floral", "Clara", "Leve", "Baixa", "Seco", []byte("[]"), "u1", time.Now().Format(time.RFC3339), time.Now().Format(time.RFC3339), []byte("[]"), nil, nil))
+				m.ExpectQuery("SELECT").
+					WillReturnRows(sqlmock.NewRows([]string{"id", "name", "style", "description", "image_url", "alcohol", "taste", "aroma", "color", "body", "carbonation", "finish", "comments", "created_by", "created_at", "updated_at", "media", "purchase_location", "purchase_map_url"}).
+						AddRow("1", "IPA", "Ale", "desc", "img.jpg", 5.5, "Doce", "Floral", "Clara", "Leve", "Baixa", "Seco", []byte("[]"), "u1", time.Now().Format(time.RFC3339), time.Now().Format(time.RFC3339), []byte("[]"), nil, nil))
 			},
 		},
 		{
