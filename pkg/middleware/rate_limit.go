@@ -8,6 +8,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+
 	"beer-review-app/pkg/errors"
 	"beer-review-app/pkg/response"
 )
@@ -16,6 +18,18 @@ const (
 	defaultWriteRateLimit       = 10
 	defaultWriteRateLimitWindow = time.Minute
 )
+
+var rateLimitedTotal = prometheus.NewCounterVec(
+	prometheus.CounterOpts{
+		Name: "http_requests_rate_limited_total",
+		Help: "Total number of requests rejected by rate limit middleware.",
+	},
+	[]string{"method", "path", "key_type"},
+)
+
+func init() {
+	prometheus.DefaultRegisterer.Register(rateLimitedTotal)
+}
 
 type rateLimiter struct {
 	mu     sync.Mutex
@@ -84,6 +98,13 @@ func clientKey(r *http.Request) string {
 	return "i:" + ip
 }
 
+func clientKeyType(key string) string {
+	if strings.HasPrefix(key, "u:") {
+		return "user"
+	}
+	return "ip"
+}
+
 var writeLimiter = newRateLimiter()
 
 func isWriteMethod(method string) bool {
@@ -113,6 +134,7 @@ func RateLimitMiddleware(next http.Handler) http.Handler {
 			response.SendProblem(w, errors.NewProblem(http.StatusTooManyRequests, "rate_limit_exceeded",
 				"Muitas requisições. Tente novamente dentro de 60 segundos."))
 			slog.WarnContext(r.Context(), "rate limit exceeded", "key", key, "method", r.Method, "path", r.URL.Path)
+			rateLimitedTotal.WithLabelValues(r.Method, r.URL.Path, clientKeyType(key)).Inc()
 			return
 		}
 		next.ServeHTTP(w, r)
@@ -144,6 +166,7 @@ func NewRateLimitMiddleware(limit int, window time.Duration) func(http.Handler) 
 				response.SendProblem(w, errors.NewProblem(http.StatusTooManyRequests, "rate_limit_exceeded",
 					"Muitas requisições. Tente novamente dentro de 60 segundos."))
 				slog.WarnContext(r.Context(), "rate limit exceeded", "key", key, "method", r.Method, "path", r.URL.Path)
+				rateLimitedTotal.WithLabelValues(r.Method, r.URL.Path, clientKeyType(key)).Inc()
 				return
 			}
 			next.ServeHTTP(w, r)
