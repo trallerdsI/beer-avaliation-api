@@ -34,10 +34,6 @@ COPY --from=builder /app/main /main
 # Executa como usuário não-root (65532 é o usuário padrão do distroless)
 USER 65532:65532
 
-EXPOSE 8082
-
-# Health check: endpoint /api/v1/health retorna 200 quando pronto
-HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD ["/main", "health"] || exit 1
+EXPOSE 8080
 
 CMD ["/main"]

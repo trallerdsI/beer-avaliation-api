@@ -34,7 +34,10 @@ func main() {
 		os.Exit(1)
 	}
 
-	serverPort := os.Getenv("SERVER_PORT")
+	serverPort := os.Getenv("PORT")
+	if serverPort == "" {
+		serverPort = os.Getenv("SERVER_PORT")
+	}
 	if serverPort == "" {
 		serverPort = "8082"
 	}
