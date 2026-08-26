@@ -29,7 +29,6 @@ import (
 	appMetrics "beer-review-app/pkg/metrics"
 	middleware "beer-review-app/pkg/middleware"
 	"beer-review-app/pkg/moderation"
-	"beer-review-app/pkg/storage"
 
 	"beer-review-app/pkg/events"
 	"github.com/redis/go-redis/v9"
@@ -131,18 +130,11 @@ func BuildRouterWithDBErr(db *database.RetryableDB, dbErr error, logger *slog.Lo
 	moderationUsecase := beerUsecasePkg.NewModerationUsecase(moderationRepo, beerRepo)
 	userUsecase := userUsecase.NewUserUsecase(userRepo)
 
-	var uploader storage.Uploader
-	if s, err := storage.NewSupabaseStorageFromEnv(); err != nil {
-		slog.Warn("storage de mídia não configurado; upload desativado", "err", err)
-	} else {
-		uploader = s
-	}
-
 	if err := userUsecase.SeedAdmin(context.Background()); err != nil {
 		slog.Error("falha no seed de admin", "err", err)
 	}
 
-	beerController := beerHttp.NewBeerController(beerUsecase, logger, uploader, eventPub)
+	beerController := beerHttp.NewBeerController(beerUsecase, logger, nil, eventPub)
 	userController := userHttp.NewUserController(userUsecase, logger)
 	monitoringController := monitoring.NewMonitoringController(beerRepo, userRepo, logger, db, dbErr, redisClient)
 	moderationController := beerHttp.NewModerationController(moderationUsecase, logger)

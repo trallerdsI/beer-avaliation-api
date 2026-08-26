@@ -207,8 +207,6 @@ docker run -p 8082:8082 \
 | `JWT_SECRET` | Secreto para assinar/validar JWT (obrigatório) |
 | `DB_RESET_SCHEMA` | `true`/`false` para controlar reset do schema no arranque |
 | `CORS_ALLOWED_ORIGINS` | Origens permitidas |
-| `SUPABASE_URL` | URL do projeto Supabase (para storage) |
-| `SUPABASE_SERVICE_ROLE_KEY` | Service role key do Supabase Storage |
 | `OPENAI_API_KEY` | API key para moderação de conteúdo (opcional) |
 | `REDIS_URL` | URL do Redis para cache compartilhado de moderação (opcional) |
 

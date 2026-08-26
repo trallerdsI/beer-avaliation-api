@@ -1,4 +1,4 @@
-package main
+package handler
 
 import (
 	"log/slog"
@@ -24,5 +24,3 @@ func init() {
 func Handler(w http.ResponseWriter, r *http.Request) {
 	router.ServeHTTP(w, r)
 }
-
-func main() {}

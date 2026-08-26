@@ -15,8 +15,6 @@ A aplicação requer as seguintes variáveis em produção:
 | `JWT_SECRET` | Chave secreta para assinatura de JWT | Sim |
 | `DB_CONN_STRING` | Connection string do PostgreSQL | Sim |
 | `REDIS_URL` | URL do Redis (opcional, fallback para PG) | Não |
-| `SUPABASE_URL` | URL do projeto Supabase (storage) | Não |
-| `SUPABASE_SERVICE_ROLE_KEY` | Service role key do Supabase | Não |
 | `CORS_ALLOWED_ORIGINS` | Origens permitidas (CSV) | Sim |
 | `ENV` | Ambiente (`production`) | Sim |
 

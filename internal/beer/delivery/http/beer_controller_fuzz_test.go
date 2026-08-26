@@ -59,7 +59,7 @@ func FuzzCreateBeerHandler(f *testing.F) {
 	f.Add(`{"alcohol":999}`)
 	f.Add(`{"name":"<script>alert(1)</script>"}`)
 
-	controller := NewBeerController(&fuzzBeerUsecase{}, mockLogger, nil, nil)
+	controller := NewBeerController(&fuzzBeerUsecase{}, mockLogger, nil)
 
 	f.Fuzz(func(t *testing.T, data string) {
 		body := bytes.NewReader([]byte(data))
@@ -78,7 +78,7 @@ func FuzzUpdateBeerHandler(f *testing.F) {
 	f.Add(`{"name":""}`)
 	f.Add(`{"alcohol":999}`)
 
-	controller := NewBeerController(&fuzzBeerUsecase{}, mockLogger, nil, nil)
+	controller := NewBeerController(&fuzzBeerUsecase{}, mockLogger, nil)
 
 	f.Fuzz(func(t *testing.T, data string) {
 		body := bytes.NewReader([]byte(data))
@@ -98,7 +98,7 @@ func FuzzAddCommentHandler(f *testing.F) {
 	f.Add(`{"rating":-1}`)
 	f.Add(`{"text":"<script>alert(1)</script>","rating":5}`)
 
-	controller := NewBeerController(&fuzzBeerUsecase{}, mockLogger, nil, nil)
+	controller := NewBeerController(&fuzzBeerUsecase{}, mockLogger, nil)
 
 	f.Fuzz(func(t *testing.T, data string) {
 		body := bytes.NewReader([]byte(data))

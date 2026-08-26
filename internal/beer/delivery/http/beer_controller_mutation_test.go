@@ -24,7 +24,7 @@ import (
 
 func TestAddComment_IgnorePollutedProtectedFields(t *testing.T) {
 	m := new(MockBeerUsecase)
-	controller := NewBeerController(m, mockLogger, nil, nil)
+	controller := NewBeerController(m, mockLogger, nil)
 
 	var captured model.Comment
 	m.On("AddComment", mock.Anything, "1", mock.Anything).
@@ -71,7 +71,7 @@ func TestAddComment_IgnorePollutedProtectedFields(t *testing.T) {
 
 func TestCreateBeer_IgnorePollutedServerFields(t *testing.T) {
 	m := new(MockBeerUsecase)
-	controller := NewBeerController(m, mockLogger, nil, nil)
+	controller := NewBeerController(m, mockLogger, nil)
 
 	var captured *model.Beer
 	m.On("Create", mock.Anything, mock.Anything).
@@ -122,7 +122,7 @@ func TestCreateBeer_IgnorePollutedServerFields(t *testing.T) {
 
 func TestLikeComment_ConcurrentToggle_NoDataRace(t *testing.T) {
 	m := new(MockBeerUsecase)
-	controller := NewBeerController(m, mockLogger, nil, nil)
+	controller := NewBeerController(m, mockLogger, nil)
 
 	// Simula um toggle atómico: conta chamadas e alterna erro/nil,
 	// imitando insert/delete numa constraint única do Postgres.
@@ -171,7 +171,7 @@ func TestLikeComment_ConcurrentToggle_NoDataRace(t *testing.T) {
 // imutáveis e nunca vêm do cliente.
 func TestUpdateBeer_IgnorePollutedServerFields(t *testing.T) {
 	m := new(MockBeerUsecase)
-	controller := NewBeerController(m, mockLogger, nil, nil)
+	controller := NewBeerController(m, mockLogger, nil)
 
 	var captured model.Beer
 	m.On("Update", mock.Anything, "1", mock.Anything).
@@ -263,7 +263,7 @@ func TestMutationStatusCodes(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			m := new(MockBeerUsecase)
-			controller := NewBeerController(m, mockLogger, nil, nil)
+	controller := NewBeerController(m, mockLogger, nil)
 			tc.setupMock(m)
 
 			var b bytes.Buffer
@@ -298,7 +298,7 @@ func TestMutationStatusCodes(t *testing.T) {
 
 func TestAddComment_RejectsOversizedText(t *testing.T) {
 	m := new(MockBeerUsecase)
-	controller := NewBeerController(m, mockLogger, nil, nil)
+	controller := NewBeerController(m, mockLogger, nil)
 
 	// Texto acima do limite do validator (max=2000) + tag script injetada.
 	big := strings.Repeat("a", 3000)

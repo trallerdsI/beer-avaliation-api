@@ -66,7 +66,7 @@ func TestSearchBeers(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mockBeerUsecase = new(MockBeerUsecase)
-			controller := NewBeerController(mockBeerUsecase, mockLogger, nil, nil)
+			controller := NewBeerController(mockBeerUsecase, mockLogger, nil)
 			tt.setupMock()
 
 			req := httptest.NewRequest(http.MethodGet, tt.query, nil)
@@ -85,7 +85,7 @@ func TestSearchBeers(t *testing.T) {
 
 func TestGetEnums(t *testing.T) {
 	mockBeerUsecase = new(MockBeerUsecase)
-	controller := NewBeerController(mockBeerUsecase, mockLogger, nil, nil)
+	controller := NewBeerController(mockBeerUsecase, mockLogger, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/beers/enums", nil)
 	rr := httptest.NewRecorder()
@@ -112,47 +112,9 @@ func TestGetEnums(t *testing.T) {
 	}
 }
 
-func TestUploadBeerMedia(t *testing.T) {
-	tests := []struct {
-		name       string
-		setupMock  func()
-		body       string
-		header     string
-		wantStatus int
-	}{
-		{
-			name:       "uploader nil returns 501",
-			body:       "",
-			wantStatus: http.StatusNotImplemented,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			mockBeerUsecase = new(MockBeerUsecase)
-			controller := NewBeerController(mockBeerUsecase, mockLogger, nil, nil)
-			if tt.setupMock != nil {
-				tt.setupMock()
-			}
-
-			req := httptest.NewRequest(http.MethodPost, "/beers/1/media", bytes.NewBufferString(tt.body))
-			if tt.header != "" {
-				req.Header.Set("Content-Type", tt.header)
-			}
-			req.SetPathValue("id", "1")
-			rr := httptest.NewRecorder()
-			controller.UploadBeerMedia(rr, req)
-
-			if rr.Code != tt.wantStatus {
-				t.Fatalf("status = %d, want %d (body=%s)", rr.Code, tt.wantStatus, rr.Body.String())
-			}
-		})
-	}
-}
-
 func TestGetHomeFeed(t *testing.T) {
 	mockBeerUsecase = new(MockBeerUsecase)
-	controller := NewBeerController(mockBeerUsecase, mockLogger, nil, nil)
+	controller := NewBeerController(mockBeerUsecase, mockLogger, nil)
 
 	mockBeerUsecase.On("GetPaginated", mock.Anything, 1, 20).Return([]model.Beer{}, 0, nil).Once()
 
