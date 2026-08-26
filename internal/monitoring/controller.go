@@ -244,7 +244,10 @@ func (c *MonitoringController) ReadinessProbe(w http.ResponseWriter, r *http.Req
 	dbStatus := c.checkDatabaseHealth(ctx)
 	redisStatus := c.checkRedisHealth(ctx)
 	if dbStatus != "up" || redisStatus != "up" {
-		response.SendProblem(w, errors.NewProblem(http.StatusServiceUnavailable, "service_unavailable", "Dependencies not ready"))
+		response.SendResponse(w, http.StatusServiceUnavailable, HealthResponse{
+			Status:       "not_ready",
+			Dependencies: map[string]string{"database": dbStatus, "redis": redisStatus},
+		})
 		return
 	}
 
