@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	stdErrors "errors" // Renomeado para evitar conflito com o pacote de erros customizado
 	"fmt"
-	"io"
 	"log/slog"
 	"net/http"
 	"net/url"

@@ -134,7 +134,7 @@ func BuildRouterWithDBErr(db *database.RetryableDB, dbErr error, logger *slog.Lo
 		slog.Error("falha no seed de admin", "err", err)
 	}
 
-	beerController := beerHttp.NewBeerController(beerUsecase, logger, nil, eventPub)
+	beerController := beerHttp.NewBeerController(beerUsecase, logger, eventPub)
 	userController := userHttp.NewUserController(userUsecase, logger)
 	monitoringController := monitoring.NewMonitoringController(beerRepo, userRepo, logger, db, dbErr, redisClient)
 	moderationController := beerHttp.NewModerationController(moderationUsecase, logger)
