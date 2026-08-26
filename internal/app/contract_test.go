@@ -57,9 +57,9 @@ func TestContract_ReadyCheck(t *testing.T) {
 	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
 		t.Fatalf("resposta não é JSON válido: %v", err)
 	}
-	status, ok := resp["status"].(float64)
-	if !ok || int(status) != http.StatusServiceUnavailable {
-		t.Fatalf("esperado status %d no problem response; obtido %v", http.StatusServiceUnavailable, resp["status"])
+	status, ok := resp["status"].(string)
+	if !ok || status != "not_ready" {
+		t.Fatalf("esperado status 'not_ready' na resposta; obtido %v", resp["status"])
 	}
 }
 
