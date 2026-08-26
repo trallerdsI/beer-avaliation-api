@@ -9,6 +9,13 @@
 -- (uuid::text = auth.uid()::text) para evitar "operator does not exist:
 -- uuid = text".
 
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.schemata WHERE schema_name = 'auth') THEN
+    RETURN;
+  END IF;
+END $$;
+
 -- beers: leitura pública (o catálogo é público); escrita só ao dono ou admin.
 ALTER TABLE beers ENABLE ROW LEVEL SECURITY;
 
@@ -57,6 +64,6 @@ CREATE POLICY beerUsers_write ON beerUsers
 DO $$
 BEGIN
   IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'comments') THEN
-    EXECUTE 'ALTER TABLE comments ENABLE ROW LEVEL SECURITY';
+    ALTER TABLE comments ENABLE ROW LEVEL SECURITY;
   END IF;
 END $$;
