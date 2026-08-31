@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"beer-review-app/internal/user/model"
+	"beer-review-app/pkg/auth"
 	appErrors "beer-review-app/pkg/errors"
 
 	"github.com/stretchr/testify/mock"
@@ -25,14 +26,19 @@ func (m *MockUserUsecase) Register(ctx context.Context, u model.User) error {
 	return args.Error(0)
 }
 
-func (m *MockUserUsecase) Login(ctx context.Context, email, password string) (string, error) {
+func (m *MockUserUsecase) Login(ctx context.Context, email, password string) (auth.TokenPair, error) {
 	args := m.Called(ctx, email, password)
-	return args.String(0), args.Error(1)
+	return args.Get(0).(auth.TokenPair), args.Error(1)
 }
 
-func (m *MockUserUsecase) OAuthLogin(ctx context.Context, provider, idToken string) (string, error) {
+func (m *MockUserUsecase) OAuthLogin(ctx context.Context, provider, idToken string) (auth.TokenPair, error) {
 	args := m.Called(ctx, provider, idToken)
-	return args.String(0), args.Error(1)
+	return args.Get(0).(auth.TokenPair), args.Error(1)
+}
+
+func (m *MockUserUsecase) RefreshTokens(ctx context.Context, refreshToken string) (auth.TokenPair, error) {
+	args := m.Called(ctx, refreshToken)
+	return args.Get(0).(auth.TokenPair), args.Error(1)
 }
 
 func (m *MockUserUsecase) GetProfile(ctx context.Context, id string) (model.User, error) {
@@ -148,7 +154,10 @@ func TestUserLoginSuccess(t *testing.T) {
 	mu := new(MockUserUsecase)
 	c := newUserController(mu)
 
-	mu.On("Login", mock.Anything, "bob@example.com", "secret1").Return("jwt-token-123", nil)
+	mu.On("Login", mock.Anything, "bob@example.com", "secret1").Return(auth.TokenPair{
+		AccessToken:  "jwt-token-123",
+		RefreshToken: "refresh-123",
+	}, nil)
 
 	body, _ := json.Marshal(map[string]string{"email": "bob@example.com", "password": "secret1"})
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/users/login", bytes.NewBuffer(body))
@@ -160,13 +169,17 @@ func TestUserLoginSuccess(t *testing.T) {
 		t.Fatalf("expected 200, got %d (body=%s)", rr.Code, rr.Body.String())
 	}
 	var resp struct {
-		Token string `json:"token"`
+		AccessToken  string `json:"accessToken"`
+		RefreshToken string `json:"refreshToken"`
 	}
 	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("invalid JSON: %v", err)
 	}
-	if resp.Token != "jwt-token-123" {
-		t.Fatalf("expected token in response, got %q", resp.Token)
+	if resp.AccessToken != "jwt-token-123" {
+		t.Fatalf("expected accessToken, got %q", resp.AccessToken)
+	}
+	if resp.RefreshToken != "refresh-123" {
+		t.Fatalf("expected refreshToken, got %q", resp.RefreshToken)
 	}
 }
 
@@ -191,7 +204,7 @@ func TestUserLoginUnauthorized(t *testing.T) {
 	c := newUserController(mu)
 
 	mu.On("Login", mock.Anything, "bob@example.com", "wrong").
-		Return("", appErrors.NewAppError(401, "invalid credentials", nil))
+		Return(auth.TokenPair{}, appErrors.NewAppError(401, "invalid credentials", nil))
 
 	body, _ := json.Marshal(map[string]string{"email": "bob@example.com", "password": "wrong"})
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/users/login", bytes.NewBuffer(body))
@@ -199,8 +212,6 @@ func TestUserLoginUnauthorized(t *testing.T) {
 
 	c.Login(rr, req)
 
-	// O handler NÃO vaza a mensagem do AppError (segurança): responde 401
-	// genérico "Invalid credentials".
 	if rr.Code != http.StatusUnauthorized {
 		t.Fatalf("expected 401, got %d", rr.Code)
 	}
@@ -405,7 +416,10 @@ func TestUserOAuthSuccess(t *testing.T) {
 	mu := new(MockUserUsecase)
 	c := newUserController(mu)
 
-	mu.On("OAuthLogin", mock.Anything, "google", "idtok-123").Return("jwt-session", nil)
+	mu.On("OAuthLogin", mock.Anything, "google", "idtok-123").Return(auth.TokenPair{
+		AccessToken:  "jwt-session",
+		RefreshToken: "refresh-oauth",
+	}, nil)
 
 	body, _ := json.Marshal(map[string]string{"provider": "google", "id_token": "idtok-123"})
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/users/oauth", bytes.NewBuffer(body))
@@ -417,13 +431,17 @@ func TestUserOAuthSuccess(t *testing.T) {
 		t.Fatalf("expected 200, got %d (%s)", rr.Code, rr.Body.String())
 	}
 	var resp struct {
-		Token string `json:"token"`
+		AccessToken  string `json:"accessToken"`
+		RefreshToken string `json:"refreshToken"`
 	}
 	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("invalid JSON: %v", err)
 	}
-	if resp.Token != "jwt-session" {
-		t.Fatalf("expected session token, got %q", resp.Token)
+	if resp.AccessToken != "jwt-session" {
+		t.Fatalf("expected accessToken, got %q", resp.AccessToken)
+	}
+	if resp.RefreshToken != "refresh-oauth" {
+		t.Fatalf("expected refreshToken, got %q", resp.RefreshToken)
 	}
 }
 
@@ -432,7 +450,7 @@ func TestUserOAuthUnauthorized(t *testing.T) {
 	c := newUserController(mu)
 
 	mu.On("OAuthLogin", mock.Anything, "google", "bad").
-		Return("", appErrors.NewAppError(401, "invalid id_token", nil))
+		Return(auth.TokenPair{}, appErrors.NewAppError(401, "invalid id_token", nil))
 
 	body, _ := json.Marshal(map[string]string{"provider": "google", "id_token": "bad"})
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/users/oauth", bytes.NewBuffer(body))
@@ -593,6 +611,73 @@ func TestUserListPushSubscriptionsMissingID(t *testing.T) {
 	rr := httptest.NewRecorder()
 
 	c.ListPushSubscriptions(rr, req)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", rr.Code)
+	}
+}
+
+// --- Refresh ---
+
+func TestUserRefreshSuccess(t *testing.T) {
+	mu := new(MockUserUsecase)
+	c := newUserController(mu)
+
+	mu.On("RefreshTokens", mock.Anything, "valid-refresh").Return(auth.TokenPair{
+		AccessToken:  "new-access",
+		RefreshToken: "new-refresh",
+	}, nil)
+
+	body, _ := json.Marshal(map[string]string{"refreshToken": "valid-refresh"})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/refresh", bytes.NewBuffer(body))
+	rr := httptest.NewRecorder()
+
+	c.Refresh(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d (%s)", rr.Code, rr.Body.String())
+	}
+	var resp struct {
+		AccessToken  string `json:"accessToken"`
+		RefreshToken string `json:"refreshToken"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if resp.AccessToken != "new-access" {
+		t.Fatalf("expected accessToken, got %q", resp.AccessToken)
+	}
+	if resp.RefreshToken != "new-refresh" {
+		t.Fatalf("expected refreshToken, got %q", resp.RefreshToken)
+	}
+}
+
+func TestUserRefreshUnauthorized(t *testing.T) {
+	mu := new(MockUserUsecase)
+	c := newUserController(mu)
+
+	mu.On("RefreshTokens", mock.Anything, "bad-refresh").Return(auth.TokenPair{}, appErrors.NewAppError(401, "invalid refresh token", nil))
+
+	body, _ := json.Marshal(map[string]string{"refreshToken": "bad-refresh"})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/refresh", bytes.NewBuffer(body))
+	rr := httptest.NewRecorder()
+
+	c.Refresh(rr, req)
+
+	if rr.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d", rr.Code)
+	}
+}
+
+func TestUserRefreshBadRequest(t *testing.T) {
+	mu := new(MockUserUsecase)
+	c := newUserController(mu)
+
+	body, _ := json.Marshal(map[string]string{})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/refresh", bytes.NewBuffer(body))
+	rr := httptest.NewRecorder()
+
+	c.Refresh(rr, req)
 
 	if rr.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400, got %d", rr.Code)

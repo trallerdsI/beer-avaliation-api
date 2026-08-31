@@ -141,15 +141,15 @@ func (c *UserController) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	token, err := c.usecase.Login(r.Context(), credentials.Email, credentials.Password)
+	tokenPair, err := c.usecase.Login(r.Context(), credentials.Email, credentials.Password)
 	if err != nil {
-		// Não vazamos a causa interna (credenciais) no corpo da resposta.
 		c.respondError(w, r, err, "Invalid credentials", http.StatusUnauthorized)
 		return
 	}
 
 	response.SendResponse(w, http.StatusOK, map[string]string{
-		"token": token,
+		"accessToken":  tokenPair.AccessToken,
+		"refreshToken": tokenPair.RefreshToken,
 	})
 }
 
@@ -175,15 +175,47 @@ func (c *UserController) OAuth(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	token, err := c.usecase.OAuthLogin(r.Context(), body.Provider, body.IDToken)
+	tokenPair, err := c.usecase.OAuthLogin(r.Context(), body.Provider, body.IDToken)
 	if err != nil {
-		// Não vazamos a causa interna (falha de validação do IdP).
 		c.respondError(w, r, err, "OAuth login failed", http.StatusUnauthorized)
 		return
 	}
 
 	response.SendResponse(w, http.StatusOK, map[string]string{
-		"token": token,
+		"accessToken":  tokenPair.AccessToken,
+		"refreshToken": tokenPair.RefreshToken,
+	})
+}
+
+func (c *UserController) Refresh(w http.ResponseWriter, r *http.Request) {
+	if r.Body == nil {
+		response.SendProblem(w, appErrors.NewProblem(http.StatusBadRequest, "invalid_request_body", "O corpo da requisição é inválido."))
+		return
+	}
+
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+
+	var body struct {
+		RefreshToken string `json:"refreshToken" validate:"required"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		c.respondError(w, r, err, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+	if err := c.validator.Struct(body); err != nil {
+		c.sendValidationProblem(w, r, err)
+		return
+	}
+
+	tokenPair, err := c.usecase.RefreshTokens(r.Context(), body.RefreshToken)
+	if err != nil {
+		c.respondError(w, r, err, "Invalid refresh token", http.StatusUnauthorized)
+		return
+	}
+
+	response.SendResponse(w, http.StatusOK, map[string]string{
+		"accessToken":  tokenPair.AccessToken,
+		"refreshToken": tokenPair.RefreshToken,
 	})
 }
 

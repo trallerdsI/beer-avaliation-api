@@ -267,3 +267,40 @@ func TestJWTSecretForTest(t *testing.T) {
 		t.Errorf("roundtrip failed: userID=%q role=%q", uid, role)
 	}
 }
+
+func TestHashToken(t *testing.T) {
+	token := "my-secret-refresh-token"
+	hash1 := HashToken(token)
+	hash2 := HashToken(token)
+
+	if hash1 == "" {
+		t.Fatalf("HashToken returned empty string")
+	}
+	if hash1 != hash2 {
+		t.Fatalf("HashToken not deterministic: %q != %q", hash1, hash2)
+	}
+	if len(hash1) != 64 {
+		t.Fatalf("expected SHA-256 hex length 64, got %d", len(hash1))
+	}
+}
+
+func TestGenerateRefreshToken(t *testing.T) {
+	tok1, err := GenerateRefreshToken()
+	if err != nil {
+		t.Fatalf("GenerateRefreshToken: %v", err)
+	}
+	tok2, err := GenerateRefreshToken()
+	if err != nil {
+		t.Fatalf("GenerateRefreshToken: %v", err)
+	}
+
+	if tok1 == "" || tok2 == "" {
+		t.Fatalf("refresh tokens must not be empty")
+	}
+	if tok1 == tok2 {
+		t.Fatalf("refresh tokens must be unique")
+	}
+	if len(tok1) != 36 || tok1[8] != '-' {
+		t.Fatalf("expected UUIDv7 format, got %q", tok1)
+	}
+}

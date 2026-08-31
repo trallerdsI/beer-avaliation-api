@@ -547,15 +547,11 @@ paths:
               $ref: '#/components/schemas/UserLoginInput'
       responses:
         '200':
-          description: Login successful — returns JWT HS256 session token
+          description: Login successful — returns access + refresh tokens
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  token:
-                    type: string
-                    description: "JWT HS256 de sessão (usar em Authorization: Bearer <token>)"
+                $ref: '#/components/schemas/TokenPair'
         '401':
           description: Invalid credentials
           content:
@@ -585,15 +581,11 @@ paths:
                   description: JWT RS256 emitido pelo IdP (Google/Apple)
       responses:
         '200':
-          description: OAuth login successful — returns app session JWT
+          description: OAuth login successful — returns access + refresh tokens
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  token:
-                    type: string
-                    description: JWT HS256 de sessão
+                $ref: '#/components/schemas/TokenPair'
         '400':
           description: Unsupported provider or invalid body
           content:
@@ -602,6 +594,42 @@ paths:
                 $ref: '#/components/schemas/Problem'
         '401':
           description: Invalid or expired id_token
+          content:
+             application/json:
+               schema:
+                 $ref: '#/components/schemas/Problem'
+
+  /api/v1/auth/refresh:
+    post:
+      summary: Refresh access token using a valid refresh token (RFC 6749)
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - refreshToken
+              properties:
+                refreshToken:
+                  type: string
+                  description: Opaque refresh token previously issued by the API
+      responses:
+        '200':
+          description: Token pair rotated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenPair'
+        '400':
+          description: Invalid request body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '401':
+          description: Invalid, expired, or revoked refresh token
           content:
             application/json:
               schema:
@@ -1418,3 +1446,17 @@ components:
           type: string
           format: password
           minLength: 6
+
+    TokenPair:
+      type: object
+      required:
+        - accessToken
+        - refreshToken
+      properties:
+        accessToken:
+          type: string
+          description: JWT HS256 de curta duração (usar em Authorization: Bearer <token>)
+        refreshToken:
+          type: string
+          description: Opaque refresh token de longa duração (UUIDv7)
+

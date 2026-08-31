@@ -28,6 +28,10 @@ type UserRepository interface {
 	DeletePushSubscriptionByEndpoint(ctx context.Context, userID, endpoint string) error
 	GetMemberSince(ctx context.Context, userID string) (time.Time, error)
 	ExecInTx(ctx context.Context, fn func(ctx context.Context, txRepo UserRepository) error) error
+	CreateRefreshToken(ctx context.Context, token model.RefreshToken) error
+	GetRefreshTokenByHash(ctx context.Context, userID, tokenHash string) (model.RefreshToken, error)
+	RevokeRefreshToken(ctx context.Context, userID, tokenHash string) error
+	RevokeAllRefreshTokens(ctx context.Context, userID string) error
 }
 
 type querier interface {
@@ -384,4 +388,67 @@ func (r *PostgresUserRepository) ExecInTx(ctx context.Context, fn func(ctx conte
 	}
 
 	return tx.Commit()
+}
+
+func (r *PostgresUserRepository) CreateRefreshToken(ctx context.Context, token model.RefreshToken) error {
+	query := `
+		INSERT INTO refresh_tokens (id, user_id, token_hash, expires_at, revoked, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6)`
+
+	_, err := r.db.ExecContext(ctx, query,
+		token.ID,
+		token.UserID,
+		token.TokenHash,
+		token.ExpiresAt,
+		token.Revoked,
+		token.CreatedAt)
+
+	if err != nil {
+		return fmt.Errorf("failed to create refresh token: %w", err)
+	}
+	return nil
+}
+
+func (r *PostgresUserRepository) GetRefreshTokenByHash(ctx context.Context, userID, tokenHash string) (model.RefreshToken, error) {
+	var token model.RefreshToken
+	query := `
+		SELECT id, user_id, token_hash, expires_at, revoked, created_at
+		FROM refresh_tokens
+		WHERE user_id = $1 AND token_hash = $2`
+
+	err := r.db.QueryRowContext(ctx, query, userID, tokenHash).Scan(
+		&token.ID,
+		&token.UserID,
+		&token.TokenHash,
+		&token.ExpiresAt,
+		&token.Revoked,
+		&token.CreatedAt)
+
+	if err == sql.ErrNoRows {
+		return model.RefreshToken{}, fmt.Errorf("refresh token not found")
+	}
+	if err != nil {
+		return model.RefreshToken{}, fmt.Errorf("failed to get refresh token: %w", err)
+	}
+	return token, nil
+}
+
+func (r *PostgresUserRepository) RevokeRefreshToken(ctx context.Context, userID, tokenHash string) error {
+	query := `UPDATE refresh_tokens SET revoked = true WHERE user_id = $1 AND token_hash = $2`
+
+	_, err := r.db.ExecContext(ctx, query, userID, tokenHash)
+	if err != nil {
+		return fmt.Errorf("failed to revoke refresh token: %w", err)
+	}
+	return nil
+}
+
+func (r *PostgresUserRepository) RevokeAllRefreshTokens(ctx context.Context, userID string) error {
+	query := `UPDATE refresh_tokens SET revoked = true WHERE user_id = $1 AND revoked = false`
+
+	_, err := r.db.ExecContext(ctx, query, userID)
+	if err != nil {
+		return fmt.Errorf("failed to revoke all refresh tokens: %w", err)
+	}
+	return nil
 }

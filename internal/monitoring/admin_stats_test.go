@@ -120,6 +120,22 @@ func (f *fakeUserRepo) GetMemberSince(ctx context.Context, userID string) (time.
 	return f.memberSince, f.err
 }
 
+func (f *fakeUserRepo) CreateRefreshToken(ctx context.Context, token usermodel.RefreshToken) error {
+	return nil
+}
+
+func (f *fakeUserRepo) GetRefreshTokenByHash(ctx context.Context, userID, tokenHash string) (usermodel.RefreshToken, error) {
+	return usermodel.RefreshToken{}, nil
+}
+
+func (f *fakeUserRepo) RevokeRefreshToken(ctx context.Context, userID, tokenHash string) error {
+	return nil
+}
+
+func (f *fakeUserRepo) RevokeAllRefreshTokens(ctx context.Context, userID string) error {
+	return nil
+}
+
 func (f *fakeUserRepo) ExecInTx(ctx context.Context, fn func(ctx context.Context, txRepo userRepository.UserRepository) error) error {
 	return fn(ctx, f)
 }

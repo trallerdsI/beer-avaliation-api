@@ -18,8 +18,9 @@ import (
 
 type UserUsecase interface {
 	Register(ctx context.Context, user model.User) error
-	Login(ctx context.Context, email, password string) (string, error) // Returns JWT token
-	OAuthLogin(ctx context.Context, provider, idToken string) (string, error)
+	Login(ctx context.Context, email, password string) (auth.TokenPair, error)
+	OAuthLogin(ctx context.Context, provider, idToken string) (auth.TokenPair, error)
+	RefreshTokens(ctx context.Context, refreshToken string) (auth.TokenPair, error)
 	GetProfile(ctx context.Context, id string) (model.User, error)
 	UpdateProfile(ctx context.Context, id string, user model.User) error
 	DeleteAccount(ctx context.Context, id string) error
@@ -89,62 +90,51 @@ func (u *userUsecase) Register(ctx context.Context, user model.User) error {
 	return nil
 }
 
-func (u *userUsecase) Login(ctx context.Context, email, password string) (string, error) {
+func (u *userUsecase) Login(ctx context.Context, email, password string) (auth.TokenPair, error) {
 	if err := u.unavailable(); err != nil {
-		return "", err
+		return auth.TokenPair{}, err
 	}
 	slog.InfoContext(ctx, "login attempt")
 
-	// Defesa: limita o tamanho da senha antes do bcrypt.
 	if len(password) > 72 {
 		slog.WarnContext(ctx, "login failed: password too long")
-		return "", errors.NewAppError(401, "invalid credentials", nil)
+		return auth.TokenPair{}, errors.NewAppError(401, "invalid credentials", nil)
 	}
 
-	// Get user by email
 	user, err := u.repo.GetByEmail(ctx, email)
 	if err != nil {
 		slog.WarnContext(ctx, "login failed: user not found")
-		return "", errors.NewAppError(401, "invalid credentials", nil)
+		return auth.TokenPair{}, errors.NewAppError(401, "invalid credentials", nil)
 	}
 
-	// Compare passwords
 	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password)); err != nil {
 		slog.WarnContext(ctx, "login failed: invalid password")
-		return "", errors.NewAppError(401, "invalid credentials", nil)
+		return auth.TokenPair{}, errors.NewAppError(401, "invalid credentials", nil)
 	}
 
-	// Generate JWT token
-	token, err := auth.GenerateToken(user.ID, user.Role)
-	if err != nil {
-		slog.ErrorContext(ctx, "failed to generate token", "err", err)
-		return "", errors.NewAppError(500, "failed to generate token", err)
-	}
-
-	slog.InfoContext(ctx, "user logged in", "user_id", user.ID)
-	return token, nil
+	return u.issueTokenPair(ctx, user.ID, user.Role, u.repo)
 }
 
 // OAuthLogin valida um id_token OIDC (RFC 6749/OpenID Connect) de um
 // provedor configurado (Google/Apple), faz upsert do utilizador em beerUsers
 // ligado por (provider, external_sub) e devolve o nosso JWT HS256 de sessão.
 // O resto da API continua a aceitar apenas o nosso token via middleware Auth.
-func (u *userUsecase) OAuthLogin(ctx context.Context, provider, idToken string) (string, error) {
+func (u *userUsecase) OAuthLogin(ctx context.Context, provider, idToken string) (auth.TokenPair, error) {
 	if err := u.unavailable(); err != nil {
-		return "", err
+		return auth.TokenPair{}, err
 	}
 	slog.InfoContext(ctx, "oauth login attempt", "provider", provider)
 
 	verifier := auth.OIDC().Verifier(provider)
 	if verifier == nil {
 		slog.WarnContext(ctx, "oauth provider não configurado", "provider", provider)
-		return "", errors.NewAppError(400, "unsupported provider", nil)
+		return auth.TokenPair{}, errors.NewAppError(400, "unsupported provider", nil)
 	}
 
 	claims, err := verifier.Verify(ctx, idToken)
 	if err != nil {
 		slog.WarnContext(ctx, "oauth token inválido", "provider", provider, "err", err)
-		return "", errors.NewAppError(401, "invalid id_token", err)
+		return auth.TokenPair{}, errors.NewAppError(401, "invalid id_token", err)
 	}
 
 	user, err := u.repo.UpsertByExternal(ctx, model.User{
@@ -158,17 +148,96 @@ func (u *userUsecase) OAuthLogin(ctx context.Context, provider, idToken string) 
 	})
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to upsert oauth user", "err", err)
-		return "", errors.NewAppError(500, "failed to create user", err)
+		return auth.TokenPair{}, errors.NewAppError(500, "failed to create user", err)
 	}
 
-	token, err := auth.GenerateToken(user.ID, user.Role)
+	pair, err := u.issueTokenPair(ctx, user.ID, user.Role, u.repo)
 	if err != nil {
-		slog.ErrorContext(ctx, "failed to generate token", "err", err)
-		return "", errors.NewAppError(500, "failed to generate token", err)
+		slog.ErrorContext(ctx, "failed to generate token pair", "err", err)
+		return auth.TokenPair{}, errors.NewAppError(500, "failed to generate token", err)
 	}
 
 	slog.InfoContext(ctx, "oauth user logged in", "user_id", user.ID, "provider", provider)
-	return token, nil
+	return pair, nil
+}
+
+func (u *userUsecase) issueTokenPair(ctx context.Context, userID, role string, repo repository.UserRepository) (auth.TokenPair, error) {
+	accessToken, err := auth.GenerateToken(userID, role)
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to generate access token", "err", err)
+		return auth.TokenPair{}, errors.NewAppError(500, "failed to generate token", err)
+	}
+
+	rawRefreshToken, err := auth.GenerateRefreshToken()
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to generate refresh token", "err", err)
+		return auth.TokenPair{}, errors.NewAppError(500, "failed to generate refresh token", err)
+	}
+
+	tokenHash := auth.HashToken(rawRefreshToken)
+	now := time.Now().UTC()
+	refreshToken := model.RefreshToken{
+		ID:        uuid.MustNewV7(),
+		UserID:    userID,
+		TokenHash: tokenHash,
+		ExpiresAt: now.Add(auth.RefreshTokenTTL()).Format(time.RFC3339),
+		Revoked:   false,
+		CreatedAt: now.Format(time.RFC3339),
+	}
+
+	if err := repo.CreateRefreshToken(ctx, refreshToken); err != nil {
+		slog.ErrorContext(ctx, "failed to persist refresh token", "err", err)
+		return auth.TokenPair{}, errors.NewAppError(500, "failed to persist refresh token", err)
+	}
+
+	return auth.TokenPair{
+		AccessToken:  accessToken,
+		RefreshToken: rawRefreshToken,
+	}, nil
+}
+
+func (u *userUsecase) RefreshTokens(ctx context.Context, refreshToken string) (auth.TokenPair, error) {
+	if err := u.unavailable(); err != nil {
+		return auth.TokenPair{}, err
+	}
+	if refreshToken == "" {
+		return auth.TokenPair{}, errors.NewAppError(401, "invalid refresh token", nil)
+	}
+
+	tokenHash := auth.HashToken(refreshToken)
+
+	stored, err := u.repo.GetRefreshTokenByHash(ctx, "", tokenHash)
+	if err != nil {
+		slog.WarnContext(ctx, "refresh token not found", "err", err)
+		return auth.TokenPair{}, errors.NewAppError(401, "invalid refresh token", nil)
+	}
+
+	if stored.Revoked {
+		slog.WarnContext(ctx, "refresh token reuse detected", "user_id", stored.UserID)
+		if revokeErr := u.repo.RevokeAllRefreshTokens(ctx, stored.UserID); revokeErr != nil {
+			slog.ErrorContext(ctx, "failed to revoke all refresh tokens on reuse", "err", revokeErr)
+		}
+		return auth.TokenPair{}, errors.NewAppError(401, "invalid refresh token", nil)
+	}
+
+	if stored.IsExpired() {
+		slog.WarnContext(ctx, "refresh token expired", "user_id", stored.UserID)
+		return auth.TokenPair{}, errors.NewAppError(401, "invalid refresh token", nil)
+	}
+
+	if err := u.repo.RevokeRefreshToken(ctx, stored.UserID, stored.TokenHash); err != nil {
+		slog.ErrorContext(ctx, "failed to revoke refresh token", "err", err)
+		return auth.TokenPair{}, errors.NewAppError(500, "failed to revoke refresh token", err)
+	}
+
+	pair, err := u.issueTokenPair(ctx, stored.UserID, "", u.repo)
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to issue new token pair", "err", err)
+		return auth.TokenPair{}, err
+	}
+
+	slog.InfoContext(ctx, "refresh token rotated", "user_id", stored.UserID)
+	return pair, nil
 }
 
 func (u *userUsecase) GetProfile(ctx context.Context, id string) (model.User, error) {

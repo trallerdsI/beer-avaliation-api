@@ -89,6 +89,26 @@ func (m *mockUserRepo) ExecInTx(ctx context.Context, fn func(ctx context.Context
 	return args.Error(0)
 }
 
+func (m *mockUserRepo) CreateRefreshToken(ctx context.Context, token model.RefreshToken) error {
+	args := m.Called(ctx, token)
+	return args.Error(0)
+}
+
+func (m *mockUserRepo) GetRefreshTokenByHash(ctx context.Context, userID, tokenHash string) (model.RefreshToken, error) {
+	args := m.Called(ctx, userID, tokenHash)
+	return args.Get(0).(model.RefreshToken), args.Error(1)
+}
+
+func (m *mockUserRepo) RevokeRefreshToken(ctx context.Context, userID, tokenHash string) error {
+	args := m.Called(ctx, userID, tokenHash)
+	return args.Error(0)
+}
+
+func (m *mockUserRepo) RevokeAllRefreshTokens(ctx context.Context, userID string) error {
+	args := m.Called(ctx, userID)
+	return args.Error(0)
+}
+
 func newUserUsecase(repo *mockUserRepo) UserUsecase {
 	return NewUserUsecase(repo)
 }
@@ -213,7 +233,6 @@ func TestLoginSuccess(t *testing.T) {
 	repo := new(mockUserRepo)
 	uc := newUserUsecase(repo)
 
-	// Hash gerado via bcrypt para "secret1".
 	hashed := "$2a$10$muEIEoMqFBHIBsb1naTmBuzHrijo7LpbQn/eyTlrMBQLt6MbvuLjO"
 	repo.On("GetByEmail", mock.Anything, "user@example.com").Return(model.User{
 		ID:       "u1",
@@ -221,15 +240,16 @@ func TestLoginSuccess(t *testing.T) {
 		Password: hashed,
 		Role:     model.RoleUser,
 	}, nil)
+	repo.On("CreateRefreshToken", mock.Anything, mock.Anything).Return(nil)
 
 	t.Setenv("JWT_SECRET", "test-secret-key")
-	// Regenera o segredo (loadJWTSecret corre no init) para o teste assinar o token.
 	auth.JWTSecretForTest()
 
-	token, err := uc.Login(context.Background(), "user@example.com", "secret1")
+	pair, err := uc.Login(context.Background(), "user@example.com", "secret1")
 
 	assert.NoError(t, err)
-	assert.NotEmpty(t, token)
+	assert.NotEmpty(t, pair.AccessToken)
+	assert.NotEmpty(t, pair.RefreshToken)
 }
 
 // --- GetProfile / UpdateProfile / DeleteAccount ---
@@ -364,8 +384,6 @@ func TestSeedAdminAlreadyAdminNoop(t *testing.T) {
 // --- OAuthLogin (RFC 6749 / OIDC) ---
 
 func TestOAuthLoginSuccess(t *testing.T) {
-	// Injeta um verifier fake no registry global de auth e sobrescreve o
-	// Verify via hook (sem rede).
 	auth.OIDC().RegisterVerifier("google", "https://accounts.google.com", "aud-test", "")
 	v := auth.OIDC().Verifier("google")
 	v.SetVerifyOverride(func(ctx context.Context, idToken string) (auth.OIDCClaims, error) {
@@ -378,14 +396,17 @@ func TestOAuthLoginSuccess(t *testing.T) {
 	repo.On("UpsertByExternal", mock.Anything, mock.Anything).Return(model.User{
 		ID: "u-oauth", Role: model.RoleUser,
 	}, nil)
+	repo.On("CreateRefreshToken", mock.Anything, mock.Anything).Return(nil)
 
 	t.Setenv("JWT_SECRET", "test-secret-key")
 	auth.JWTSecretForTest()
 
-	token, err := uc.OAuthLogin(context.Background(), "google", "fake-id-token")
+	pair, err := uc.OAuthLogin(context.Background(), "google", "fake-id-token")
 	assert.NoError(t, err)
-	assert.NotEmpty(t, token)
+	assert.NotEmpty(t, pair.AccessToken)
+	assert.NotEmpty(t, pair.RefreshToken)
 	repo.AssertCalled(t, "UpsertByExternal", mock.Anything, mock.Anything)
+	repo.AssertCalled(t, "CreateRefreshToken", mock.Anything, mock.Anything)
 }
 
 func TestOAuthLoginUnsupportedProvider(t *testing.T) {
@@ -416,4 +437,73 @@ func TestOAuthLoginInvalidToken(t *testing.T) {
 	assert.ErrorAs(t, err, &appErr)
 	assert.Equal(t, 401, appErr.Code)
 	repo.AssertNotCalled(t, "UpsertByExternal", mock.Anything, mock.Anything)
+}
+
+// --- RefreshTokens ---
+
+func TestRefreshTokensSuccess(t *testing.T) {
+	repo := new(mockUserRepo)
+	uc := newUserUsecase(repo)
+
+	repo.On("GetRefreshTokenByHash", mock.Anything, "", mock.Anything).Return(model.RefreshToken{
+		UserID:    "u1",
+		TokenHash: "hash1",
+		ExpiresAt: time.Now().Add(time.Hour).Format(time.RFC3339),
+		Revoked:   false,
+	}, nil)
+	repo.On("RevokeRefreshToken", mock.Anything, "u1", "hash1").Return(nil)
+	repo.On("CreateRefreshToken", mock.Anything, mock.Anything).Return(nil)
+
+	t.Setenv("JWT_SECRET", "test-secret-key")
+	auth.JWTSecretForTest()
+
+	pair, err := uc.RefreshTokens(context.Background(), "raw-token-1")
+	assert.NoError(t, err)
+	assert.NotEmpty(t, pair.AccessToken)
+	assert.NotEmpty(t, pair.RefreshToken)
+}
+
+func TestRefreshTokensEmptyToken(t *testing.T) {
+	repo := new(mockUserRepo)
+	uc := newUserUsecase(repo)
+
+	_, err := uc.RefreshTokens(context.Background(), "")
+	assert.Error(t, err)
+	var appErr *appErrors.AppError
+	assert.ErrorAs(t, err, &appErr)
+	assert.Equal(t, 401, appErr.Code)
+}
+
+func TestRefreshTokensNotFound(t *testing.T) {
+	repo := new(mockUserRepo)
+	uc := newUserUsecase(repo)
+
+	repo.On("ExecInTx", mock.Anything, mock.Anything).Return(nil)
+	repo.On("GetRefreshTokenByHash", mock.Anything, "", mock.Anything).Return(model.RefreshToken{}, errors.New("not found"))
+
+	_, err := uc.RefreshTokens(context.Background(), "missing")
+	assert.Error(t, err)
+	var appErr *appErrors.AppError
+	assert.ErrorAs(t, err, &appErr)
+	assert.Equal(t, 401, appErr.Code)
+}
+
+func TestRefreshTokensReuseDetected(t *testing.T) {
+	repo := new(mockUserRepo)
+	uc := newUserUsecase(repo)
+
+	repo.On("ExecInTx", mock.Anything, mock.Anything).Return(nil)
+	repo.On("GetRefreshTokenByHash", mock.Anything, "", mock.Anything).Return(model.RefreshToken{
+		UserID:    "u1",
+		TokenHash: "hash1",
+		Revoked:   true,
+	}, nil)
+	repo.On("RevokeAllRefreshTokens", mock.Anything, "u1").Return(nil)
+
+	_, err := uc.RefreshTokens(context.Background(), "reused-token")
+	assert.Error(t, err)
+	var appErr *appErrors.AppError
+	assert.ErrorAs(t, err, &appErr)
+	assert.Equal(t, 401, appErr.Code)
+	repo.AssertCalled(t, "RevokeAllRefreshTokens", mock.Anything, "u1")
 }

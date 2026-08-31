@@ -13,6 +13,7 @@ import (
 type InMemoryUserRepository struct {
 	users         []model.User
 	subscriptions []model.PushSubscription
+	refreshTokens []model.RefreshToken
 	mutex         sync.RWMutex
 	nextSubID     int
 }
@@ -21,6 +22,7 @@ func NewInMemoryUserRepository() *InMemoryUserRepository {
 	return &InMemoryUserRepository{
 		users:         []model.User{},
 		subscriptions: []model.PushSubscription{},
+		refreshTokens: []model.RefreshToken{},
 	}
 }
 
@@ -183,4 +185,45 @@ func (r *InMemoryUserRepository) GetMemberSince(ctx context.Context, userID stri
 		}
 	}
 	return time.Time{}, errors.NewAppError(404, "user not found", nil)
+}
+
+func (r *InMemoryUserRepository) CreateRefreshToken(ctx context.Context, token model.RefreshToken) error {
+	r.mutex.Lock()
+	defer r.mutex.Unlock()
+	r.refreshTokens = append(r.refreshTokens, token)
+	return nil
+}
+
+func (r *InMemoryUserRepository) GetRefreshTokenByHash(ctx context.Context, userID, tokenHash string) (model.RefreshToken, error) {
+	r.mutex.RLock()
+	defer r.mutex.RUnlock()
+	for _, t := range r.refreshTokens {
+		if t.UserID == userID && t.TokenHash == tokenHash {
+			return t, nil
+		}
+	}
+	return model.RefreshToken{}, errors.NewAppError(404, "refresh token not found", nil)
+}
+
+func (r *InMemoryUserRepository) RevokeRefreshToken(ctx context.Context, userID, tokenHash string) error {
+	r.mutex.Lock()
+	defer r.mutex.Unlock()
+	for i, t := range r.refreshTokens {
+		if t.UserID == userID && t.TokenHash == tokenHash {
+			r.refreshTokens[i].Revoked = true
+			return nil
+		}
+	}
+	return errors.NewAppError(404, "refresh token not found", nil)
+}
+
+func (r *InMemoryUserRepository) RevokeAllRefreshTokens(ctx context.Context, userID string) error {
+	r.mutex.Lock()
+	defer r.mutex.Unlock()
+	for i := range r.refreshTokens {
+		if r.refreshTokens[i].UserID == userID && !r.refreshTokens[i].Revoked {
+			r.refreshTokens[i].Revoked = true
+		}
+	}
+	return nil
 }

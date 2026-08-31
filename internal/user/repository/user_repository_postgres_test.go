@@ -820,3 +820,224 @@ func TestPostgresUserRepository_GetMemberSince(t *testing.T) {
 		})
 	}
 }
+
+func TestPostgresUserRepository_CreateRefreshToken(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer db.Close()
+
+	repo := &PostgresUserRepository{db: db}
+
+	tests := []struct {
+		name    string
+		token   model.RefreshToken
+		setup   func(sqlmock.Sqlmock)
+		wantErr bool
+	}{
+		{
+			name: "success",
+			token: model.RefreshToken{
+				ID:        "rt1",
+				UserID:    "u1",
+				TokenHash: "hash1",
+				ExpiresAt: time.Now().Add(time.Hour).Format(time.RFC3339),
+				Revoked:   false,
+				CreatedAt: time.Now().Format(time.RFC3339),
+			},
+			setup: func(m sqlmock.Sqlmock) {
+				m.ExpectExec("INSERT INTO refresh_tokens").
+					WithArgs("rt1", "u1", "hash1", sqlmock.AnyArg(), false, sqlmock.AnyArg()).
+					WillReturnResult(sqlmock.NewResult(1, 1))
+			},
+		},
+		{
+			name: "exec error",
+			token: model.RefreshToken{
+				ID:        "rt1",
+				UserID:    "u1",
+				TokenHash: "hash1",
+				ExpiresAt: time.Now().Add(time.Hour).Format(time.RFC3339),
+				Revoked:   false,
+				CreatedAt: time.Now().Format(time.RFC3339),
+			},
+			wantErr: true,
+			setup: func(m sqlmock.Sqlmock) {
+				m.ExpectExec("INSERT INTO refresh_tokens").
+					WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
+					WillReturnError(http.ErrHandlerTimeout)
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt.setup(mock)
+			err := repo.CreateRefreshToken(context.Background(), tt.token)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("CreateRefreshToken() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			require.NoError(t, mock.ExpectationsWereMet())
+		})
+	}
+}
+
+func TestPostgresUserRepository_GetRefreshTokenByHash(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer db.Close()
+
+	repo := &PostgresUserRepository{db: db}
+
+	tests := []struct {
+		name      string
+		userID    string
+		tokenHash string
+		setup     func(sqlmock.Sqlmock)
+		wantErr   bool
+		wantHash  string
+	}{
+		{
+			name:      "success",
+			userID:    "u1",
+			tokenHash: "hash1",
+			wantHash:  "hash1",
+			setup: func(m sqlmock.Sqlmock) {
+				m.ExpectQuery("SELECT").
+					WithArgs("u1", "hash1").
+					WillReturnRows(sqlmock.NewRows([]string{"id", "user_id", "token_hash", "expires_at", "revoked", "created_at"}).
+						AddRow("rt1", "u1", "hash1", time.Now().Add(time.Hour).Format(time.RFC3339), false, time.Now().Format(time.RFC3339)))
+			},
+		},
+		{
+			name:      "not found",
+			userID:    "u1",
+			tokenHash: "missing",
+			wantErr:   true,
+			setup: func(m sqlmock.Sqlmock) {
+				m.ExpectQuery("SELECT").
+					WithArgs("u1", "missing").
+					WillReturnError(sql.ErrNoRows)
+			},
+		},
+		{
+			name:      "query error",
+			userID:    "u1",
+			tokenHash: "hash1",
+			wantErr:   true,
+			setup: func(m sqlmock.Sqlmock) {
+				m.ExpectQuery("SELECT").
+					WithArgs("u1", "hash1").
+					WillReturnError(http.ErrHandlerTimeout)
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt.setup(mock)
+			token, err := repo.GetRefreshTokenByHash(context.Background(), tt.userID, tt.tokenHash)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("GetRefreshTokenByHash() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if !tt.wantErr && token.TokenHash != tt.wantHash {
+				t.Fatalf("token hash = %q, want %q", token.TokenHash, tt.wantHash)
+			}
+			require.NoError(t, mock.ExpectationsWereMet())
+		})
+	}
+}
+
+func TestPostgresUserRepository_RevokeRefreshToken(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer db.Close()
+
+	repo := &PostgresUserRepository{db: db}
+
+	tests := []struct {
+		name    string
+		userID  string
+		hash    string
+		setup   func(sqlmock.Sqlmock)
+		wantErr bool
+	}{
+		{
+			name:   "success",
+			userID: "u1",
+			hash:   "hash1",
+			setup: func(m sqlmock.Sqlmock) {
+				m.ExpectExec("UPDATE refresh_tokens").
+					WithArgs("u1", "hash1").
+					WillReturnResult(sqlmock.NewResult(1, 1))
+			},
+		},
+		{
+			name:    "exec error",
+			userID:  "u1",
+			hash:    "hash1",
+			wantErr: true,
+			setup: func(m sqlmock.Sqlmock) {
+				m.ExpectExec("UPDATE refresh_tokens").
+					WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg()).
+					WillReturnError(http.ErrHandlerTimeout)
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt.setup(mock)
+			err := repo.RevokeRefreshToken(context.Background(), tt.userID, tt.hash)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("RevokeRefreshToken() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			require.NoError(t, mock.ExpectationsWereMet())
+		})
+	}
+}
+
+func TestPostgresUserRepository_RevokeAllRefreshTokens(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer db.Close()
+
+	repo := &PostgresUserRepository{db: db}
+
+	tests := []struct {
+		name    string
+		userID  string
+		setup   func(sqlmock.Sqlmock)
+		wantErr bool
+	}{
+		{
+			name:   "success",
+			userID: "u1",
+			setup: func(m sqlmock.Sqlmock) {
+				m.ExpectExec("UPDATE refresh_tokens").
+					WithArgs("u1").
+					WillReturnResult(sqlmock.NewResult(1, 1))
+			},
+		},
+		{
+			name:    "exec error",
+			userID:  "u1",
+			wantErr: true,
+			setup: func(m sqlmock.Sqlmock) {
+				m.ExpectExec("UPDATE refresh_tokens").
+					WithArgs(sqlmock.AnyArg()).
+					WillReturnError(http.ErrHandlerTimeout)
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt.setup(mock)
+			err := repo.RevokeAllRefreshTokens(context.Background(), tt.userID)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("RevokeAllRefreshTokens() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			require.NoError(t, mock.ExpectationsWereMet())
+		})
+	}
+}

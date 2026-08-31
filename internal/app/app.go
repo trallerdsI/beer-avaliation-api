@@ -165,6 +165,7 @@ func BuildRouterWithDBErr(db *database.RetryableDB, dbErr error, logger *slog.Lo
 	mux.HandleFunc("POST /api/v1/users/register", userController.Register)
 	mux.HandleFunc("POST /api/v1/users/login", userController.Login)
 	mux.HandleFunc("POST /api/v1/users/oauth", userController.OAuth)
+	mux.HandleFunc("POST /api/v1/auth/refresh", userController.Refresh)
 	mux.HandleFunc("GET /api/v1/users/{id}", middleware.Auth(userController.GetProfile))
 	mux.HandleFunc("PUT /api/v1/users/{id}", middleware.Auth(userController.UpdateProfile))
 	mux.HandleFunc("DELETE /api/v1/users/{id}", middleware.Auth(userController.DeleteAccount))
@@ -392,6 +393,7 @@ func migrateDB(db *sql.DB) error {
 		"migrations/add_beer_fts.sql",
 		"migrations/add_beer_trgm_index.sql",
 		"migrations/create_beer_events_table.sql",
+		"migrations/create_refresh_tokens.sql",
 	)
 
 	for _, file := range sqlFiles {

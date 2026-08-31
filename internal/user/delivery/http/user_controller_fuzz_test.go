@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"beer-review-app/internal/user/model"
+	"beer-review-app/pkg/auth"
 )
 
 type fuzzUserUsecase struct{}
@@ -16,11 +17,14 @@ type fuzzUserUsecase struct{}
 func (f *fuzzUserUsecase) Register(ctx context.Context, u model.User) error {
 	return nil
 }
-func (f *fuzzUserUsecase) Login(ctx context.Context, email, password string) (string, error) {
-	return "token", nil
+func (f *fuzzUserUsecase) Login(ctx context.Context, email, password string) (auth.TokenPair, error) {
+	return auth.TokenPair{AccessToken: "token", RefreshToken: "refresh"}, nil
 }
-func (f *fuzzUserUsecase) OAuthLogin(ctx context.Context, provider, idToken string) (string, error) {
-	return "token", nil
+func (f *fuzzUserUsecase) OAuthLogin(ctx context.Context, provider, idToken string) (auth.TokenPair, error) {
+	return auth.TokenPair{AccessToken: "token", RefreshToken: "refresh"}, nil
+}
+func (f *fuzzUserUsecase) RefreshTokens(ctx context.Context, refreshToken string) (auth.TokenPair, error) {
+	return auth.TokenPair{AccessToken: "token", RefreshToken: "refresh"}, nil
 }
 func (f *fuzzUserUsecase) GetProfile(ctx context.Context, id string) (model.User, error) {
 	return model.User{}, nil

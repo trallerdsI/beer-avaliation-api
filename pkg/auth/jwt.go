@@ -1,18 +1,22 @@
 package auth
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"log/slog"
 	"os"
 	"time"
 
 	appErrors "beer-review-app/pkg/errors"
+	"beer-review-app/pkg/uuid"
 	"github.com/golang-jwt/jwt/v5"
 )
 
 const (
-	tokenTTL    = 24 * time.Hour
-	issuerClaim = "beer-review-app"
+	accessTokenTTL  = 1 * time.Hour
+	refreshTokenTTL = 30 * 24 * time.Hour
+	issuerClaim     = "beer-review-app"
 )
 
 var jwtSecret = loadJWTSecret()
@@ -38,6 +42,11 @@ type Claims struct {
 	jwt.RegisteredClaims
 }
 
+type TokenPair struct {
+	AccessToken  string `json:"accessToken"`
+	RefreshToken string `json:"refreshToken"`
+}
+
 func GenerateToken(userID, role string) (string, error) {
 	if len(jwtSecret) == 0 {
 		return "", appErrors.ErrMissingSecret
@@ -47,13 +56,22 @@ func GenerateToken(userID, role string) (string, error) {
 		UserID: userID,
 		Role:   role,
 		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(time.Now().Add(tokenTTL)),
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(accessTokenTTL)),
 			Issuer:    issuerClaim,
 		},
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	return token.SignedString(jwtSecret)
+}
+
+func GenerateRefreshToken() (string, error) {
+	return uuid.NewV7()
+}
+
+func HashToken(token string) string {
+	hash := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(hash[:])
 }
 
 func ValidateToken(tokenString string) (string, string, error) {
@@ -77,6 +95,10 @@ func ValidateToken(tokenString string) (string, string, error) {
 	}
 
 	return claims.UserID, claims.Role, nil
+}
+
+func RefreshTokenTTL() time.Duration {
+	return refreshTokenTTL
 }
 
 func JWTSecretForTest() {
