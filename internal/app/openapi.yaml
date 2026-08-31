@@ -1455,8 +1455,8 @@ components:
       properties:
         accessToken:
           type: string
-          description: JWT HS256 de curta duração (usar em Authorization: Bearer <token>)
+          description: "JWT HS256 de curta duração (usar em Authorization: Bearer <token>)"
         refreshToken:
           type: string
-          description: Opaque refresh token de longa duração (UUIDv7)
+          description: "Opaque refresh token de longa duração (UUIDv7)"
 
