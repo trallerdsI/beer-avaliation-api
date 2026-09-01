@@ -191,7 +191,11 @@ func BuildRouterWithDBErr(db *database.RetryableDB, dbErr error, logger *slog.Lo
 	handler = middleware.CompressionMiddleware(handler)
 	handler = middleware.NewRateLimitMiddleware(10, time.Minute)(handler)
 
-	return handler
+	// Marca o router para que o serverless handler saiba se o pool
+	// de DB foi resolvido (via RouterHasDB). Em long-running, sempre
+	// será true; em serverless, começa false e vira true após o
+	// hot-swap preguiçoso.
+	return wrapRouter(handler, db != nil)
 }
 
 func newBeerRepo(db *database.RetryableDB) beerRepository.BeerRepository {
@@ -357,12 +361,31 @@ func maxIdleConns() int {
 // passar a ter dados reais, basta definir DB_RESET_SCHEMA=false para
 // desativar o reset destrutivo e passar a aplicar apenas as migrations
 // incrementais (idempotentes com IF NOT EXISTS / IF EXISTS).
+//
+// Invariante de segurança: DB_RESET_SCHEMA=true é TERMINANTEMENTE PROIBIDO
+// em produção. O guard abaixo é deliberadamente fail-fast: preferimos
+// recusar o arranque a aceitar uma perda silenciosa de dados.
 func resetSchemaEnabled() bool {
 	v := strings.ToLower(os.Getenv("DB_RESET_SCHEMA"))
 	return v != "false" && v != "0" && v != "no"
 }
 
+func guardDestructiveResetInProduction() {
+	if !resetSchemaEnabled() {
+		return
+	}
+	env := strings.ToLower(os.Getenv("ENV"))
+	if env == "production" || env == "prod" {
+		slog.Error("DB_RESET_SCHEMA ativo em produção — operação destrutiva bloqueada",
+			"env", env, "db_reset_schema", os.Getenv("DB_RESET_SCHEMA"))
+		panic("DB_RESET_SCHEMA=true não é permitido quando ENV=production; defina DB_RESET_SCHEMA=false antes de arrancar")
+	}
+}
+
 func migrateDB(db *sql.DB) error {
+	// Guard obrigatório: nunca executa reset destrutivo em produção.
+	guardDestructiveResetInProduction()
+
 	// Reset destrutivo em primeiro lugar, mas apenas se ativado.
 	sqlFiles := make([]string, 0, 13)
 	if resetSchemaEnabled() {

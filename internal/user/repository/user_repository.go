@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"reflect"
 	"time"
@@ -40,8 +41,21 @@ type querier interface {
 	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
 }
 
+// beginner é o contrato mínimo para iniciar uma transação. Apenas *sql.DB
+// (pool raiz) o satisfaz — *sql.Tx explicitamente NÃO o implementa, e o
+// compilador garante isto. Compor repositórios transacionais deixa de ser
+// uma armadilha de runtime panic; chamar ExecInTx num repo já transacional
+// devolve um erro claro em vez de explodir.
+type beginner interface {
+	BeginTx(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, error)
+}
+
 type PostgresUserRepository struct {
 	db querier
+	// begin é derivado de *sql.DB no construtor. *sql.Tx não satisfaz a
+	// interface beginner, e isto é deliberado: protege contra transações
+	// aninhadas acidentais e elimina a armadilha de panic por type assertion.
+	begin beginner
 }
 
 func NewPostgresUserRepository(db querier) (UserRepository, error) {
@@ -51,7 +65,11 @@ func NewPostgresUserRepository(db querier) (UserRepository, error) {
 	if err := db.(interface{ Ping() error }).Ping(); err != nil {
 		return nil, appErrors.NewAppError(503, "user database unavailable", err)
 	}
-	return &PostgresUserRepository{db: db}, nil
+	btx, ok := db.(beginner)
+	if !ok {
+		return nil, appErrors.NewAppError(500, "user repository must be backed by *sql.DB to support transactions", nil)
+	}
+	return &PostgresUserRepository{db: db, begin: btx}, nil
 }
 
 func isNilQuerier(q querier) bool {
@@ -66,6 +84,8 @@ func isNilQuerier(q querier) bool {
 }
 
 func (r *PostgresUserRepository) withTx(tx *sql.Tx) *PostgresUserRepository {
+	// Repositório transacional: compartilha o mesmo querier mas com begin=nil.
+	// Tentar ExecInTx aqui devolve erro explícito em vez de panic.
 	return &PostgresUserRepository{db: tx}
 }
 
@@ -90,6 +110,12 @@ func (r *PostgresUserRepository) Create(ctx context.Context, user model.User) er
 	return nil
 }
 
+// ErrUserNotFound é o sentinel para "utilizador inexistente" no repositório.
+// Permite aos usecases diferenciar ausência de registro (não é erro) de
+// falha de infraestrutura (é erro). Sem isto, qualquer falha transitória
+// do banco é silenciosamente engolida em fluxos como Register.
+var ErrUserNotFound = errors.New("user not found")
+
 func (r *PostgresUserRepository) GetByID(ctx context.Context, id string) (model.User, error) {
 	var user model.User
 	query := `SELECT id, username, email, role, created, updated_at FROM beerUsers WHERE id = $1`
@@ -102,8 +128,8 @@ func (r *PostgresUserRepository) GetByID(ctx context.Context, id string) (model.
 		&user.Created,
 		&user.UpdatedAt)
 
-	if err == sql.ErrNoRows {
-		return user, fmt.Errorf("user not found")
+	if errors.Is(err, sql.ErrNoRows) {
+		return user, fmt.Errorf("get user: %w", ErrUserNotFound)
 	}
 	if err != nil {
 		return user, fmt.Errorf("failed to get user: %w", err)
@@ -124,8 +150,8 @@ func (r *PostgresUserRepository) GetByEmail(ctx context.Context, email string) (
 		&user.Created,
 		&user.UpdatedAt)
 
-	if err == sql.ErrNoRows {
-		return user, fmt.Errorf("user not found")
+	if errors.Is(err, sql.ErrNoRows) {
+		return user, fmt.Errorf("get user by email: %w", ErrUserNotFound)
 	}
 	if err != nil {
 		return user, fmt.Errorf("failed to get user: %w", err)
@@ -147,8 +173,8 @@ func (r *PostgresUserRepository) GetByExternal(ctx context.Context, provider, ex
 		&user.Created,
 		&user.UpdatedAt)
 
-	if err == sql.ErrNoRows {
-		return user, fmt.Errorf("user not found")
+	if errors.Is(err, sql.ErrNoRows) {
+		return user, fmt.Errorf("get user by external: %w", ErrUserNotFound)
 	}
 	if err != nil {
 		return user, fmt.Errorf("failed to get user by external: %w", err)
@@ -375,8 +401,15 @@ func (r *PostgresUserRepository) DeletePushSubscriptionByEndpoint(ctx context.Co
 	return nil
 }
 
+// ExecInTx executa fn dentro de uma transação PostgreSQL. Iniciar uma
+// transação aninhada (em um repositório já transacional) devolve um erro
+// explícito em vez de um panic em runtime, graças à interface beginner
+// (substitui a antiga asserção r.db.(*sql.DB) que violava LSP).
 func (r *PostgresUserRepository) ExecInTx(ctx context.Context, fn func(ctx context.Context, txRepo UserRepository) error) error {
-	tx, err := r.db.(*sql.DB).BeginTx(ctx, nil)
+	if r.begin == nil {
+		return fmt.Errorf("user repository cannot begin transactions: beginner não inicializado")
+	}
+	tx, err := r.begin.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
@@ -409,14 +442,20 @@ func (r *PostgresUserRepository) CreateRefreshToken(ctx context.Context, token m
 	return nil
 }
 
-func (r *PostgresUserRepository) GetRefreshTokenByHash(ctx context.Context, userID, tokenHash string) (model.RefreshToken, error) {
+// GetRefreshTokenByHash consulta um refresh token exclusivamente pelo hash
+// SHA-256. O hash de um UUIDv7 é globalmente único (256 bits de entropia) —
+// a cláusula adicional por user_id era ruído e forçava a passagem de
+// parâmetros vazios no fluxo de rotação, expondo uma falsa sensação de
+// segurança. Manter um único índice (token_hash UNIQUE) simplifica a
+// topologia e elimina round-trips desnecessários ao banco.
+func (r *PostgresUserRepository) GetRefreshTokenByHash(ctx context.Context, _, tokenHash string) (model.RefreshToken, error) {
 	var token model.RefreshToken
 	query := `
 		SELECT id, user_id, token_hash, expires_at, revoked, created_at
 		FROM refresh_tokens
-		WHERE user_id = $1 AND token_hash = $2`
+		WHERE token_hash = $1`
 
-	err := r.db.QueryRowContext(ctx, query, userID, tokenHash).Scan(
+	err := r.db.QueryRowContext(ctx, query, tokenHash).Scan(
 		&token.ID,
 		&token.UserID,
 		&token.TokenHash,
@@ -424,8 +463,8 @@ func (r *PostgresUserRepository) GetRefreshTokenByHash(ctx context.Context, user
 		&token.Revoked,
 		&token.CreatedAt)
 
-	if err == sql.ErrNoRows {
-		return model.RefreshToken{}, fmt.Errorf("refresh token not found")
+	if errors.Is(err, sql.ErrNoRows) {
+		return model.RefreshToken{}, fmt.Errorf("get refresh token: %w", ErrUserNotFound)
 	}
 	if err != nil {
 		return model.RefreshToken{}, fmt.Errorf("failed to get refresh token: %w", err)

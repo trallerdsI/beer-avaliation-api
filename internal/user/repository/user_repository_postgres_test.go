@@ -903,7 +903,7 @@ func TestPostgresUserRepository_GetRefreshTokenByHash(t *testing.T) {
 			wantHash:  "hash1",
 			setup: func(m sqlmock.Sqlmock) {
 				m.ExpectQuery("SELECT").
-					WithArgs("u1", "hash1").
+					WithArgs("hash1").
 					WillReturnRows(sqlmock.NewRows([]string{"id", "user_id", "token_hash", "expires_at", "revoked", "created_at"}).
 						AddRow("rt1", "u1", "hash1", time.Now().Add(time.Hour).Format(time.RFC3339), false, time.Now().Format(time.RFC3339)))
 			},
@@ -915,7 +915,7 @@ func TestPostgresUserRepository_GetRefreshTokenByHash(t *testing.T) {
 			wantErr:   true,
 			setup: func(m sqlmock.Sqlmock) {
 				m.ExpectQuery("SELECT").
-					WithArgs("u1", "missing").
+					WithArgs("missing").
 					WillReturnError(sql.ErrNoRows)
 			},
 		},
@@ -926,7 +926,7 @@ func TestPostgresUserRepository_GetRefreshTokenByHash(t *testing.T) {
 			wantErr:   true,
 			setup: func(m sqlmock.Sqlmock) {
 				m.ExpectQuery("SELECT").
-					WithArgs("u1", "hash1").
+					WithArgs("hash1").
 					WillReturnError(http.ErrHandlerTimeout)
 			},
 		},

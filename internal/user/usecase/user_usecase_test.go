@@ -135,7 +135,7 @@ func TestRegisterPasswordTooLong(t *testing.T) {
 	repo := new(mockUserRepo)
 	uc := newUserUsecase(repo)
 
-	repo.On("GetByEmail", mock.Anything, "long@example.com").Return(model.User{}, errors.New("user not found"))
+	repo.On("GetByEmail", mock.Anything, "long@example.com").Return(model.User{}, repository.ErrUserNotFound)
 
 	err := uc.Register(context.Background(), model.User{
 		Email:    "long@example.com",
@@ -153,7 +153,7 @@ func TestRegisterSuccess(t *testing.T) {
 	repo := new(mockUserRepo)
 	uc := newUserUsecase(repo)
 
-	repo.On("GetByEmail", mock.Anything, "new@example.com").Return(model.User{}, errors.New("user not found"))
+	repo.On("GetByEmail", mock.Anything, "new@example.com").Return(model.User{}, repository.ErrUserNotFound)
 	repo.On("Create", mock.Anything, mock.Anything).Return(nil)
 
 	err := uc.Register(context.Background(), model.User{
@@ -170,7 +170,7 @@ func TestRegisterCreateFails(t *testing.T) {
 	repo := new(mockUserRepo)
 	uc := newUserUsecase(repo)
 
-	repo.On("GetByEmail", mock.Anything, "fail@example.com").Return(model.User{}, errors.New("user not found"))
+	repo.On("GetByEmail", mock.Anything, "fail@example.com").Return(model.User{}, repository.ErrUserNotFound)
 	repo.On("Create", mock.Anything, mock.Anything).Return(errors.New("db error"))
 
 	err := uc.Register(context.Background(), model.User{Email: "fail@example.com", Password: "secret1"})
@@ -199,7 +199,7 @@ func TestLoginUserNotFound(t *testing.T) {
 	repo := new(mockUserRepo)
 	uc := newUserUsecase(repo)
 
-	repo.On("GetByEmail", mock.Anything, "nope@example.com").Return(model.User{}, errors.New("user not found"))
+	repo.On("GetByEmail", mock.Anything, "nope@example.com").Return(model.User{}, repository.ErrUserNotFound)
 
 	_, err := uc.Login(context.Background(), "nope@example.com", "secret1")
 
@@ -258,7 +258,7 @@ func TestGetProfileNotFound(t *testing.T) {
 	repo := new(mockUserRepo)
 	uc := newUserUsecase(repo)
 
-	repo.On("GetByID", mock.Anything, "missing").Return(model.User{}, errors.New("user not found"))
+	repo.On("GetByID", mock.Anything, "missing").Return(model.User{}, repository.ErrUserNotFound)
 
 	_, err := uc.GetProfile(context.Background(), "missing")
 
@@ -479,7 +479,7 @@ func TestRefreshTokensNotFound(t *testing.T) {
 	uc := newUserUsecase(repo)
 
 	repo.On("ExecInTx", mock.Anything, mock.Anything).Return(nil)
-	repo.On("GetRefreshTokenByHash", mock.Anything, "", mock.Anything).Return(model.RefreshToken{}, errors.New("not found"))
+	repo.On("GetRefreshTokenByHash", mock.Anything, "", mock.Anything).Return(model.RefreshToken{}, repository.ErrUserNotFound)
 
 	_, err := uc.RefreshTokens(context.Background(), "missing")
 	assert.Error(t, err)

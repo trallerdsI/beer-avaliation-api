@@ -63,3 +63,40 @@ func TestResetSchemaEnabled(t *testing.T) {
 		})
 	}
 }
+
+// TestGuardDestructiveResetInProduction verifica que a combinação letal
+// ENV=production + DB_RESET_SCHEMA=true é bloqueada com panic antes de
+// qualquer operação destrutiva no banco. É a trava de segurança que
+// protege dados reais contra cold starts em produção.
+func TestGuardDestructiveResetInProduction(t *testing.T) {
+	cases := []struct {
+		name      string
+		env       string
+		resetEnv  string
+		wantPanic bool
+	}{
+		{"production + reset=true PANIC", "production", "true", true},
+		{"prod + reset=true PANIC", "prod", "true", true},
+		{"PRODUCTION + reset=true PANIC (case-insensitive)", "PRODUCTION", "true", true},
+		{"production + reset=false OK", "production", "false", false},
+		{"production + reset=0 OK", "production", "0", false},
+		{"dev + reset=true OK", "dev", "true", false},
+		{"env vazio + reset=true OK", "", "true", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("ENV", tc.env)
+			t.Setenv("DB_RESET_SCHEMA", tc.resetEnv)
+			defer func() {
+				if r := recover(); r != nil {
+					if !tc.wantPanic {
+						t.Fatalf("panic inesperado: %v", r)
+					}
+				} else if tc.wantPanic {
+					t.Fatal("esperava panic, mas não houve")
+				}
+			}()
+			guardDestructiveResetInProduction()
+		})
+	}
+}

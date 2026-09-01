@@ -2,6 +2,7 @@ package usecase
 
 import (
 	"context"
+	stderrors "errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -57,6 +58,13 @@ func (u *userUsecase) Register(ctx context.Context, user model.User) error {
 		slog.WarnContext(ctx, "registration failed: email already registered", "username", user.Username)
 		return errors.NewAppError(400, "email already registered", nil)
 	}
+	// Erros não-relacionados a "não encontrado" são falhas de infraestrutura
+	// e devem propagar como 500. Sem isto, race conditions e indisponibilidade
+	// transitória do banco seriam silenciosamente engolidas, amplificando DoS.
+	if !stderrors.Is(err, repository.ErrUserNotFound) {
+		slog.ErrorContext(ctx, "failed to lookup user by email", "err", err)
+		return errors.NewAppError(500, "failed to lookup user", err)
+	}
 
 	// Defesa: limita o tamanho da senha antes do bcrypt para evitar DoS de CPU
 	// (custo do bcrypt cresce com o tamanho da entrada). 72 bytes é o teto do bcrypt.
@@ -103,7 +111,13 @@ func (u *userUsecase) Login(ctx context.Context, email, password string) (auth.T
 
 	user, err := u.repo.GetByEmail(ctx, email)
 	if err != nil {
-		slog.WarnContext(ctx, "login failed: user not found")
+		// Distinguir "não encontrado" (401 genérico, sem vazar existência)
+		// de falha de infraestrutura (500 com log).
+		if stderrors.Is(err, repository.ErrUserNotFound) {
+			slog.WarnContext(ctx, "login failed: user not found")
+		} else {
+			slog.ErrorContext(ctx, "login failed: database error", "err", err)
+		}
 		return auth.TokenPair{}, errors.NewAppError(401, "invalid credentials", nil)
 	}
 
@@ -208,8 +222,12 @@ func (u *userUsecase) RefreshTokens(ctx context.Context, refreshToken string) (a
 
 	stored, err := u.repo.GetRefreshTokenByHash(ctx, "", tokenHash)
 	if err != nil {
-		slog.WarnContext(ctx, "refresh token not found", "err", err)
-		return auth.TokenPair{}, errors.NewAppError(401, "invalid refresh token", nil)
+		if stderrors.Is(err, repository.ErrUserNotFound) {
+			slog.WarnContext(ctx, "refresh token not found")
+			return auth.TokenPair{}, errors.NewAppError(401, "invalid refresh token", nil)
+		}
+		slog.ErrorContext(ctx, "refresh token lookup failed", "err", err)
+		return auth.TokenPair{}, errors.NewAppError(500, "failed to lookup refresh token", err)
 	}
 
 	if stored.Revoked {
@@ -249,8 +267,12 @@ func (u *userUsecase) GetProfile(ctx context.Context, id string) (model.User, er
 	// Get user by ID
 	user, err := u.repo.GetByID(ctx, id)
 	if err != nil {
-		slog.WarnContext(ctx, "profile not found", "user_id", id)
-		return model.User{}, errors.NewAppError(404, "user not found", err)
+		if stderrors.Is(err, repository.ErrUserNotFound) {
+			slog.WarnContext(ctx, "profile not found", "user_id", id)
+			return model.User{}, errors.NewAppError(404, "user not found", err)
+		}
+		slog.ErrorContext(ctx, "profile lookup failed", "user_id", id, "err", err)
+		return model.User{}, errors.NewAppError(500, "failed to get profile", err)
 	}
 
 	slog.InfoContext(ctx, "profile fetched", "user_id", id)
@@ -354,6 +376,10 @@ func (u *userUsecase) SeedAdmin(ctx context.Context) error {
 			}
 			slog.InfoContext(ctx, "utilizador promovido a admin", "email", email)
 			return nil
+		}
+		// Qualquer erro que não seja "não encontrado" aborta a transação.
+		if !stderrors.Is(err, repository.ErrUserNotFound) {
+			return fmt.Errorf("seed admin lookup: %w", err)
 		}
 
 		hashed, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
