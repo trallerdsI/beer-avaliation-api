@@ -3,12 +3,14 @@ package events
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"time"
 )
 
 // PostgresStore implements Store using PostgreSQL as the source of truth.
 type PostgresStore struct {
 	db interface {
+		ExecContext(context.Context, string, ...any) (sql.Result, error)
 		QueryContext(context.Context, string, ...any) (*sql.Rows, error)
 		QueryRowContext(context.Context, string, ...any) *sql.Row
 	}
@@ -16,6 +18,7 @@ type PostgresStore struct {
 
 // NewPostgresStore creates a new PostgreSQL-backed event store.
 func NewPostgresStore(db interface {
+	ExecContext(context.Context, string, ...any) (sql.Result, error)
 	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
 	QueryRowContext(context.Context, string, ...any) *sql.Row
 }) *PostgresStore {
@@ -71,7 +74,14 @@ func (p *PostgresStore) LatestEvent(ctx context.Context, beerID string) (float64
 	return float64(ts.UnixNano()), string(data), nil
 }
 
-// Publish is a no-op for PostgresStore; use the repository directly.
 func (p *PostgresStore) Publish(ctx context.Context, beerID string, ev Event) error {
-	return nil
+	data, err := json.Marshal(ev.Data)
+	if err != nil {
+		return err
+	}
+	_, err = p.db.ExecContext(ctx, `
+		INSERT INTO beer_events (id, beer_id, type, data, timestamp)
+		VALUES ($1, $2, $3, $4, $5)
+	`, ev.ID, beerID, ev.Type, data, ev.Timestamp)
+	return err
 }

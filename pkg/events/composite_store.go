@@ -11,12 +11,18 @@ import (
 // source of truth.
 type CompositeStore struct {
 	primary  Publisher
-	fallback Store
+	fallback interface {
+		Store
+		Publisher
+	}
 }
 
 // NewCompositeStore creates a CompositeStore with the given stores.
 // primary should be the fast cache (Redis); fallback should be durable (Postgres).
-func NewCompositeStore(primary Publisher, fallback Store) *CompositeStore {
+func NewCompositeStore(primary Publisher, fallback interface {
+	Store
+	Publisher
+}) *CompositeStore {
 	return &CompositeStore{primary: primary, fallback: fallback}
 }
 
@@ -48,8 +54,13 @@ func (c *CompositeStore) LatestEvent(ctx context.Context, beerID string) (float6
 	return 0, "", nil
 }
 
-// Publish publishes to the primary store only (writes go to Redis cache).
+// Publish writes to PostgreSQL first, then refreshes the Redis cache.
 func (c *CompositeStore) Publish(ctx context.Context, beerID string, ev Event) error {
+	if c.fallback != nil {
+		if err := c.fallback.Publish(ctx, beerID, ev); err != nil {
+			return err
+		}
+	}
 	if c.primary != nil {
 		return c.primary.Publish(ctx, beerID, ev)
 	}

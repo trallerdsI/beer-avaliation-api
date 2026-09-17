@@ -10,6 +10,7 @@ import (
 	"beer-review-app/internal/user/repository"
 	"beer-review-app/pkg/auth"
 	appErrors "beer-review-app/pkg/errors"
+	"beer-review-app/pkg/middleware"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -154,15 +155,20 @@ func TestRegisterSuccess(t *testing.T) {
 	uc := newUserUsecase(repo)
 
 	repo.On("GetByEmail", mock.Anything, "new@example.com").Return(model.User{}, repository.ErrUserNotFound)
-	repo.On("Create", mock.Anything, mock.Anything).Return(nil)
+	var created model.User
+	repo.On("Create", mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
+		created = args.Get(1).(model.User)
+	}).Return(nil)
 
 	err := uc.Register(context.Background(), model.User{
 		Username: "newbie",
 		Email:    "new@example.com",
 		Password: "secret1",
+		Role:     model.RoleAdmin,
 	})
 
 	assert.NoError(t, err)
+	assert.Equal(t, model.RoleUser, created.Role)
 	repo.AssertExpectations(t)
 }
 
@@ -260,7 +266,7 @@ func TestGetProfileNotFound(t *testing.T) {
 
 	repo.On("GetByID", mock.Anything, "missing").Return(model.User{}, repository.ErrUserNotFound)
 
-	_, err := uc.GetProfile(context.Background(), "missing")
+	_, err := uc.GetProfile(middleware.WithUserID(context.Background(), "missing", ""), "missing")
 
 	assert.Error(t, err)
 	var appErr *appErrors.AppError
@@ -275,7 +281,7 @@ func TestGetProfileSuccess(t *testing.T) {
 	want := model.User{ID: "u1", Username: "bob", Email: "bob@example.com"}
 	repo.On("GetByID", mock.Anything, "u1").Return(want, nil)
 
-	got, err := uc.GetProfile(context.Background(), "u1")
+	got, err := uc.GetProfile(middleware.WithUserID(context.Background(), "u1", ""), "u1")
 
 	assert.NoError(t, err)
 	assert.Equal(t, want, got)
@@ -287,7 +293,7 @@ func TestUpdateProfileSuccess(t *testing.T) {
 
 	repo.On("Update", mock.Anything, "u1", mock.Anything).Return(nil)
 
-	err := uc.UpdateProfile(context.Background(), "u1", model.User{Username: "bob2"})
+	err := uc.UpdateProfile(middleware.WithUserID(context.Background(), "u1", ""), "u1", model.User{Username: "bob2"})
 	assert.NoError(t, err)
 }
 
@@ -297,7 +303,7 @@ func TestUpdateProfileFailure(t *testing.T) {
 
 	repo.On("Update", mock.Anything, "u1", mock.Anything).Return(errors.New("db error"))
 
-	err := uc.UpdateProfile(context.Background(), "u1", model.User{Username: "bob2"})
+	err := uc.UpdateProfile(middleware.WithUserID(context.Background(), "u1", ""), "u1", model.User{Username: "bob2"})
 	assert.Error(t, err)
 	var appErr *appErrors.AppError
 	assert.ErrorAs(t, err, &appErr)
@@ -310,7 +316,7 @@ func TestDeleteAccountSuccess(t *testing.T) {
 
 	repo.On("Delete", mock.Anything, "u1").Return(nil)
 
-	err := uc.DeleteAccount(context.Background(), "u1")
+	err := uc.DeleteAccount(middleware.WithUserID(context.Background(), "u1", ""), "u1")
 	assert.NoError(t, err)
 }
 
@@ -320,11 +326,24 @@ func TestDeleteAccountFailure(t *testing.T) {
 
 	repo.On("Delete", mock.Anything, "u1").Return(errors.New("db error"))
 
-	err := uc.DeleteAccount(context.Background(), "u1")
+	err := uc.DeleteAccount(middleware.WithUserID(context.Background(), "u1", ""), "u1")
 	assert.Error(t, err)
 	var appErr *appErrors.AppError
 	assert.ErrorAs(t, err, &appErr)
 	assert.Equal(t, 500, appErr.Code)
+}
+
+func TestUserAccessRejectsOtherUser(t *testing.T) {
+	repo := new(mockUserRepo)
+	uc := newUserUsecase(repo)
+	ctx := middleware.WithUserID(context.Background(), "u1", "")
+
+	_, err := uc.GetProfile(ctx, "u2")
+	assert.Error(t, err)
+	var appErr *appErrors.AppError
+	assert.ErrorAs(t, err, &appErr)
+	assert.Equal(t, 403, appErr.Code)
+	repo.AssertNotCalled(t, "GetByID", mock.Anything, mock.Anything)
 }
 
 // --- SeedAdmin ---
@@ -451,6 +470,7 @@ func TestRefreshTokensSuccess(t *testing.T) {
 		ExpiresAt: time.Now().Add(time.Hour).Format(time.RFC3339),
 		Revoked:   false,
 	}, nil)
+	repo.On("GetByID", mock.Anything, "u1").Return(model.User{ID: "u1", Role: model.RoleAdmin}, nil)
 	repo.On("RevokeRefreshToken", mock.Anything, "u1", "hash1").Return(nil)
 	repo.On("CreateRefreshToken", mock.Anything, mock.Anything).Return(nil)
 
@@ -461,6 +481,9 @@ func TestRefreshTokensSuccess(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotEmpty(t, pair.AccessToken)
 	assert.NotEmpty(t, pair.RefreshToken)
+	_, role, err := auth.ValidateToken(pair.AccessToken)
+	assert.NoError(t, err)
+	assert.Equal(t, model.RoleAdmin, role)
 }
 
 func TestRefreshTokensEmptyToken(t *testing.T) {

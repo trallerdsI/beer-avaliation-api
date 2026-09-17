@@ -12,6 +12,7 @@ import (
 	"beer-review-app/internal/user/repository"
 	"beer-review-app/pkg/auth"
 	"beer-review-app/pkg/errors"
+	"beer-review-app/pkg/middleware"
 	"beer-review-app/pkg/uuid"
 
 	"golang.org/x/crypto/bcrypt"
@@ -84,9 +85,7 @@ func (u *userUsecase) Register(ctx context.Context, user model.User) error {
 	// admin é atribuído apenas via seed de arranque (ADMIN_EMAIL/ADMIN_PASSWORD).
 	user.Password = string(hashedPassword)
 	user.Created = time.Now().UTC().Format(time.RFC3339)
-	if user.Role == "" {
-		user.Role = model.RoleUser
-	}
+	user.Role = model.RoleUser
 
 	// Create user in the repository (user.ID will be auto-generated)
 	if err := u.repo.Create(ctx, user); err != nil {
@@ -243,12 +242,20 @@ func (u *userUsecase) RefreshTokens(ctx context.Context, refreshToken string) (a
 		return auth.TokenPair{}, errors.NewAppError(401, "invalid refresh token", nil)
 	}
 
+	user, err := u.repo.GetByID(ctx, stored.UserID)
+	if err != nil {
+		if stderrors.Is(err, repository.ErrUserNotFound) {
+			return auth.TokenPair{}, errors.NewAppError(401, "invalid refresh token", nil)
+		}
+		return auth.TokenPair{}, errors.NewAppError(500, "failed to lookup user", err)
+	}
+
 	if err := u.repo.RevokeRefreshToken(ctx, stored.UserID, stored.TokenHash); err != nil {
 		slog.ErrorContext(ctx, "failed to revoke refresh token", "err", err)
 		return auth.TokenPair{}, errors.NewAppError(500, "failed to revoke refresh token", err)
 	}
 
-	pair, err := u.issueTokenPair(ctx, stored.UserID, "", u.repo)
+	pair, err := u.issueTokenPair(ctx, stored.UserID, user.Role, u.repo)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to issue new token pair", "err", err)
 		return auth.TokenPair{}, err
@@ -260,6 +267,9 @@ func (u *userUsecase) RefreshTokens(ctx context.Context, refreshToken string) (a
 
 func (u *userUsecase) GetProfile(ctx context.Context, id string) (model.User, error) {
 	if err := u.unavailable(); err != nil {
+		return model.User{}, err
+	}
+	if err := requireUserAccess(ctx, id); err != nil {
 		return model.User{}, err
 	}
 	slog.InfoContext(ctx, "fetch profile", "user_id", id)
@@ -283,6 +293,9 @@ func (u *userUsecase) UpdateProfile(ctx context.Context, id string, user model.U
 	if err := u.unavailable(); err != nil {
 		return err
 	}
+	if err := requireUserAccess(ctx, id); err != nil {
+		return err
+	}
 	slog.InfoContext(ctx, "update profile attempt", "user_id", id)
 
 	// Update user profile
@@ -297,6 +310,9 @@ func (u *userUsecase) UpdateProfile(ctx context.Context, id string, user model.U
 
 func (u *userUsecase) DeleteAccount(ctx context.Context, id string) error {
 	if err := u.unavailable(); err != nil {
+		return err
+	}
+	if err := requireUserAccess(ctx, id); err != nil {
 		return err
 	}
 	slog.InfoContext(ctx, "delete account attempt", "user_id", id)
@@ -315,6 +331,9 @@ func (u *userUsecase) SubscribePush(ctx context.Context, userID string, sub mode
 	if err := u.unavailable(); err != nil {
 		return err
 	}
+	if err := requireUserAccess(ctx, userID); err != nil {
+		return err
+	}
 	slog.InfoContext(ctx, "subscribe push", "user_id", userID, "endpoint", sub.Endpoint)
 	sub.UserID = userID
 	if err := u.repo.CreatePushSubscription(ctx, sub); err != nil {
@@ -326,6 +345,9 @@ func (u *userUsecase) SubscribePush(ctx context.Context, userID string, sub mode
 
 func (u *userUsecase) UnsubscribePush(ctx context.Context, userID, endpoint string) error {
 	if err := u.unavailable(); err != nil {
+		return err
+	}
+	if err := requireUserAccess(ctx, userID); err != nil {
 		return err
 	}
 	slog.InfoContext(ctx, "unsubscribe push", "user_id", userID, "endpoint", endpoint)
@@ -340,6 +362,9 @@ func (u *userUsecase) ListPushSubscriptions(ctx context.Context, userID string) 
 	if err := u.unavailable(); err != nil {
 		return nil, err
 	}
+	if err := requireUserAccess(ctx, userID); err != nil {
+		return nil, err
+	}
 	slog.InfoContext(ctx, "list push subscriptions", "user_id", userID)
 	subs, err := u.repo.ListPushSubscriptions(ctx, userID)
 	if err != nil {
@@ -347,6 +372,17 @@ func (u *userUsecase) ListPushSubscriptions(ctx context.Context, userID string) 
 		return nil, errors.NewAppError(500, "failed to list push subscriptions", err)
 	}
 	return subs, nil
+}
+
+func requireUserAccess(ctx context.Context, userID string) error {
+	if middleware.IsAdmin(ctx) {
+		return nil
+	}
+	requesterID, ok := middleware.UserIDFromContext(ctx)
+	if !ok || requesterID != userID {
+		return errors.NewAppError(403, "you are not allowed to access this user", nil)
+	}
+	return nil
 }
 
 // SeedAdmin cria um utilizador administrador global no arranque quando

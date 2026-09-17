@@ -27,12 +27,9 @@ func sanitizeReplaceAttr(_ []string, a slog.Attr) slog.Attr {
 	return a
 }
 
-// NewSanitizedHandler cria um handler JSON com ReplaceAttr para redigir segredos.
-func NewSanitizedHandler(options *slog.HandlerOptions) *slog.JSONHandler {
-	return slog.NewJSONHandler(nil, options)
-}
-
-// SanitizeOptions retorna HandlerOptions com ReplaceAttr configurado.
+// SanitizeOptions retorna HandlerOptions com ReplaceAttr configurado para redigir
+// valores de chaves sensíveis nos logs (authorization, token, password, *_secret,
+// *_key, db_conn_string, jwt_secret, etc.).
 func SanitizeOptions(base *slog.HandlerOptions) *slog.HandlerOptions {
 	if base == nil {
 		base = &slog.HandlerOptions{}

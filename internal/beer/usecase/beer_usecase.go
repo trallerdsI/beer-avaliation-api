@@ -137,6 +137,7 @@ func (u *beerUsecase) Create(ctx context.Context, beer *model.Beer) error {
 	if err := u.repo.Create(ctx, beer); err != nil {
 		return errors.NewAppError(500, "Failed to create beer", err)
 	}
+	u.publishBeerEvent(ctx, beer.ID, events.TypeBeerCreated, map[string]any{"name": beer.Name})
 
 	return nil
 }
@@ -178,6 +179,7 @@ func (u *beerUsecase) Update(ctx context.Context, id string, beer model.Beer) er
 	if err := u.repo.Update(ctx, id, beer); err != nil {
 		return errors.NewAppError(500, "Failed to update beer", err)
 	}
+	u.publishBeerEvent(ctx, id, events.TypeBeerUpdated, map[string]any{"name": beer.Name})
 	return nil
 }
 
@@ -197,6 +199,7 @@ func (u *beerUsecase) Delete(ctx context.Context, id string) error {
 	if err := u.repo.Delete(ctx, id); err != nil {
 		return errors.NewAppError(500, "Failed to delete beer", err)
 	}
+	u.publishBeerEvent(ctx, id, events.TypeBeerDeleted, nil)
 	return nil
 }
 
@@ -240,6 +243,7 @@ func (u *beerUsecase) AddComment(ctx context.Context, id string, comment model.C
 	}); err != nil {
 		return err
 	}
+	u.publishBeerEvent(ctx, id, events.TypeCommentAdded, map[string]any{"commentId": comment.ID})
 
 	return nil
 }
@@ -281,6 +285,7 @@ func (u *beerUsecase) DeleteComment(ctx context.Context, id string, commentID st
 	}); err != nil {
 		return err
 	}
+	u.publishBeerEvent(ctx, id, events.TypeCommentDeleted, map[string]any{"commentId": commentID})
 
 	return nil
 }
@@ -327,6 +332,7 @@ func (u *beerUsecase) LikeComment(ctx context.Context, beerID, commentID, userID
 	}); err != nil {
 		return err
 	}
+	u.publishBeerEvent(ctx, beerID, events.TypeCommentLiked, map[string]any{"commentId": commentID})
 
 	return nil
 }
@@ -355,6 +361,7 @@ func (u *beerUsecase) AddMedia(ctx context.Context, id string, item model.MediaI
 	if err := u.repo.Update(ctx, id, beer); err != nil {
 		return nil, errors.NewAppError(500, "Failed to attach media", err)
 	}
+	u.publishBeerEvent(ctx, id, events.TypeMediaAdded, map[string]any{"url": item.URL})
 
 	return beer.Media, nil
 }

@@ -86,29 +86,29 @@ func (u *moderationUsecase) ResolveDeletionRequest(ctx context.Context, reqID, s
 	}
 
 	return u.moderationRepo.ExecInTx(ctx, func(ctx context.Context, txRepo repository.ModerationRepository, txBeerRepo repository.BeerRepository) error {
-		requests, _, err := txRepo.GetDeletionRequests(ctx, model.DeletionRequestFilter{
-			Limit:  1,
-			Offset: 0,
-		})
-		if err != nil {
-			return err
-		}
-		var target *model.BeerDeletionRequest
-		for i := range requests {
-			if requests[i].ID == reqID {
-				target = &requests[i]
-				break
-			}
-		}
-		if target == nil {
-			return errors.NewAppError(404, "deletion request not found", nil)
-		}
-
 		now := time.Now().UTC()
 		if err := txRepo.ResolveDeletionRequest(ctx, reqID, status, &adminID, now); err != nil {
 			return err
 		}
 		if status == string(model.DeletionStatusApproved) {
+			// Find the beerID for this deletion request to delete the beer.
+			reqs, _, err := txRepo.GetDeletionRequests(ctx, model.DeletionRequestFilter{
+				Limit:  1,
+				Offset: 0,
+			})
+			if err != nil {
+				return errors.NewAppError(500, "failed to get deletion request", err)
+			}
+			var target *model.BeerDeletionRequest
+			for i := range reqs {
+				if reqs[i].ID == reqID {
+					target = &reqs[i]
+					break
+				}
+			}
+			if target == nil {
+				return errors.NewAppError(404, "deletion request not found", nil)
+			}
 			if err := txBeerRepo.Delete(ctx, target.BeerID); err != nil {
 				return errors.NewAppError(500, "failed to delete beer after approving request", err)
 			}

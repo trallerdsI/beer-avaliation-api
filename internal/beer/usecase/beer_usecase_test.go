@@ -5,17 +5,36 @@ import (
 	stderrors "errors"
 	"net/http"
 	"testing"
+	"time"
 
 	"beer-review-app/internal/beer/model"
 	beerRepo "beer-review-app/internal/beer/repository"
 	usermodel "beer-review-app/internal/user/model"
 	appErrors "beer-review-app/pkg/errors"
+	"beer-review-app/pkg/events"
 	"beer-review-app/pkg/middleware"
 	"beer-review-app/pkg/moderation"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 )
+
+type recordingEventStore struct {
+	published []events.Event
+}
+
+func (s *recordingEventStore) Publish(_ context.Context, _ string, event events.Event) error {
+	s.published = append(s.published, event)
+	return nil
+}
+
+func (s *recordingEventStore) ListSince(context.Context, string, time.Time) ([]events.Event, error) {
+	return nil, nil
+}
+
+func (s *recordingEventStore) LatestEvent(context.Context, string) (float64, string, error) {
+	return 0, "", nil
+}
 
 // TestGetAll tests the GetAll method
 func TestGetAll(t *testing.T) {
@@ -68,6 +87,24 @@ func TestCreate(t *testing.T) {
 
 	assert.NoError(t, err)
 	mockRepo.AssertExpectations(t)
+}
+
+func TestCreatePublishesEvent(t *testing.T) {
+	mockRepo := new(beerRepo.MockBeerRepository)
+	eventStore := new(recordingEventStore)
+	usecase := NewBeerUsecase(mockRepo, moderation.NewNoopModerator(), eventStore)
+
+	beer := model.Beer{ID: "1", Name: "Beer1"}
+	mockRepo.On("SearchBeers", mock.Anything, mock.Anything).Return([]model.Beer{}, 0, false, nil)
+	mockRepo.On("Create", mock.Anything, &beer).Return(nil)
+
+	err := usecase.Create(middleware.WithUserID(context.Background(), "user-1", ""), &beer)
+
+	assert.NoError(t, err)
+	if assert.Len(t, eventStore.published, 1) {
+		assert.Equal(t, events.TypeBeerCreated, eventStore.published[0].Type)
+		assert.Equal(t, beer.ID, eventStore.published[0].BeerID)
+	}
 }
 
 // TestGetByID tests the GetByID method

@@ -229,3 +229,14 @@ func TestRateLimitMiddlewareSkipsOptionsRequests(t *testing.T) {
 		t.Fatalf("expected 204 for OPTIONS, got %d", rr.Code)
 	}
 }
+
+func TestClientKeyUsesIPWithoutPortAndIgnoresForwardedHeaderByDefault(t *testing.T) {
+	t.Setenv("TRUST_PROXY", "false")
+	req := httptest.NewRequest(http.MethodPost, "/", nil)
+	req.RemoteAddr = "192.0.2.10:12345"
+	req.Header.Set("X-Forwarded-For", "198.51.100.20")
+
+	if got := clientKey(req); got != "i:192.0.2.10" {
+		t.Fatalf("clientKey() = %q, want %q", got, "i:192.0.2.10")
+	}
+}

@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"strings"
@@ -90,12 +91,22 @@ func clientKey(r *http.Request) string {
 	if uid, ok := UserIDFromContext(r.Context()); ok && uid != "" {
 		return "u:" + uid
 	}
-	ip := r.RemoteAddr
-	if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
-		parts := strings.Split(fwd, ",")
-		ip = strings.TrimSpace(parts[0])
+	ip := remoteIP(r.RemoteAddr)
+	if strings.EqualFold(os.Getenv("TRUST_PROXY"), "true") {
+		if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
+			parts := strings.Split(fwd, ",")
+			ip = strings.TrimSpace(parts[0])
+		}
 	}
 	return "i:" + ip
+}
+
+func remoteIP(remoteAddr string) string {
+	host, _, err := net.SplitHostPort(remoteAddr)
+	if err == nil {
+		return host
+	}
+	return remoteAddr
 }
 
 func clientKeyType(key string) string {

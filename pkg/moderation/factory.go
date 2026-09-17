@@ -1,7 +1,8 @@
 package moderation
 
 import (
-	"fmt"
+	"context"
+	"log/slog"
 	"os"
 	"time"
 
@@ -19,7 +20,7 @@ func NewModeratorWithCache(base Moderator) Moderator {
 			cache := NewRedisModerationCache(client, 24*time.Hour)
 			return NewCachedOpenAIModerator(base, cache)
 		}
-		fmt.Fprintf(os.Stderr, "warning: invalid REDIS_URL %q: %v; falling back to in-memory cache\n", redisURL, err)
+		slog.WarnContext(context.Background(), "invalid REDIS_URL, falling back to in-memory cache", "url", redisURL, "err", err)
 	}
 	return NewCachedOpenAIModerator(base, NewInMemoryModerationCache())
 }

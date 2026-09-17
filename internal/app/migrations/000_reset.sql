@@ -4,6 +4,7 @@
 -- Usado porque o ambiente Supabase pode ficar em estado intermédio se uma
 -- migration falhou a meio (ex.: cast SERIAL->UUID).
 DROP TABLE IF EXISTS comments CASCADE;
+DROP TABLE IF EXISTS beer_events CASCADE;
 DROP TABLE IF EXISTS beers CASCADE;
 DROP TABLE IF EXISTS beerUsers CASCADE;
 DROP TABLE IF EXISTS beer_reports CASCADE;
