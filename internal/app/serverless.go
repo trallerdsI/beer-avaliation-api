@@ -95,7 +95,6 @@ func NeedsDB(path string) bool {
 		"/api/v1/beers/enums",
 		"/api/v1/health",
 		"/healthz",
-		"/readyz",
 		"/docs",
 		"/docs/openapi.yaml",
 		"/metrics",

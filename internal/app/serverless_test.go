@@ -7,14 +7,13 @@ import (
 	"beer-review-app/pkg/errors"
 )
 
-// TestNeedsDB valida o roteamento estático vs dados. Rotas que não
-// tocam banco devem passar pelo middleware preguiçoso sem ping.
+// TestNeedsDB valida o roteamento estático vs dados. Readiness precisa
+// inicializar o banco para poder verificar suas dependências.
 func TestNeedsDB(t *testing.T) {
 	static := []string{
 		"/api/v1/beers/enums",
 		"/api/v1/health",
 		"/healthz",
-		"/readyz",
 		"/docs",
 		"/docs/openapi.yaml",
 		"/metrics",
@@ -34,6 +33,7 @@ func TestNeedsDB(t *testing.T) {
 		"/api/v1/auth/refresh",
 		"/api/v1/users/abc-123",
 		"/api/v1/stats",
+		"/readyz",
 	}
 	for _, p := range dataRoutes {
 		if !NeedsDB(p) {
