@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -27,6 +28,7 @@ type routerSlot struct {
 }
 
 var router *routerSlot
+var initMu sync.Mutex
 
 func init() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, logging.SanitizeOptions(&slog.HandlerOptions{Level: slog.LevelInfo})))
@@ -71,10 +73,19 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	initMu.Lock()
+	current = *router.current.Load()
+	if app.RouterHasDB(current) {
+		initMu.Unlock()
+		current.ServeHTTP(w, r)
+		return
+	}
+
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
 	pool, err := app.TryInitDB(ctx, dsn, router.log)
 	if err != nil {
+		initMu.Unlock()
 		app.WriteServiceUnavailable(w, "database unavailable on cold start")
 		return
 	}
@@ -82,6 +93,7 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 	// Hot-swap atômico: novos requests pulam o TryInitDB.
 	full := app.BuildRouter(pool, router.log)
 	router.current.Store(&full)
+	initMu.Unlock()
 
 	// Serve a request atual com o router completo.
 	(*router.current.Load()).ServeHTTP(w, r)

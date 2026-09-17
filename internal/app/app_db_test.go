@@ -36,6 +36,18 @@ func TestResolveDBConnStringPrefersFull(t *testing.T) {
 	}
 }
 
+func TestResolveDBConnStringPrefersPooledPostgresURL(t *testing.T) {
+	t.Setenv("DATABASE_URL", "")
+	t.Setenv("DB_CONN_STRING", "")
+	t.Setenv("DBConnString", "")
+	t.Setenv("POSTGRES_URL", "postgres://pooled@host:5432/db")
+	t.Setenv("POSTGRES_URL_NON_POOLING", "postgres://direct@host:5432/db")
+
+	if got := resolveDBConnString(); got != "postgres://pooled@host:5432/db" {
+		t.Fatalf("expected pooled URL preference, got %q", got)
+	}
+}
+
 // TestResolveDBConnStringEmpty confirma que, sem nenhuma variável, devolve "".
 func TestResolveDBConnStringEmpty(t *testing.T) {
 	t.Setenv("DB_CONN_STRING", "")

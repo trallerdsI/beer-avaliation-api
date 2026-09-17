@@ -17,14 +17,15 @@ import (
 // InitTracerProvider configura o provedor de traces distribuídos (OpenTelemetry)
 // com exportação OTLP/gRPC para o Grafana Tempo (ou outro collector OTLP).
 //
-// A URL do collector é definida por OTEL_EXPORTER_OTLP_ENDPOINT (default: localhost:4317).
+// A URL do collector é definida por OTEL_EXPORTER_OTLP_ENDPOINT.
 // A amostragem é 10% probabilística em produção, ou 100% em desenvolvimento.
 func InitTracerProvider(serviceName string) (*sdktrace.TracerProvider, error) {
 	ctx := context.Background()
 
 	endpoint := os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
 	if endpoint == "" {
-		endpoint = "localhost:4317"
+		slog.Info("OpenTelemetry exporter disabled: OTEL_EXPORTER_OTLP_ENDPOINT is not configured")
+		return nil, nil
 	}
 
 	exporter, err := otlptracegrpc.New(ctx,

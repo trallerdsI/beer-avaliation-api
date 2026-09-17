@@ -323,7 +323,9 @@ func resolveDBConnString() string {
 		}
 	}
 
-	for _, key := range []string{"POSTGRES_URL_NON_POOLING", "POSTGRES_URL"} {
+	// Prefer the provider's pooled URL for serverless cold starts. The
+	// non-pooling URL remains a fallback for migrations and local setups.
+	for _, key := range []string{"POSTGRES_URL", "POSTGRES_URL_NON_POOLING"} {
 		if v := os.Getenv(key); v != "" {
 			return v
 		}
