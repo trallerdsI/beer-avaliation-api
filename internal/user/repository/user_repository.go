@@ -62,8 +62,10 @@ func NewPostgresUserRepository(db querier) (UserRepository, error) {
 	if isNilQuerier(db) {
 		return nil, appErrors.NewUnavailableError()
 	}
-	if err := db.(interface{ Ping() error }).Ping(); err != nil {
-		return nil, appErrors.NewAppError(503, "user database unavailable", err)
+	if pinger, ok := db.(interface{ Ping() error }); ok {
+		if err := pinger.Ping(); err != nil {
+			return nil, appErrors.NewAppError(503, "user database unavailable", err)
+		}
 	}
 	btx, ok := db.(beginner)
 	if !ok {

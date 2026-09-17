@@ -42,8 +42,10 @@ func NewPostgresModerationRepository(db querier) (*PostgresModerationRepository,
 	if isNilQuerier(db) {
 		return nil, errors.NewUnavailableError()
 	}
-	if err := db.(interface{ Ping() error }).Ping(); err != nil {
-		return nil, errors.NewAppError(503, "moderation database unavailable", err)
+	if pinger, ok := db.(interface{ Ping() error }); ok {
+		if err := pinger.Ping(); err != nil {
+			return nil, errors.NewAppError(503, "moderation database unavailable", err)
+		}
 	}
 	return &PostgresModerationRepository{db: db}, nil
 }

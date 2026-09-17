@@ -28,10 +28,10 @@ func NewPostgresStore(db interface {
 // ListSince returns events since a timestamp from PostgreSQL.
 func (p *PostgresStore) ListSince(ctx context.Context, beerID string, since time.Time) ([]Event, error) {
 	rows, err := p.db.QueryContext(ctx, `
-		SELECT type, data, timestamp
+		SELECT id, beer_id, type, data, timestamp
 		FROM beer_events
 		WHERE beer_id = $1 AND timestamp > $2
-		ORDER BY timestamp ASC
+		ORDER BY timestamp ASC, id ASC
 	`, beerID, since)
 	if err != nil {
 		return nil, err
@@ -42,7 +42,7 @@ func (p *PostgresStore) ListSince(ctx context.Context, beerID string, since time
 	for rows.Next() {
 		var ev Event
 		var ts time.Time
-		if err := rows.Scan(&ev.Type, &ev.Data, &ts); err != nil {
+		if err := rows.Scan(&ev.ID, &ev.BeerID, &ev.Type, &ev.Data, &ts); err != nil {
 			return nil, err
 		}
 		ev.Timestamp = ts

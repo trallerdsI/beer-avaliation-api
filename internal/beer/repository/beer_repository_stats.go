@@ -236,7 +236,7 @@ func (r *PostgresBeerRepository) GetUserStats(ctx context.Context, userID string
 		jsonb_array_elements(comments) AS elem
 		WHERE $1 = ANY(
 			CASE WHEN jsonb_typeof(elem->'likedBy') = 'array'
-			     THEN ARRAY(SELECT jsonb_array_elements_text(elem->'likedBy'))
+			     THEN ARRAY(SELECT 'u:' || jsonb_array_elements_text(elem->'likedBy'))
 			     ELSE ARRAY[]::text[]
 			END
 		)`, userID).Scan(&stats.LikesGiven); err != nil {

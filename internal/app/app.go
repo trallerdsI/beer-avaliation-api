@@ -47,6 +47,7 @@ var (
 	shutdownCtx     context.Context
 	shutdownCancel  context.CancelFunc
 	redisClient     *redis.Client
+	redisMu         sync.Mutex
 )
 
 func init() {
@@ -72,8 +73,12 @@ func Shutdown() {
 }
 
 func CloseRedis() error {
+	redisMu.Lock()
+	defer redisMu.Unlock()
 	if redisClient != nil {
-		return redisClient.Close()
+		client := redisClient
+		redisClient = nil
+		return client.Close()
 	}
 	return nil
 }
@@ -113,11 +118,22 @@ func BuildRouterWithDBErr(db *database.RetryableDB, dbErr error, logger *slog.Lo
 		if redisURL != "" {
 			opt, err := redis.ParseURL(redisURL)
 			if err == nil {
-				redisClient = redis.NewClient(opt)
-				if err := redisClient.Ping(context.Background()).Err(); err == nil {
-					redisStore := events.NewRedisStore(redisClient, "beer-api", 72*time.Hour)
+				client := redis.NewClient(opt)
+				pingCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+				err = client.Ping(pingCtx).Err()
+				cancel()
+				if err == nil {
+					redisMu.Lock()
+					if redisClient != nil {
+						_ = redisClient.Close()
+					}
+					redisClient = client
+					redisMu.Unlock()
+					redisStore := events.NewRedisStore(client, "beer-api", 72*time.Hour)
 					pgStore := events.NewPostgresStore(db.DB)
 					eventPub = events.NewCompositeStore(redisStore, pgStore)
+				} else {
+					_ = client.Close()
 				}
 			}
 		}
@@ -146,9 +162,9 @@ func BuildRouterWithDBErr(db *database.RetryableDB, dbErr error, logger *slog.Lo
 	mux.HandleFunc("POST /api/v1/beers", middleware.Auth(beerController.CreateBeer))
 	mux.HandleFunc("GET /api/v1/beers/{id}", beerController.GetBeerByID)
 	mux.HandleFunc("PUT /api/v1/beers/{id}", middleware.Auth(beerController.UpdateBeer))
-	mux.HandleFunc("DELETE /api/v1/beers/{id}", middleware.Auth(beerController.DeleteBeer))
+	mux.HandleFunc("DELETE /api/v1/beers/{id}", middleware.RequireAdmin(beerController.DeleteBeer))
 	mux.HandleFunc("GET /api/v1/beers/search", beerController.SearchBeers)
-	mux.HandleFunc("GET /api/v1/beers/{id}/events", beerController.ListBeerEvents)
+	mux.HandleFunc("GET /api/v1/beers/{id}/events", middleware.RequireAdmin(beerController.ListBeerEvents))
 	mux.HandleFunc("POST /api/v1/beers/{id}/comments", middleware.Auth(beerController.AddComment))
 	mux.HandleFunc("DELETE /api/v1/beers/{id}/comments/{commentId}", middleware.Auth(beerController.DeleteComment))
 	mux.HandleFunc("POST /api/v1/beers/{id}/comments/{commentId}/like", middleware.Auth(beerController.LikeComment))

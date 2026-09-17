@@ -16,7 +16,7 @@ BEGIN
   END IF;
 END $$;
 
--- beers: leitura pública (o catálogo é público); escrita só ao dono ou admin.
+-- beers: leitura pública; criação/edição pelo dono ou admin; exclusão só admin.
 ALTER TABLE beers ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS beers_select ON beers;
@@ -24,9 +24,17 @@ CREATE POLICY beers_select ON beers
   FOR SELECT
   USING (true);
 
-DROP POLICY IF EXISTS beers_write ON beers;
-CREATE POLICY beers_write ON beers
-  FOR ALL
+DROP POLICY IF EXISTS beers_insert ON beers;
+CREATE POLICY beers_insert ON beers
+  FOR INSERT
+  WITH CHECK (
+    created_by::text = auth.uid()::text
+    OR EXISTS (SELECT 1 FROM beerUsers WHERE beerUsers.id::text = auth.uid()::text AND beerUsers.role = 'admin')
+  );
+
+DROP POLICY IF EXISTS beers_update ON beers;
+CREATE POLICY beers_update ON beers
+  FOR UPDATE
   USING (
     created_by::text = auth.uid()::text
     OR EXISTS (SELECT 1 FROM beerUsers WHERE beerUsers.id::text = auth.uid()::text AND beerUsers.role = 'admin')
@@ -34,6 +42,13 @@ CREATE POLICY beers_write ON beers
   WITH CHECK (
     created_by::text = auth.uid()::text
     OR EXISTS (SELECT 1 FROM beerUsers WHERE beerUsers.id::text = auth.uid()::text AND beerUsers.role = 'admin')
+  );
+
+DROP POLICY IF EXISTS beers_delete ON beers;
+CREATE POLICY beers_delete ON beers
+  FOR DELETE
+  USING (
+    EXISTS (SELECT 1 FROM beerUsers WHERE beerUsers.id::text = auth.uid()::text AND beerUsers.role = 'admin')
   );
 
 -- beerUsers: um utilizador só se vê/edge a si próprio; admin vê todos.

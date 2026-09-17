@@ -137,9 +137,7 @@ func (u *beerUsecase) Create(ctx context.Context, beer *model.Beer) error {
 	if err := u.repo.Create(ctx, beer); err != nil {
 		return errors.NewAppError(500, "Failed to create beer", err)
 	}
-	u.publishBeerEvent(ctx, beer.ID, events.TypeBeerCreated, map[string]any{"name": beer.Name})
-
-	return nil
+	return u.publishBeerEvent(ctx, beer.ID, events.TypeBeerCreated, map[string]any{"name": beer.Name})
 }
 
 // GetByID retrieves a beer by its ID.
@@ -179,28 +177,26 @@ func (u *beerUsecase) Update(ctx context.Context, id string, beer model.Beer) er
 	if err := u.repo.Update(ctx, id, beer); err != nil {
 		return errors.NewAppError(500, "Failed to update beer", err)
 	}
-	u.publishBeerEvent(ctx, id, events.TypeBeerUpdated, map[string]any{"name": beer.Name})
-	return nil
+	return u.publishBeerEvent(ctx, id, events.TypeBeerUpdated, map[string]any{"name": beer.Name})
 }
 
-// Delete removes a beer. AuthZ: só o criador ou um admin podem apagar.
+// Delete removes a beer. AuthZ: only admins can delete catalog entries.
 func (u *beerUsecase) Delete(ctx context.Context, id string) error {
 	if err := u.unavailable(); err != nil {
 		return err
 	}
-	existing, err := u.repo.GetByID(ctx, id)
+	_, err := u.repo.GetByID(ctx, id)
 	if err != nil {
 		return err
 	}
-	if !canModify(ctx, existing.CreatedBy) {
-		return errors.NewAppError(403, "you are not allowed to delete this beer", nil)
+	if !middleware.IsAdmin(ctx) {
+		return errors.NewAppError(403, "only admins can delete beers", nil)
 	}
 
 	if err := u.repo.Delete(ctx, id); err != nil {
 		return errors.NewAppError(500, "Failed to delete beer", err)
 	}
-	u.publishBeerEvent(ctx, id, events.TypeBeerDeleted, nil)
-	return nil
+	return u.publishBeerEvent(ctx, id, events.TypeBeerDeleted, nil)
 }
 
 // canModify devolve true se o chamador (do contexto) pode editar/apagar o
@@ -243,9 +239,7 @@ func (u *beerUsecase) AddComment(ctx context.Context, id string, comment model.C
 	}); err != nil {
 		return err
 	}
-	u.publishBeerEvent(ctx, id, events.TypeCommentAdded, map[string]any{"commentId": comment.ID})
-
-	return nil
+	return u.publishBeerEvent(ctx, id, events.TypeCommentAdded, map[string]any{"commentId": comment.ID})
 }
 
 func (u *beerUsecase) DeleteComment(ctx context.Context, id string, commentID string) error {
@@ -253,7 +247,6 @@ func (u *beerUsecase) DeleteComment(ctx context.Context, id string, commentID st
 		return err
 	}
 
-	var owner string
 	if err := u.repo.ExecInTx(ctx, func(ctx context.Context, txRepo repository.BeerRepository) error {
 		beer, err := txRepo.GetByID(ctx, id)
 		if err != nil {
@@ -263,7 +256,6 @@ func (u *beerUsecase) DeleteComment(ctx context.Context, id string, commentID st
 		var found bool
 		for i, c := range beer.Comments {
 			if c.ID == commentID {
-				owner = c.CreatedBy
 				beer.Comments = append(beer.Comments[:i], beer.Comments[i+1:]...)
 				found = true
 				break
@@ -274,8 +266,8 @@ func (u *beerUsecase) DeleteComment(ctx context.Context, id string, commentID st
 			return errors.NewAppError(404, "comment not found", nil)
 		}
 
-		if !canModify(ctx, owner) {
-			return errors.NewAppError(403, "you are not allowed to delete this comment", nil)
+		if !middleware.IsAdmin(ctx) {
+			return errors.NewAppError(403, "only admins can delete comments", nil)
 		}
 
 		if err := txRepo.Update(ctx, id, beer); err != nil {
@@ -285,9 +277,7 @@ func (u *beerUsecase) DeleteComment(ctx context.Context, id string, commentID st
 	}); err != nil {
 		return err
 	}
-	u.publishBeerEvent(ctx, id, events.TypeCommentDeleted, map[string]any{"commentId": commentID})
-
-	return nil
+	return u.publishBeerEvent(ctx, id, events.TypeCommentDeleted, map[string]any{"commentId": commentID})
 }
 
 // LikeComment regista um like num comentário. Num app social com login, o like
@@ -332,9 +322,7 @@ func (u *beerUsecase) LikeComment(ctx context.Context, beerID, commentID, userID
 	}); err != nil {
 		return err
 	}
-	u.publishBeerEvent(ctx, beerID, events.TypeCommentLiked, map[string]any{"commentId": commentID})
-
-	return nil
+	return u.publishBeerEvent(ctx, beerID, events.TypeCommentLiked, map[string]any{"commentId": commentID})
 }
 
 // AddMedia anexa um item de mídia (imagem já carregada no storage) à cerveja.
@@ -361,8 +349,9 @@ func (u *beerUsecase) AddMedia(ctx context.Context, id string, item model.MediaI
 	if err := u.repo.Update(ctx, id, beer); err != nil {
 		return nil, errors.NewAppError(500, "Failed to attach media", err)
 	}
-	u.publishBeerEvent(ctx, id, events.TypeMediaAdded, map[string]any{"url": item.URL})
-
+	if err := u.publishBeerEvent(ctx, id, events.TypeMediaAdded, map[string]any{"url": item.URL}); err != nil {
+		return nil, err
+	}
 	return beer.Media, nil
 }
 
@@ -401,11 +390,11 @@ func (u *beerUsecase) ListBeerEvents(ctx context.Context, beerID string, since t
 	return out, nil
 }
 
-func (u *beerUsecase) publishBeerEvent(ctx context.Context, beerID, eventType string, data map[string]any) {
+func (u *beerUsecase) publishBeerEvent(ctx context.Context, beerID, eventType string, data map[string]any) error {
 	if u.events == nil {
-		return
+		return nil
 	}
-	_ = u.events.Publish(ctx, beerID, events.Event{
+	return u.events.Publish(ctx, beerID, events.Event{
 		Type:      eventType,
 		ID:        uuid.MustNewV7(),
 		BeerID:    beerID,

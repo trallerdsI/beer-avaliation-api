@@ -130,7 +130,10 @@ func retryExec[T any](ctx context.Context, maxRetries int, baseDelay time.Durati
 
 		if attempt < maxRetries {
 			DBRetryAttemptsTotal.WithLabelValues(operation).Inc()
-			jitter := time.Duration(rand.Int63n(int64(baseDelay))) //nosec
+			var jitter time.Duration
+			if baseDelay > 0 {
+				jitter = time.Duration(rand.Int63n(int64(baseDelay))) //nosec
+			}
 			delay := time.Duration(math.Pow(2, float64(attempt)))*baseDelay + jitter
 
 			select {
@@ -162,13 +165,31 @@ func (r *RetryableDB) QueryContext(ctx context.Context, query string, args ...an
 
 // QueryRowContext executes a query row with retry logic.
 func (r *RetryableDB) QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row {
-	row, err := retryExec(ctx, r.maxRetries, r.baseDelay, "queryrow", func() (*sql.Row, error) {
-		return r.DB.QueryRowContext(ctx, query, args...), nil
+	return r.DB.QueryRowContext(ctx, query, args...)
+}
+
+// ScanRowContext retries both query execution and scanning. QueryRowContext
+// cannot observe database errors because database/sql exposes them only from
+// Scan, after the row has already been returned.
+func (r *RetryableDB) ScanRowContext(ctx context.Context, query string, args []any, dest ...any) error {
+	_, err := retryExec(ctx, r.maxRetries, r.baseDelay, "queryrow", func() (struct{}, error) {
+		rows, err := r.DB.QueryContext(ctx, query, args...)
+		if err != nil {
+			return struct{}{}, err
+		}
+		defer rows.Close()
+		if !rows.Next() {
+			if err := rows.Err(); err != nil {
+				return struct{}{}, err
+			}
+			return struct{}{}, sql.ErrNoRows
+		}
+		if err := rows.Scan(dest...); err != nil {
+			return struct{}{}, err
+		}
+		return struct{}{}, rows.Err()
 	})
-	if err != nil {
-		return r.DB.QueryRowContext(ctx, query, args...)
-	}
-	return row
+	return err
 }
 
 // BeginTx starts a transaction with retry logic.

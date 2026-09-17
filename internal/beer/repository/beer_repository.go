@@ -38,6 +38,15 @@ type querier interface {
 	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
 }
 
+func scanRow(ctx context.Context, db querier, query string, args []any, dest ...any) error {
+	if scanner, ok := db.(interface {
+		ScanRowContext(context.Context, string, []any, ...any) error
+	}); ok {
+		return scanner.ScanRowContext(ctx, query, args, dest...)
+	}
+	return db.QueryRowContext(ctx, query, args...).Scan(dest...)
+}
+
 // PostgresBeerRepository is a PostgreSQL implementation of BeerRepository.
 type PostgresBeerRepository struct {
 	db querier
@@ -48,8 +57,10 @@ func NewPostgresBeerRepository(db querier) (*PostgresBeerRepository, error) {
 	if isNilQuerier(db) {
 		return nil, errors.NewUnavailableError()
 	}
-	if err := db.(interface{ Ping() error }).Ping(); err != nil {
-		return nil, errors.NewAppError(503, "beer database unavailable", err)
+	if pinger, ok := db.(interface{ Ping() error }); ok {
+		if err := pinger.Ping(); err != nil {
+			return nil, errors.NewAppError(503, "beer database unavailable", err)
+		}
 	}
 
 	return &PostgresBeerRepository{db: db}, nil
@@ -107,7 +118,7 @@ func (r *PostgresBeerRepository) Create(ctx context.Context, beer *model.Beer) e
 func (r *PostgresBeerRepository) GetByID(ctx context.Context, id string) (model.Beer, error) {
 	var beer model.Beer
 	var commentsJSON, mediaJSON []byte
-	err := r.db.QueryRowContext(ctx, `
+	err := scanRow(ctx, r.db, `
         SELECT
             id,
             name,
@@ -127,9 +138,8 @@ func (r *PostgresBeerRepository) GetByID(ctx context.Context, id string) (model.
             updated_at,
             media,
             purchase_location,
-            purchase_map_url
-        FROM beers WHERE id = $1`, id).
-		Scan(
+			purchase_map_url
+			FROM beers WHERE id = $1 FOR UPDATE`, []any{id},
 			&beer.ID,
 			&beer.Name,
 			&beer.Style,
@@ -233,7 +243,7 @@ func (r *PostgresBeerRepository) GetPaginated(ctx context.Context, page, pageSiz
             media,
             purchase_location,
             purchase_map_url
-        FROM beers LIMIT $1 OFFSET $2`, pageSize, offset)
+		FROM beers ORDER BY created_at DESC NULLS LAST, id DESC LIMIT $1 OFFSET $2`, pageSize, offset)
 	if err != nil {
 		slog.Error("error querying beers", "err", err)
 		return nil, 0, err
@@ -287,7 +297,7 @@ func (r *PostgresBeerRepository) GetPaginated(ctx context.Context, page, pageSiz
 
 	// Obtendo a contagem total de cervejas
 	var total int
-	err = r.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM beers").Scan(&total)
+	err = scanRow(ctx, r.db, "SELECT COUNT(*) FROM beers", nil, &total)
 	if err != nil {
 		slog.Error("error getting total beer count", "err", err)
 		return nil, 0, err
@@ -406,7 +416,7 @@ func (r *PostgresBeerRepository) SearchBeers(ctx context.Context, filters model.
 
 	// Get total count of filtered beers
 	var total int
-	err := r.db.QueryRowContext(ctx, cb.String(), args...).Scan(&total)
+	err := scanRow(ctx, r.db, cb.String(), args, &total)
 	if err != nil {
 		return nil, 0, false, fmt.Errorf("failed to count beers: %w", err)
 	}

@@ -141,7 +141,7 @@ func TestUpdate(t *testing.T) {
 }
 
 // TestDelete tests the Delete method
-func TestDelete(t *testing.T) {
+func TestDeleteAdmin(t *testing.T) {
 	mockRepo := new(beerRepo.MockBeerRepository)
 	usecase := NewBeerUsecase(mockRepo, moderation.NewNoopModerator(), nil)
 
@@ -150,9 +150,23 @@ func TestDelete(t *testing.T) {
 	mockRepo.On("GetByID", mock.Anything, "1").Return(existing, nil)
 	mockRepo.On("Delete", mock.Anything, "1").Return(nil)
 
-	err := usecase.Delete(middleware.WithUserID(context.Background(), "user-1", ""), "1")
+	err := usecase.Delete(middleware.WithUserID(context.Background(), "admin-1", "admin"), "1")
 
 	assert.NoError(t, err)
+	mockRepo.AssertExpectations(t)
+}
+
+func TestDeleteOwnerForbidden(t *testing.T) {
+	mockRepo := new(beerRepo.MockBeerRepository)
+	usecase := NewBeerUsecase(mockRepo, moderation.NewNoopModerator(), nil)
+
+	mockRepo.On("GetByID", mock.Anything, "1").Return(model.Beer{ID: "1", CreatedBy: "user-1"}, nil)
+
+	err := usecase.Delete(middleware.WithUserID(context.Background(), "user-1", ""), "1")
+
+	var appErr *appErrors.AppError
+	assert.ErrorAs(t, err, &appErr)
+	assert.Equal(t, http.StatusForbidden, appErr.Code)
 	mockRepo.AssertExpectations(t)
 }
 
