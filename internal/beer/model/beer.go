@@ -1,5 +1,7 @@
 package model
 
+import "sort"
+
 // Enums for different characteristics of beer
 type (
 	Flavor      string
@@ -172,6 +174,7 @@ func flavorValuesSlice() []string {
 	for k := range flavorValues {
 		out = append(out, string(k))
 	}
+	sort.Strings(out)
 	return out
 }
 func aromaValuesSlice() []string {
@@ -179,6 +182,7 @@ func aromaValuesSlice() []string {
 	for k := range aromaValues {
 		out = append(out, string(k))
 	}
+	sort.Strings(out)
 	return out
 }
 func colorValuesSlice() []string {
@@ -186,6 +190,7 @@ func colorValuesSlice() []string {
 	for k := range colorValues {
 		out = append(out, string(k))
 	}
+	sort.Strings(out)
 	return out
 }
 func bodyValuesSlice() []string {
@@ -193,6 +198,7 @@ func bodyValuesSlice() []string {
 	for k := range bodyValues {
 		out = append(out, string(k))
 	}
+	sort.Strings(out)
 	return out
 }
 func carbonationValuesSlice() []string {
@@ -200,6 +206,7 @@ func carbonationValuesSlice() []string {
 	for k := range carbonationValues {
 		out = append(out, string(k))
 	}
+	sort.Strings(out)
 	return out
 }
 func finishValuesSlice() []string {
@@ -207,6 +214,7 @@ func finishValuesSlice() []string {
 	for k := range finishValues {
 		out = append(out, string(k))
 	}
+	sort.Strings(out)
 	return out
 }
 
