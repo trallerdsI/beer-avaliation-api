@@ -48,6 +48,15 @@ func TestResolveDBConnStringPrefersPooledPostgresURL(t *testing.T) {
 	}
 }
 
+func TestNormalizePostgresDSNRemovesUnsupportedChannelBinding(t *testing.T) {
+	dsn := "postgresql://user:password@host/db?channel_binding=require&sslmode=require"
+	got := normalizePostgresDSN(dsn)
+	want := "postgresql://user:password@host/db?sslmode=require"
+	if got != want {
+		t.Fatalf("normalizePostgresDSN() = %q, want %q", got, want)
+	}
+}
+
 // TestResolveDBConnStringEmpty confirma que, sem nenhuma variável, devolve "".
 func TestResolveDBConnStringEmpty(t *testing.T) {
 	t.Setenv("DB_CONN_STRING", "")

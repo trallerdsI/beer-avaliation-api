@@ -59,7 +59,7 @@ func TryInitDB(ctx context.Context, dsn string, logger *slog.Logger) (*database.
 	if logger == nil {
 		logger = slog.Default()
 	}
-	db, err := sql.Open("postgres", dsn)
+	db, err := sql.Open("postgres", normalizePostgresDSN(dsn))
 	if err != nil {
 		return nil, errors.NewAppError(503, "failed to open database", err)
 	}

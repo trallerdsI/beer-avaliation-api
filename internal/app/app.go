@@ -261,6 +261,7 @@ func InitDBFromEnv() (*database.RetryableDB, error) {
 }
 
 func InitDB(dsn string) (*database.RetryableDB, error) {
+	dsn = normalizePostgresDSN(dsn)
 	db, err := sql.Open("postgres", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("erro ao conectar com o banco de dados: %w", err)
@@ -314,6 +315,20 @@ func maskPassword(connString string) string {
 		}
 	}
 	return "***masked***"
+}
+
+// normalizePostgresDSN removes libpq-only options unsupported by lib/pq.
+// Neon connection URLs commonly include channel_binding=require, but pq
+// forwards unknown options as startup parameters and PostgreSQL rejects them.
+func normalizePostgresDSN(dsn string) string {
+	u, err := url.Parse(dsn)
+	if err != nil || u.RawQuery == "" {
+		return dsn
+	}
+	query := u.Query()
+	query.Del("channel_binding")
+	u.RawQuery = query.Encode()
+	return u.String()
 }
 
 func resolveDBConnString() string {
