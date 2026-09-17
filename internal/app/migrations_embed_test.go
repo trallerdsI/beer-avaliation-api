@@ -39,14 +39,14 @@ func TestEmbeddedMigrationsPresent(t *testing.T) {
 
 // TestResetSchemaEnabled é table-driven e valida a flag DB_RESET_SCHEMA que
 // controla o reset destrutivo do esquema (banco como fonte de verdade).
-// Default true; false/0/no desativam o reset quando o banco tem dados reais.
+// Default false; o reset destrutivo precisa ser explicitamente habilitado.
 func TestResetSchemaEnabled(t *testing.T) {
 	tests := []struct {
 		name string
 		env  string // valor de DB_RESET_SCHEMA (vazio = default)
 		want bool
 	}{
-		{"default (vazio)", "", true},
+		{"default (vazio)", "", false},
 		{"true", "true", true},
 		{"1", "1", true},
 		{"false", "false", false},

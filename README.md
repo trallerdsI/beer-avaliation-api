@@ -13,7 +13,6 @@ A modern, scalable REST API for managing beer reviews and ratings built with Go.
 - ⚡ Go 1.26 native `net/http` routing (no external router dependency)
 - 🛡️ Rate limiting (429), CORS, gzip/brotli compression, request ID tracing
 - 🔔 Push subscriptions (Web Push / Push API)
-- 📤 Endpoint de mídia reservado (upload multipart temporariamente desabilitado)
 - 🔄 Event store com persistência PostgreSQL e cache Redis (TTL + fonte da verdade)
 - 🛡️ Moderação de conteúdo (reports, deletion requests, admin resolve)
 - 📈 Observabilidade completa (Prometheus + Grafana + Alertas)
@@ -75,7 +74,6 @@ A API segue estes RFCs (12 de 12 implementados):
 | 9457 | Problem Details (erro único, `application/problem+json`) | ✅ |
 | 8259 | JSON (UTF-8, `application/json`) | ✅ |
 | 9562 | UUIDv7 (IDs de domínio, gerados na app) | ✅ |
-| 7578 | Multipart/form-data (upload de imagem) | ⚠️ temporariamente desabilitado |
 | 6455 | SSE (tempo real; WebSocket rejeitado — ver Decisões) | ✅ |
 | 8288 | Web Linking (`Link` header em listas paginadas) | ✅ |
 | 6749 | OAuth2 / OIDC (login social Google/Apple via id_token RS256+JWKS) | ✅ |
@@ -93,7 +91,7 @@ A API segue estes RFCs (12 de 12 implementados):
 
 ## Decisões de Arquitetura
 
-- **Banco como fonte da verdade:** `DB_RESET_SCHEMA=true` (default) recria o esquema a cada arranque via `internal/app/migrations/000_reset.sql`. Defina `false`/`0`/`no` para preservar dados e aplicar apenas migrations incrementais.
+- **Banco como fonte da verdade:** `DB_RESET_SCHEMA=true` (opt-in) recria o esquema a cada arranque via `internal/app/migrations/000_reset.sql`. Por padrão, apenas migrations incrementais são aplicadas.
 - **Login social (RFC 6749 / OIDC):** `POST /api/v1/users/oauth` recebe `provider` + `id_token` (JWT RS256 do Google/Apple). Valida contra JWKS do IdP com cache e faz upsert em `beerUsers` por `(provider, external_sub)`. Devolve JWT HS256 de sessão.
 - **Migrações embutidas (`go:embed`):** os ficheiros SQL vivem em `internal/app/migrations/` e são embutidos no binário.
 - **Ligação ao Supabase (IPv4):** o host direto `db.<ref>.supabase.co` só resolve para IPv6. A resolução de DSN reescreve automaticamente para o pooler IPv4 `aws-0-<region>.pooler.supabase.com` e força `default_query_exec_mode=simple_protocol`.
@@ -120,7 +118,6 @@ A API segue estes RFCs (12 de 12 implementados):
 - `POST /api/v1/beers/{id}/comments` - Add comment
 - `DELETE /api/v1/beers/{id}/comments/{commentId}` - Delete comment
 - `POST /api/v1/beers/{id}/comments/{commentId}/like` - Like comment
-- `POST /api/v1/beers/{id}/media` - Reservado; retorna `501 Not Implemented` enquanto o upload estiver desabilitado
 - `POST /api/v1/beers/{id}/reports` - Report beer (moderation)
 - `POST /api/v1/beers/{id}/deletion-requests` - Request beer deletion (moderation)
 - `GET /api/v1/beers/{id}/reports` - Get beer reports (admin)

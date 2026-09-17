@@ -21,7 +21,6 @@ func TestBuildRouter_RegistersAllRoutes(t *testing.T) {
 		"/api/v1/beers/1",
 		"/api/v1/beers/1",
 		"/api/v1/beers/1",
-		"/api/v1/beers/1/media",
 		"/api/v1/beers/search",
 		"/api/v1/beers/1/comments",
 		"/api/v1/beers/1/comments/1",
@@ -30,6 +29,7 @@ func TestBuildRouter_RegistersAllRoutes(t *testing.T) {
 		"/api/v1/users/register",
 		"/api/v1/users/login",
 		"/api/v1/users/oauth",
+		"/api/v1/auth/refresh",
 		"/api/v1/users/1",
 		"/api/v1/users/1",
 		"/api/v1/users/1",
@@ -46,7 +46,6 @@ func TestBuildRouter_RegistersAllRoutes(t *testing.T) {
 
 	methods := []string{
 		http.MethodGet,
-		http.MethodPost,
 		http.MethodGet,
 		http.MethodPut,
 		http.MethodDelete,
@@ -57,6 +56,7 @@ func TestBuildRouter_RegistersAllRoutes(t *testing.T) {
 		http.MethodPost,
 		http.MethodGet,
 		http.MethodGet,
+		http.MethodPost,
 		http.MethodPost,
 		http.MethodPost,
 		http.MethodPost,

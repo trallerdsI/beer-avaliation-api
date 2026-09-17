@@ -62,7 +62,8 @@ func (c *CompositeStore) Publish(ctx context.Context, beerID string, ev Event) e
 		}
 	}
 	if c.primary != nil {
-		return c.primary.Publish(ctx, beerID, ev)
+		// PostgreSQL is durable; Redis is only a cache and may be unavailable.
+		_ = c.primary.Publish(ctx, beerID, ev)
 	}
 	return nil
 }

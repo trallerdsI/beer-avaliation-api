@@ -5,7 +5,7 @@ info:
   description: >
     API REST para gestão de cervejas, avaliações e utilizadores.
     Conformidade: RFC 7807 (Problem Details), RFC 9111 (ETag/Cache),
-    RFC 7578 (multipart upload), RFC 6749 (OAuth2/OIDC), RFC 9562 (UUIDv7).
+    RFC 6749 (OAuth2/OIDC), RFC 9562 (UUIDv7).
 
 servers: []
 
@@ -347,53 +347,6 @@ paths:
                 $ref: '#/components/schemas/Problem'
         '404':
           description: Beer not found
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Problem'
-
-  /api/v1/beers/{id}/media:
-    post:
-      summary: Media upload unavailable
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: string
-            format: uuid
-      requestBody:
-        required: true
-        content:
-          multipart/form-data:
-            schema:
-              type: object
-              properties:
-                file:
-                  type: string
-                  format: binary
-                  description: Imagem (JPEG, PNG ou WebP), máx 10MB
-      responses:
-        '501':
-          description: Media upload is temporarily disabled
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/Problem'
-        '415':
-          description: Unsupported media type
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Problem'
-        '401':
-          description: Unauthorized
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Problem'
-        '403':
-          description: Forbidden (not owner/admin)
           content:
             application/json:
               schema:

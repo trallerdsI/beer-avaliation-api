@@ -31,6 +31,7 @@ import (
 	"beer-review-app/pkg/moderation"
 
 	"beer-review-app/pkg/events"
+
 	"github.com/redis/go-redis/v9"
 )
 
@@ -146,7 +147,6 @@ func BuildRouterWithDBErr(db *database.RetryableDB, dbErr error, logger *slog.Lo
 	mux.HandleFunc("GET /api/v1/beers/{id}", beerController.GetBeerByID)
 	mux.HandleFunc("PUT /api/v1/beers/{id}", middleware.Auth(beerController.UpdateBeer))
 	mux.HandleFunc("DELETE /api/v1/beers/{id}", middleware.Auth(beerController.DeleteBeer))
-	mux.HandleFunc("POST /api/v1/beers/{id}/media", middleware.Auth(beerController.UploadBeerMedia))
 	mux.HandleFunc("GET /api/v1/beers/search", beerController.SearchBeers)
 	mux.HandleFunc("GET /api/v1/beers/{id}/events", beerController.ListBeerEvents)
 	mux.HandleFunc("POST /api/v1/beers/{id}/comments", middleware.Auth(beerController.AddComment))
@@ -355,19 +355,16 @@ func maxIdleConns() int {
 }
 
 // resetSchemaEnabled devolve true se a API deve recriar o esquema do zero a
-// cada arranque (DROP + CREATE). Controlado por DB_RESET_SCHEMA (default true).
-// Enquanto o banco for descartável (sem front dependiente nem dados definitivos)
-// isto mantém o esquema sempre sincronizado com as migrations. Quando o banco
-// passar a ter dados reais, basta definir DB_RESET_SCHEMA=false para
-// desativar o reset destrutivo e passar a aplicar apenas as migrations
-// incrementais (idempotentes com IF NOT EXISTS / IF EXISTS).
+// cada arranque (DROP + CREATE). Controlado por DB_RESET_SCHEMA (default false).
+// O reset destrutivo precisa ser explicitamente habilitado em desenvolvimento
+// ou testes; sem isso, apenas migrations incrementais são aplicadas.
 //
 // Invariante de segurança: DB_RESET_SCHEMA=true é TERMINANTEMENTE PROIBIDO
 // em produção. O guard abaixo é deliberadamente fail-fast: preferimos
 // recusar o arranque a aceitar uma perda silenciosa de dados.
 func resetSchemaEnabled() bool {
 	v := strings.ToLower(os.Getenv("DB_RESET_SCHEMA"))
-	return v != "false" && v != "0" && v != "no"
+	return v == "true" || v == "1" || v == "yes"
 }
 
 func guardDestructiveResetInProduction() {
