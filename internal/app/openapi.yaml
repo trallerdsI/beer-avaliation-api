@@ -354,7 +354,7 @@ paths:
 
   /api/v1/beers/{id}/media:
     post:
-      summary: Upload beer image (RFC 7578 Multipart Form Data)
+      summary: Media upload unavailable
       parameters:
         - in: path
           name: id
@@ -374,14 +374,12 @@ paths:
                   format: binary
                   description: Imagem (JPEG, PNG ou WebP), máx 10MB
       responses:
-        '200':
-          description: Media updated
+        '501':
+          description: Media upload is temporarily disabled
           content:
-            application/json:
+            application/problem+json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/MediaItem'
+                $ref: '#/components/schemas/Problem'
         '415':
           description: Unsupported media type
           content:

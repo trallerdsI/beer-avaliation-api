@@ -13,8 +13,8 @@ A modern, scalable REST API for managing beer reviews and ratings built with Go.
 - ⚡ Go 1.26 native `net/http` routing (no external router dependency)
 - 🛡️ Rate limiting (429), CORS, gzip/brotli compression, request ID tracing
 - 🔔 Push subscriptions (Web Push / Push API)
-- 📤 Media upload via multipart/form-data (RFC 7578) to Supabase Storage
-- 🔄 Event store com fallback Redis → PostgreSQL (TTL + fonte da verdade)
+- 📤 Endpoint de mídia reservado (upload multipart temporariamente desabilitado)
+- 🔄 Event store com persistência PostgreSQL e cache Redis (TTL + fonte da verdade)
 - 🛡️ Moderação de conteúdo (reports, deletion requests, admin resolve)
 - 📈 Observabilidade completa (Prometheus + Grafana + Alertas)
 
@@ -48,7 +48,6 @@ beer-review-app/
 │   ├── errors/          # RFC 7807 Problem Details
 │   ├── response/        # HTTP response helpers
 │   ├── metrics/         # Prometheus metrics + serverless detection
-│   ├── storage/         # Supabase Storage upload adapter (RFC 7578)
 │   ├── uuid/            # UUIDv7 generator (stdlib, RFC 9562)
 │   ├── validation/      # Custom validators (flavor, aroma, color, etc.)
 ```
@@ -76,7 +75,7 @@ A API segue estes RFCs (12 de 12 implementados):
 | 9457 | Problem Details (erro único, `application/problem+json`) | ✅ |
 | 8259 | JSON (UTF-8, `application/json`) | ✅ |
 | 9562 | UUIDv7 (IDs de domínio, gerados na app) | ✅ |
-| 7578 | Multipart/form-data (upload imagem → Supabase Storage) | ✅ |
+| 7578 | Multipart/form-data (upload de imagem) | ⚠️ temporariamente desabilitado |
 | 6455 | SSE (tempo real; WebSocket rejeitado — ver Decisões) | ✅ |
 | 8288 | Web Linking (`Link` header em listas paginadas) | ✅ |
 | 6749 | OAuth2 / OIDC (login social Google/Apple via id_token RS256+JWKS) | ✅ |
@@ -102,7 +101,7 @@ A API segue estes RFCs (12 de 12 implementados):
 - **SSE sobre WebSocket (RFC 6455):** tempo real via Server-Sent Events (multiplexa sobre HTTP/2). WebSocket só para chat bidirecional privado, fora de escopo.
 - **Rate Limiter:** cleanup lazy de chaves expiradas no map `hits` para evitar OOM em serverless.
 - **Contrato de erro RFC 7807:** `code` estável (snake_case) + `detail` + `instance` (caminho da rota). O Flutter mapeia `code` para `DSLanguageError` / `DSLanguageFeedback`.
-- **Event Store (Redis + PostgreSQL):** Eventos são publicados no Redis ZSET com TTL de 72h. Se a chave expirar, o endpoint de polling consulta automaticamente o PostgreSQL (fonte da verdade). O CompositeStore garante consistência eventual.
+- **Event Store (PostgreSQL + Redis):** Eventos são persistidos primeiro no PostgreSQL, depois publicados no Redis ZSET com TTL de 72h. Se a chave expirar, o endpoint de polling consulta automaticamente o PostgreSQL (fonte da verdade).
 - **Health Checks:** `/healthz` é liveness (sempre 200 se o processo está vivo). `/readyz` é readiness (valida DB + Redis com timeout de 1s).
 - **Connection Pool:** `SetMaxOpenConns(10)`, `SetMaxIdleConns(5)`, `SetConnMaxLifetime(5m)` explicitamente configurados para evitar exaustão do PostgreSQL.
 - **JWT Secret:** Panic no boot se `JWT_SECRET` não estiver definida. Em testes, use `TESTING=true` para bypass.
@@ -121,7 +120,7 @@ A API segue estes RFCs (12 de 12 implementados):
 - `POST /api/v1/beers/{id}/comments` - Add comment
 - `DELETE /api/v1/beers/{id}/comments/{commentId}` - Delete comment
 - `POST /api/v1/beers/{id}/comments/{commentId}/like` - Like comment
-- `POST /api/v1/beers/{id}/media` - Upload media (RFC 7578)
+- `POST /api/v1/beers/{id}/media` - Reservado; retorna `501 Not Implemented` enquanto o upload estiver desabilitado
 - `POST /api/v1/beers/{id}/reports` - Report beer (moderation)
 - `POST /api/v1/beers/{id}/deletion-requests` - Request beer deletion (moderation)
 - `GET /api/v1/beers/{id}/reports` - Get beer reports (admin)
@@ -207,6 +206,7 @@ docker run -p 8082:8082 \
 | `JWT_SECRET` | Secreto para assinar/validar JWT (obrigatório) |
 | `DB_RESET_SCHEMA` | `true`/`false` para controlar reset do schema no arranque |
 | `CORS_ALLOWED_ORIGINS` | Origens permitidas |
+| `TRUST_PROXY` | `true` somente quando um proxy confiável sobrescreve `X-Forwarded-For` |
 | `OPENAI_API_KEY` | API key para moderação de conteúdo (opcional) |
 | `REDIS_URL` | URL do Redis para cache compartilhado de moderação (opcional) |
 
