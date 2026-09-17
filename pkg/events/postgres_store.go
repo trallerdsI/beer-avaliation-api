@@ -58,13 +58,12 @@ func (p *PostgresStore) ListSince(ctx context.Context, beerID string, since time
 func (p *PostgresStore) LatestEvent(ctx context.Context, beerID string) (float64, string, error) {
 	var ts time.Time
 	var data []byte
-	err := p.db.QueryRowContext(ctx, `
+	err := scanRow(ctx, p.db, `
 		SELECT timestamp, data
 		FROM beer_events
 		WHERE beer_id = $1
 		ORDER BY timestamp DESC
-		LIMIT 1
-	`, beerID).Scan(&ts, &data)
+		LIMIT 1`, []any{beerID}, &ts, &data)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return 0, "", nil
@@ -84,4 +83,16 @@ func (p *PostgresStore) Publish(ctx context.Context, beerID string, ev Event) er
 		VALUES ($1, $2, $3, $4, $5)
 	`, ev.ID, beerID, ev.Type, data, ev.Timestamp)
 	return err
+}
+
+func scanRow(ctx context.Context, db interface {
+	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+}, query string, args []any, dest ...any) error {
+	if scanner, ok := db.(interface {
+		ScanRowContext(context.Context, string, []any, ...any) error
+	}); ok {
+		return scanner.ScanRowContext(ctx, query, args, dest...)
+	}
+	return db.QueryRowContext(ctx, query, args...).Scan(dest...)
 }

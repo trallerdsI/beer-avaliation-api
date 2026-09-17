@@ -134,10 +134,24 @@ func (u *beerUsecase) Create(ctx context.Context, beer *model.Beer) error {
 		return errors.NewAppErrorWithDetails(409, "Uma cerveja com nome semelhante já existe", "DUPLICATE_BEER", details)
 	}
 
+	event := u.newBeerEvent(beer.ID, events.TypeBeerCreated, map[string]any{"name": beer.Name})
+	if atomic, ok := u.repo.(interface {
+		ExecInTxWithEvent(context.Context, events.Event, func(context.Context, repository.BeerRepository) error) error
+	}); ok && u.events != nil {
+		if err := atomic.ExecInTxWithEvent(ctx, event, func(ctx context.Context, txRepo repository.BeerRepository) error {
+			if err := txRepo.Create(ctx, beer); err != nil {
+				return errors.NewAppError(500, "Failed to create beer", err)
+			}
+			return nil
+		}); err != nil {
+			return err
+		}
+		return u.publishEventCache(ctx, event)
+	}
 	if err := u.repo.Create(ctx, beer); err != nil {
 		return errors.NewAppError(500, "Failed to create beer", err)
 	}
-	return u.publishBeerEvent(ctx, beer.ID, events.TypeBeerCreated, map[string]any{"name": beer.Name})
+	return u.publishBeerEvent(ctx, beer.ID, event.Type, event.Data)
 }
 
 // GetByID retrieves a beer by its ID.
@@ -174,10 +188,24 @@ func (u *beerUsecase) Update(ctx context.Context, id string, beer model.Beer) er
 		return errors.NewAppError(403, "you are not allowed to update this beer", nil)
 	}
 
+	event := u.newBeerEvent(id, events.TypeBeerUpdated, map[string]any{"name": beer.Name})
+	if atomic, ok := u.repo.(interface {
+		ExecInTxWithEvent(context.Context, events.Event, func(context.Context, repository.BeerRepository) error) error
+	}); ok && u.events != nil {
+		if err := atomic.ExecInTxWithEvent(ctx, event, func(ctx context.Context, txRepo repository.BeerRepository) error {
+			if err := txRepo.Update(ctx, id, beer); err != nil {
+				return errors.NewAppError(500, "Failed to update beer", err)
+			}
+			return nil
+		}); err != nil {
+			return err
+		}
+		return u.publishEventCache(ctx, event)
+	}
 	if err := u.repo.Update(ctx, id, beer); err != nil {
 		return errors.NewAppError(500, "Failed to update beer", err)
 	}
-	return u.publishBeerEvent(ctx, id, events.TypeBeerUpdated, map[string]any{"name": beer.Name})
+	return u.publishBeerEvent(ctx, id, event.Type, event.Data)
 }
 
 // Delete removes a beer. AuthZ: only admins can delete catalog entries.
@@ -193,10 +221,24 @@ func (u *beerUsecase) Delete(ctx context.Context, id string) error {
 		return errors.NewAppError(403, "only admins can delete beers", nil)
 	}
 
+	event := u.newBeerEvent(id, events.TypeBeerDeleted, nil)
+	if atomic, ok := u.repo.(interface {
+		ExecInTxWithEvent(context.Context, events.Event, func(context.Context, repository.BeerRepository) error) error
+	}); ok && u.events != nil {
+		if err := atomic.ExecInTxWithEvent(ctx, event, func(ctx context.Context, txRepo repository.BeerRepository) error {
+			if err := txRepo.Delete(ctx, id); err != nil {
+				return errors.NewAppError(500, "Failed to delete beer", err)
+			}
+			return nil
+		}); err != nil {
+			return err
+		}
+		return u.publishEventCache(ctx, event)
+	}
 	if err := u.repo.Delete(ctx, id); err != nil {
 		return errors.NewAppError(500, "Failed to delete beer", err)
 	}
-	return u.publishBeerEvent(ctx, id, events.TypeBeerDeleted, nil)
+	return u.publishBeerEvent(ctx, id, event.Type, event.Data)
 }
 
 // canModify devolve true se o chamador (do contexto) pode editar/apagar o
@@ -225,7 +267,8 @@ func (u *beerUsecase) AddComment(ctx context.Context, id string, comment model.C
 		return errors.NewAppError(500, "Moderation check failed", err)
 	}
 
-	if err := u.repo.ExecInTx(ctx, func(ctx context.Context, txRepo repository.BeerRepository) error {
+	event := u.newBeerEvent(id, events.TypeCommentAdded, map[string]any{"commentId": comment.ID})
+	return u.execCommentMutation(ctx, event, func(ctx context.Context, txRepo repository.BeerRepository) error {
 		beer, err := txRepo.GetByID(ctx, id)
 		if err != nil {
 			return errors.NewAppError(404, "Beer not found", err)
@@ -236,10 +279,7 @@ func (u *beerUsecase) AddComment(ctx context.Context, id string, comment model.C
 			return errors.NewAppError(500, "Failed to update beer with new comment", err)
 		}
 		return nil
-	}); err != nil {
-		return err
-	}
-	return u.publishBeerEvent(ctx, id, events.TypeCommentAdded, map[string]any{"commentId": comment.ID})
+	})
 }
 
 func (u *beerUsecase) DeleteComment(ctx context.Context, id string, commentID string) error {
@@ -247,7 +287,8 @@ func (u *beerUsecase) DeleteComment(ctx context.Context, id string, commentID st
 		return err
 	}
 
-	if err := u.repo.ExecInTx(ctx, func(ctx context.Context, txRepo repository.BeerRepository) error {
+	event := u.newBeerEvent(id, events.TypeCommentDeleted, map[string]any{"commentId": commentID})
+	return u.execCommentMutation(ctx, event, func(ctx context.Context, txRepo repository.BeerRepository) error {
 		beer, err := txRepo.GetByID(ctx, id)
 		if err != nil {
 			return errors.NewAppError(404, "Beer not found", err)
@@ -274,10 +315,7 @@ func (u *beerUsecase) DeleteComment(ctx context.Context, id string, commentID st
 			return errors.NewAppError(500, "Failed to update beer after deleting comment", err)
 		}
 		return nil
-	}); err != nil {
-		return err
-	}
-	return u.publishBeerEvent(ctx, id, events.TypeCommentDeleted, map[string]any{"commentId": commentID})
+	})
 }
 
 // LikeComment regista um like num comentário. Num app social com login, o like
@@ -289,7 +327,8 @@ func (u *beerUsecase) LikeComment(ctx context.Context, beerID, commentID, userID
 		return err
 	}
 
-	if err := u.repo.ExecInTx(ctx, func(ctx context.Context, txRepo repository.BeerRepository) error {
+	event := u.newBeerEvent(beerID, events.TypeCommentLiked, map[string]any{"commentId": commentID})
+	return u.execCommentMutation(ctx, event, func(ctx context.Context, txRepo repository.BeerRepository) error {
 		beer, err := txRepo.GetByID(ctx, beerID)
 		if err != nil {
 			return errors.NewAppError(404, "Beer not found", err)
@@ -319,10 +358,7 @@ func (u *beerUsecase) LikeComment(ctx context.Context, beerID, commentID, userID
 		}
 
 		return errors.NewAppError(404, "Comment not found", nil)
-	}); err != nil {
-		return err
-	}
-	return u.publishBeerEvent(ctx, beerID, events.TypeCommentLiked, map[string]any{"commentId": commentID})
+	})
 }
 
 // AddMedia anexa um item de mídia (imagem já carregada no storage) à cerveja.
@@ -339,6 +375,29 @@ func (u *beerUsecase) AddMedia(ctx context.Context, id string, item model.MediaI
 	if !canModify(ctx, beer.CreatedBy) {
 		return nil, errors.NewAppError(403, "you are not allowed to modify this beer", nil)
 	}
+	event := u.newBeerEvent(id, events.TypeMediaAdded, map[string]any{"url": item.URL})
+	if atomic, ok := u.repo.(interface {
+		ExecInTxWithEvent(context.Context, events.Event, func(context.Context, repository.BeerRepository) error) error
+	}); ok && u.events != nil {
+		var media []model.MediaItem
+		err := atomic.ExecInTxWithEvent(ctx, event, func(ctx context.Context, txRepo repository.BeerRepository) error {
+			current, err := txRepo.GetByID(ctx, id)
+			if err != nil {
+				return err
+			}
+			current.Media = append(current.Media, item)
+			if current.ImageUrl == "" {
+				current.ImageUrl = item.URL
+			}
+			media = current.Media
+			return txRepo.Update(ctx, id, current)
+		})
+		if err != nil {
+			return nil, err
+		}
+		_ = u.publishEventCache(ctx, event)
+		return media, nil
+	}
 
 	beer.Media = append(beer.Media, item)
 	// Mantém image_url em sincronia com a primeira mídia (compat com clientes antigos).
@@ -349,7 +408,7 @@ func (u *beerUsecase) AddMedia(ctx context.Context, id string, item model.MediaI
 	if err := u.repo.Update(ctx, id, beer); err != nil {
 		return nil, errors.NewAppError(500, "Failed to attach media", err)
 	}
-	if err := u.publishBeerEvent(ctx, id, events.TypeMediaAdded, map[string]any{"url": item.URL}); err != nil {
+	if err := u.publishBeerEvent(ctx, id, event.Type, event.Data); err != nil {
 		return nil, err
 	}
 	return beer.Media, nil
@@ -394,11 +453,41 @@ func (u *beerUsecase) publishBeerEvent(ctx context.Context, beerID, eventType st
 	if u.events == nil {
 		return nil
 	}
-	return u.events.Publish(ctx, beerID, events.Event{
+	return u.events.Publish(ctx, beerID, u.newBeerEvent(beerID, eventType, data))
+}
+
+func (u *beerUsecase) execCommentMutation(ctx context.Context, event events.Event, fn func(context.Context, repository.BeerRepository) error) error {
+	if atomic, ok := u.repo.(interface {
+		ExecInTxWithEvent(context.Context, events.Event, func(context.Context, repository.BeerRepository) error) error
+	}); ok && u.events != nil {
+		if err := atomic.ExecInTxWithEvent(ctx, event, fn); err != nil {
+			return err
+		}
+		return u.publishEventCache(ctx, event)
+	}
+	if err := u.repo.ExecInTx(ctx, fn); err != nil {
+		return err
+	}
+	return u.publishBeerEvent(ctx, event.BeerID, event.Type, event.Data)
+}
+
+func (u *beerUsecase) newBeerEvent(beerID, eventType string, data map[string]any) events.Event {
+	return events.Event{
 		Type:      eventType,
 		ID:        uuid.MustNewV7(),
 		BeerID:    beerID,
 		Data:      data,
 		Timestamp: time.Now(),
+	}
+}
+
+func (u *beerUsecase) publishEventCache(ctx context.Context, event events.Event) error {
+	cache, ok := u.events.(interface {
+		PublishCache(context.Context, string, events.Event) error
 	})
+	if !ok {
+		return nil
+	}
+	_ = cache.PublishCache(ctx, event.BeerID, event)
+	return nil
 }

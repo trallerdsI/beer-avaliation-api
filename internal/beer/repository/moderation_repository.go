@@ -67,7 +67,7 @@ func (r *PostgresModerationRepository) CreateReport(ctx context.Context, report 
 
 func (r *PostgresModerationRepository) GetReportsByBeerID(ctx context.Context, beerID string, limit, offset int) ([]model.BeerReport, int, error) {
 	var total int
-	err := r.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM beer_reports WHERE beer_id = $1", beerID).Scan(&total)
+	err := scanRow(ctx, r.db, "SELECT COUNT(*) FROM beer_reports WHERE beer_id = $1", []any{beerID}, &total)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -140,7 +140,7 @@ func (r *PostgresModerationRepository) GetReports(ctx context.Context, filter mo
 	}
 
 	var total int
-	if err := r.db.QueryRowContext(ctx, countQuery, args...).Scan(&total); err != nil {
+	if err := scanRow(ctx, r.db, countQuery, args, &total); err != nil {
 		return nil, 0, err
 	}
 
@@ -246,7 +246,7 @@ func (r *PostgresModerationRepository) GetDeletionRequests(ctx context.Context, 
 	}
 
 	var total int
-	if err := r.db.QueryRowContext(ctx, countQuery, args...).Scan(&total); err != nil {
+	if err := scanRow(ctx, r.db, countQuery, args, &total); err != nil {
 		return nil, 0, err
 	}
 
@@ -316,7 +316,9 @@ func (r *PostgresModerationRepository) ResolveDeletionRequest(ctx context.Contex
 }
 
 func (r *PostgresModerationRepository) ExecInTx(ctx context.Context, fn func(ctx context.Context, txRepo ModerationRepository, txBeerRepo BeerRepository) error) error {
-	db, ok := r.db.(*sql.DB)
+	db, ok := r.db.(interface {
+		BeginTx(context.Context, *sql.TxOptions) (*sql.Tx, error)
+	})
 	if !ok {
 		return errors.NewUnavailableError()
 	}

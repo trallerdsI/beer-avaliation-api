@@ -20,6 +20,7 @@ END $$;
 ALTER TABLE beers ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS beers_select ON beers;
+DROP POLICY IF EXISTS beers_write ON beers;
 CREATE POLICY beers_select ON beers
   FOR SELECT
   USING (true);

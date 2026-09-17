@@ -185,14 +185,14 @@ func TestAddComment(t *testing.T) {
 	mockRepo.AssertExpectations(t)
 }
 
-// TestDeleteComment tests the DeleteComment method (owner can delete)
+// TestDeleteComment tests the DeleteComment method for an administrator.
 func TestDeleteComment(t *testing.T) {
 	mockRepo := new(beerRepo.MockBeerRepository)
 	usecase := NewBeerUsecase(mockRepo, moderation.NewNoopModerator(), nil)
 
 	mockRepo.On("ExecInTx", mock.Anything, mock.Anything).Return(nil)
 
-	err := usecase.DeleteComment(middleware.WithUserID(context.Background(), "user-1", ""), "1", "c1")
+	err := usecase.DeleteComment(middleware.WithUserID(context.Background(), "admin-1", "admin"), "1", "c1")
 
 	assert.NoError(t, err)
 	mockRepo.AssertExpectations(t)

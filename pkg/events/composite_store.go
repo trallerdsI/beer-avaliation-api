@@ -67,3 +67,12 @@ func (c *CompositeStore) Publish(ctx context.Context, beerID string, ev Event) e
 	}
 	return nil
 }
+
+// PublishCache refreshes only the volatile primary store after an external
+// transaction has already persisted the event durably.
+func (c *CompositeStore) PublishCache(ctx context.Context, beerID string, ev Event) error {
+	if c.primary == nil {
+		return nil
+	}
+	return c.primary.Publish(ctx, beerID, ev)
+}

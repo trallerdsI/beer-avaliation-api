@@ -41,6 +41,15 @@ type querier interface {
 	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
 }
 
+func scanRow(ctx context.Context, db querier, query string, args []any, dest ...any) error {
+	if scanner, ok := db.(interface {
+		ScanRowContext(context.Context, string, []any, ...any) error
+	}); ok {
+		return scanner.ScanRowContext(ctx, query, args, dest...)
+	}
+	return db.QueryRowContext(ctx, query, args...).Scan(dest...)
+}
+
 // beginner é o contrato mínimo para iniciar uma transação. Apenas *sql.DB
 // (pool raiz) o satisfaz — *sql.Tx explicitamente NÃO o implementa, e o
 // compilador garante isto. Compor repositórios transacionais deixa de ser
@@ -122,7 +131,7 @@ func (r *PostgresUserRepository) GetByID(ctx context.Context, id string) (model.
 	var user model.User
 	query := `SELECT id, username, email, role, created, updated_at FROM beerUsers WHERE id = $1`
 
-	err := r.db.QueryRowContext(ctx, query, id).Scan(
+	err := scanRow(ctx, r.db, query, []any{id},
 		&user.ID,
 		&user.Username,
 		&user.Email,
@@ -143,7 +152,7 @@ func (r *PostgresUserRepository) GetByEmail(ctx context.Context, email string) (
 	var user model.User
 	query := `SELECT id, username, email, password, role, created, updated_at FROM beerUsers WHERE email = $1`
 
-	err := r.db.QueryRowContext(ctx, query, email).Scan(
+	err := scanRow(ctx, r.db, query, []any{email},
 		&user.ID,
 		&user.Username,
 		&user.Email,
@@ -165,7 +174,7 @@ func (r *PostgresUserRepository) GetByExternal(ctx context.Context, provider, ex
 	var user model.User
 	query := `SELECT id, username, email, role, provider, external_sub, created, updated_at FROM beerUsers WHERE provider = $1 AND external_sub = $2`
 
-	err := r.db.QueryRowContext(ctx, query, provider, externalSub).Scan(
+	err := scanRow(ctx, r.db, query, []any{provider, externalSub},
 		&user.ID,
 		&user.Username,
 		&user.Email,
@@ -199,7 +208,7 @@ func (r *PostgresUserRepository) UpsertByExternal(ctx context.Context, user mode
 		RETURNING id, username, email, role, provider, external_sub, created, updated_at`
 
 	var created model.User
-	err := r.db.QueryRowContext(ctx, query,
+	err := scanRow(ctx, r.db, query, []any{
 		user.ID,
 		user.Username,
 		user.Email,
@@ -207,7 +216,7 @@ func (r *PostgresUserRepository) UpsertByExternal(ctx context.Context, user mode
 		user.Provider,
 		user.ExternalSub,
 		user.Created,
-	).Scan(
+	},
 		&created.ID,
 		&created.Username,
 		&created.Email,
@@ -271,7 +280,7 @@ func (r *PostgresUserRepository) List(ctx context.Context, page, pageSize int) (
 
 	// Get total count
 	var total int
-	countErr := r.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM beerUsers").Scan(&total)
+	countErr := scanRow(ctx, r.db, "SELECT COUNT(*) FROM beerUsers", nil, &total)
 	if countErr != nil {
 		return nil, 0, fmt.Errorf("failed to count users: %w", countErr)
 	}
@@ -457,7 +466,7 @@ func (r *PostgresUserRepository) GetRefreshTokenByHash(ctx context.Context, _, t
 		FROM refresh_tokens
 		WHERE token_hash = $1`
 
-	err := r.db.QueryRowContext(ctx, query, tokenHash).Scan(
+	err := scanRow(ctx, r.db, query, []any{tokenHash},
 		&token.ID,
 		&token.UserID,
 		&token.TokenHash,

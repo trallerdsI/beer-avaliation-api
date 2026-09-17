@@ -12,6 +12,7 @@ import (
 
 	"beer-review-app/internal/beer/model"
 	"beer-review-app/pkg/errors"
+	"beer-review-app/pkg/events"
 
 	_ "github.com/lib/pq"
 )
@@ -647,7 +648,9 @@ func (r *PostgresBeerRepository) DeleteComment(ctx context.Context, id string, c
 }
 
 func (r *PostgresBeerRepository) ExecInTx(ctx context.Context, fn func(ctx context.Context, txRepo BeerRepository) error) error {
-	db, ok := r.db.(*sql.DB)
+	db, ok := r.db.(interface {
+		BeginTx(context.Context, *sql.TxOptions) (*sql.Tx, error)
+	})
 	if !ok {
 		return errors.NewUnavailableError()
 	}
@@ -662,5 +665,35 @@ func (r *PostgresBeerRepository) ExecInTx(ctx context.Context, fn func(ctx conte
 		return err
 	}
 
+	return tx.Commit()
+}
+
+// ExecInTxWithEvent commits a beer mutation and its durable event together.
+func (r *PostgresBeerRepository) ExecInTxWithEvent(ctx context.Context, event events.Event, fn func(ctx context.Context, txRepo BeerRepository) error) error {
+	db, ok := r.db.(interface {
+		BeginTx(context.Context, *sql.TxOptions) (*sql.Tx, error)
+	})
+	if !ok {
+		return errors.NewUnavailableError()
+	}
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	if err := fn(ctx, &PostgresBeerRepository{db: tx}); err != nil {
+		return err
+	}
+	data, err := json.Marshal(event.Data)
+	if err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO beer_events (id, beer_id, type, data, timestamp)
+		VALUES ($1, $2, $3, $4, $5)
+	`, event.ID, event.BeerID, event.Type, data, event.Timestamp); err != nil {
+		return err
+	}
 	return tx.Commit()
 }

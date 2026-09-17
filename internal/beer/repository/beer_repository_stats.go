@@ -65,14 +65,14 @@ func (r *PostgresBeerRepository) GetAdminStats(ctx context.Context) (*AdminStats
 	stats.UsersByProvider = make(map[string]int)
 
 	// 1. Total users
-	if err := r.db.QueryRowContext(ctx, `
-		SELECT COUNT(*) FROM beerUsers`).Scan(&stats.TotalUsers); err != nil {
+	if err := scanRow(ctx, r.db, `
+		SELECT COUNT(*) FROM beerUsers`, nil, &stats.TotalUsers); err != nil {
 		return nil, fmt.Errorf("failed to count users: %w", err)
 	}
 
 	// 2. New users last 7 days
-	if err := r.db.QueryRowContext(ctx, `
-		SELECT COUNT(*) FROM beerUsers WHERE created >= NOW() - INTERVAL '7 days'`).Scan(&stats.NewUsersWeek); err != nil {
+	if err := scanRow(ctx, r.db, `
+		SELECT COUNT(*) FROM beerUsers WHERE created >= NOW() - INTERVAL '7 days'`, nil, &stats.NewUsersWeek); err != nil {
 		return nil, fmt.Errorf("failed to count new users: %w", err)
 	}
 
@@ -96,14 +96,14 @@ func (r *PostgresBeerRepository) GetAdminStats(ctx context.Context) (*AdminStats
 	}
 
 	// 4. Active admins
-	if err := r.db.QueryRowContext(ctx, `
-		SELECT COUNT(*) FROM beerUsers WHERE role = 'admin'`).Scan(&stats.AdminsCount); err != nil {
+	if err := scanRow(ctx, r.db, `
+		SELECT COUNT(*) FROM beerUsers WHERE role = 'admin'`, nil, &stats.AdminsCount); err != nil {
 		return nil, fmt.Errorf("failed to count admins: %w", err)
 	}
 
 	// 5. Total beers
-	if err := r.db.QueryRowContext(ctx, `
-		SELECT COUNT(*) FROM beers`).Scan(&stats.TotalBeers); err != nil {
+	if err := scanRow(ctx, r.db, `
+		SELECT COUNT(*) FROM beers`, nil, &stats.TotalBeers); err != nil {
 		return nil, fmt.Errorf("failed to count beers: %w", err)
 	}
 
@@ -126,31 +126,31 @@ func (r *PostgresBeerRepository) GetAdminStats(ctx context.Context) (*AdminStats
 	}
 
 	// 7. Added last 30 days
-	if err := r.db.QueryRowContext(ctx, `
-		SELECT COUNT(*) FROM beers WHERE created_at >= NOW() - INTERVAL '30 days'`).Scan(&stats.AddedLast30Days); err != nil {
+	if err := scanRow(ctx, r.db, `
+		SELECT COUNT(*) FROM beers WHERE created_at >= NOW() - INTERVAL '30 days'`, nil, &stats.AddedLast30Days); err != nil {
 		return nil, fmt.Errorf("failed to count recent beers: %w", err)
 	}
 
 	// 8. Community contributions (created_by != '' AND created_by IS NOT NULL)
-	if err := r.db.QueryRowContext(ctx, `
-		SELECT COUNT(*) FROM beers WHERE created_by IS NOT NULL AND created_by != ''`).Scan(&stats.UserCreatedBeers); err != nil {
+	if err := scanRow(ctx, r.db, `
+		SELECT COUNT(*) FROM beers WHERE created_by IS NOT NULL AND created_by != ''`, nil, &stats.UserCreatedBeers); err != nil {
 		return nil, fmt.Errorf("failed to count user created beers: %w", err)
 	}
 	stats.SystemCreatedBeers = stats.TotalBeers - stats.UserCreatedBeers
 
 	// 9. Total comments (jsonb_array_length)
-	if err := r.db.QueryRowContext(ctx, `
-		SELECT COALESCE(SUM(jsonb_array_length(comments)), 0) FROM beers`).Scan(&stats.TotalComments); err != nil {
+	if err := scanRow(ctx, r.db, `
+		SELECT COALESCE(SUM(jsonb_array_length(comments)), 0) FROM beers`, nil, &stats.TotalComments); err != nil {
 		return nil, fmt.Errorf("failed to count comments: %w", err)
 	}
 
 	// 10. Sentiment (positive vs negative from JSONB comments)
-	if err := r.db.QueryRowContext(ctx, `
+	if err := scanRow(ctx, r.db, `
 		SELECT
 			COALESCE(SUM((elem->>'positive')::int) FILTER (WHERE (elem->>'positive')::boolean = true), 0),
 			COALESCE(SUM((elem->>'positive')::int) FILTER (WHERE (elem->>'positive')::boolean = false), 0)
 		FROM beers,
-		jsonb_array_elements(comments) AS elem`).Scan(&stats.Sentiment.Positive, &stats.Sentiment.Negative); err != nil {
+		jsonb_array_elements(comments) AS elem`, nil, &stats.Sentiment.Positive, &stats.Sentiment.Negative); err != nil {
 		return nil, fmt.Errorf("failed to get sentiment: %w", err)
 	}
 	if stats.TotalComments > 0 {
@@ -158,22 +158,22 @@ func (r *PostgresBeerRepository) GetAdminStats(ctx context.Context) (*AdminStats
 	}
 
 	// 11. Total likes (sum of likes field in JSONB comments)
-	if err := r.db.QueryRowContext(ctx, `
+	if err := scanRow(ctx, r.db, `
 		SELECT COALESCE(SUM((elem->>'likes')::int), 0)
 		FROM beers,
-		jsonb_array_elements(comments) AS elem`).Scan(&stats.TotalLikes); err != nil {
+		jsonb_array_elements(comments) AS elem`, nil, &stats.TotalLikes); err != nil {
 		return nil, fmt.Errorf("failed to count likes: %w", err)
 	}
 
 	// 12. Most commented beer
 	if stats.TotalComments > 0 {
 		var mc MostCommentedBeer
-		if err := r.db.QueryRowContext(ctx, `
+		if err := scanRow(ctx, r.db, `
 			SELECT id, name, jsonb_array_length(comments) as cnt
 			FROM beers
 			WHERE jsonb_array_length(comments) > 0
 			ORDER BY cnt DESC
-			LIMIT 1`).Scan(&mc.ID, &mc.Name, &mc.Comments); err != nil {
+			LIMIT 1`, nil, &mc.ID, &mc.Name, &mc.Comments); err != nil {
 			if err != sql.ErrNoRows {
 				return nil, fmt.Errorf("failed to get most commented beer: %w", err)
 			}
@@ -183,19 +183,19 @@ func (r *PostgresBeerRepository) GetAdminStats(ctx context.Context) (*AdminStats
 	}
 
 	// 13. Last beer created at
-	if err := r.db.QueryRowContext(ctx, `
-		SELECT created_at FROM beers ORDER BY created_at DESC LIMIT 1`).Scan(&stats.LastBeerCreatedAt); err != nil {
+	if err := scanRow(ctx, r.db, `
+		SELECT created_at FROM beers ORDER BY created_at DESC LIMIT 1`, nil, &stats.LastBeerCreatedAt); err != nil {
 		if err != sql.ErrNoRows {
 			return nil, fmt.Errorf("failed to get last beer created at: %w", err)
 		}
 	}
 
 	// 14. Last DB update (most recent updated_at across tables)
-	if err := r.db.QueryRowContext(ctx, `
+	if err := scanRow(ctx, r.db, `
 		SELECT GREATEST(
 			COALESCE((SELECT MAX(updated_at) FROM beers), 'epoch'),
 			COALESCE((SELECT MAX(updated_at) FROM beerUsers), 'epoch')
-		)`).Scan(&stats.LastDBUpdate); err != nil {
+		)`, nil, &stats.LastDBUpdate); err != nil {
 		if err != sql.ErrNoRows {
 			return nil, fmt.Errorf("failed to get last db update: %w", err)
 		}
@@ -211,26 +211,26 @@ func (r *PostgresBeerRepository) GetUserStats(ctx context.Context, userID string
 	stats.UserID = userID
 
 	// 1. Beers reviewed (comentários deste usuário)
-	if err := r.db.QueryRowContext(ctx, `
+	if err := scanRow(ctx, r.db, `
 		SELECT COUNT(*)
 		FROM beers,
 		jsonb_array_elements(comments) AS elem
-		WHERE elem->>'createdBy' = $1`, userID).Scan(&stats.TotalComments); err != nil {
+		WHERE elem->>'createdBy' = $1`, []any{userID}, &stats.TotalComments); err != nil {
 		return nil, fmt.Errorf("failed to count user comments: %w", err)
 	}
 	stats.BeersReviewed = stats.TotalComments
 
 	// 2. Likes received (soma de likes nos comentários deste usuário)
-	if err := r.db.QueryRowContext(ctx, `
+	if err := scanRow(ctx, r.db, `
 		SELECT COALESCE(SUM((elem->>'likes')::int), 0)
 		FROM beers,
 		jsonb_array_elements(comments) AS elem
-		WHERE elem->>'createdBy' = $1`, userID).Scan(&stats.LikesReceived); err != nil {
+		WHERE elem->>'createdBy' = $1`, []any{userID}, &stats.LikesReceived); err != nil {
 		return nil, fmt.Errorf("failed to count likes received: %w", err)
 	}
 
 	// 3. Likes given (comentários onde o usuário deu like, via liked_by array)
-	if err := r.db.QueryRowContext(ctx, `
+	if err := scanRow(ctx, r.db, `
 		SELECT COUNT(*)
 		FROM beers,
 		jsonb_array_elements(comments) AS elem
@@ -239,18 +239,18 @@ func (r *PostgresBeerRepository) GetUserStats(ctx context.Context, userID string
 			     THEN ARRAY(SELECT 'u:' || jsonb_array_elements_text(elem->'likedBy'))
 			     ELSE ARRAY[]::text[]
 			END
-		)`, userID).Scan(&stats.LikesGiven); err != nil {
+		)`, []any{userID}, &stats.LikesGiven); err != nil {
 		return nil, fmt.Errorf("failed to count likes given: %w", err)
 	}
 
 	// 4. Positive ratio
 	var positiveCount int
 	if stats.TotalComments > 0 {
-		if err := r.db.QueryRowContext(ctx, `
+		if err := scanRow(ctx, r.db, `
 			SELECT COUNT(*)
 			FROM beers,
 			jsonb_array_elements(comments) AS elem
-			WHERE elem->>'createdBy' = $1 AND (elem->>'positive')::boolean = true`, userID).Scan(&positiveCount); err != nil {
+			WHERE elem->>'createdBy' = $1 AND (elem->>'positive')::boolean = true`, []any{userID}, &positiveCount); err != nil {
 			return nil, fmt.Errorf("failed to count positive comments: %w", err)
 		}
 		stats.PositiveRatio = float64(positiveCount) / float64(stats.TotalComments) * 100
@@ -283,14 +283,14 @@ func (r *PostgresBeerRepository) GetUserStats(ctx context.Context, userID string
 	// 6. Top aroma notes (mais frequente)
 	if len(stats.FavoriteStyles) > 0 {
 		var topAroma string
-		if err := r.db.QueryRowContext(ctx, `
+		if err := scanRow(ctx, r.db, `
 			SELECT aroma
 			FROM beers b
 			JOIN jsonb_array_elements(b.comments) AS elem ON true
 			WHERE elem->>'createdBy' = $1
 			GROUP BY aroma
 			ORDER BY COUNT(*) DESC
-			LIMIT 1`, userID).Scan(&topAroma); err != nil {
+			LIMIT 1`, []any{userID}, &topAroma); err != nil {
 			if err != sql.ErrNoRows {
 				return nil, fmt.Errorf("failed to get top aroma: %w", err)
 			}
@@ -300,8 +300,8 @@ func (r *PostgresBeerRepository) GetUserStats(ctx context.Context, userID string
 	}
 
 	// 7. Beers added to catalog (created_by = user_id)
-	if err := r.db.QueryRowContext(ctx, `
-		SELECT COUNT(*) FROM beers WHERE created_by = $1 AND created_by IS NOT NULL AND created_by != ''`, userID).Scan(&stats.BeersAdded); err != nil {
+	if err := scanRow(ctx, r.db, `
+		SELECT COUNT(*) FROM beers WHERE created_by = $1 AND created_by IS NOT NULL AND created_by != ''`, []any{userID}, &stats.BeersAdded); err != nil {
 		return nil, fmt.Errorf("failed to count beers added: %w", err)
 	}
 
