@@ -263,7 +263,7 @@ func TestMutationStatusCodes(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			m := new(MockBeerUsecase)
-	controller := NewBeerController(m, mockLogger, nil)
+			controller := NewBeerController(m, mockLogger, nil)
 			tc.setupMock(m)
 
 			var b bytes.Buffer

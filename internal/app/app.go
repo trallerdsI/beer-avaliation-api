@@ -122,7 +122,7 @@ func BuildRouterWithDBErr(db *database.RetryableDB, dbErr error, logger *slog.Lo
 		}
 	}
 
-	beerUsecase := beerUsecasePkg.NewBeerUsecase(beerRepo, nil, moderator, eventPub)
+	beerUsecase := beerUsecasePkg.NewBeerUsecase(beerRepo, moderator, eventPub)
 	moderationRepo, err := beerRepository.NewPostgresModerationRepository(db)
 	if err != nil {
 		slog.Error("falha ao inicializar repositório de moderação", "err", err)

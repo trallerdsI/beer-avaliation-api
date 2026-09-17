@@ -36,7 +36,7 @@ func TestIntegration_BeerUsecase_RBAC(t *testing.T) {
 	beerRepo, err := repository.NewPostgresBeerRepository(db)
 	require.NoError(t, err)
 
-	uc := NewBeerUsecase(beerRepo, nil, moderation.NewNoopModerator(), nil)
+	uc := NewBeerUsecase(beerRepo, moderation.NewNoopModerator(), nil)
 
 	ownerCtx := middleware.WithUserID(ctx, "user-1", "")
 	adminCtx := middleware.WithUserID(ctx, "admin-1", usermodel.RoleAdmin)

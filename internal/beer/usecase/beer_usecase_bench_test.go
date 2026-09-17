@@ -14,7 +14,7 @@ import (
 func BenchmarkSearchBeers_ByQuery(b *testing.B) {
 	mockRepo := new(repository.MockBeerRepository)
 	mockRepo.On("SearchBeers", mock.Anything, mock.Anything).Return([]model.Beer{}, 0, false, nil)
-	uc := NewBeerUsecase(mockRepo, nil, moderation.NewNoopModerator(), nil)
+	uc := NewBeerUsecase(mockRepo, moderation.NewNoopModerator(), nil)
 	filters := model.BeerFilters{Query: "IPA", Page: 1, PageSize: 20}
 
 	b.ReportAllocs()
@@ -27,7 +27,7 @@ func BenchmarkSearchBeers_ByQuery(b *testing.B) {
 func BenchmarkSearchBeers_ByStyle(b *testing.B) {
 	mockRepo := new(repository.MockBeerRepository)
 	mockRepo.On("SearchBeers", mock.Anything, mock.Anything).Return([]model.Beer{}, 0, false, nil)
-	uc := NewBeerUsecase(mockRepo, nil, moderation.NewNoopModerator(), nil)
+	uc := NewBeerUsecase(mockRepo, moderation.NewNoopModerator(), nil)
 	filters := model.BeerFilters{Style: "Ale", Page: 1, PageSize: 20}
 
 	b.ReportAllocs()
@@ -40,7 +40,7 @@ func BenchmarkSearchBeers_ByStyle(b *testing.B) {
 func BenchmarkSearchBeers_FuzzyMatch(b *testing.B) {
 	mockRepo := new(repository.MockBeerRepository)
 	mockRepo.On("SearchBeers", mock.Anything, mock.Anything).Return([]model.Beer{}, 0, true, nil)
-	uc := NewBeerUsecase(mockRepo, nil, moderation.NewNoopModerator(), nil)
+	uc := NewBeerUsecase(mockRepo, moderation.NewNoopModerator(), nil)
 	fuzzy := true
 	filters := model.BeerFilters{Query: "ip", Fuzzy: &fuzzy, Page: 1, PageSize: 20}
 

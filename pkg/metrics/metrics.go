@@ -59,7 +59,6 @@ func RecordMetrics(ctx context.Context, pattern, method, status string, duration
 
 	RequestDuration.WithLabelValues(pattern, method, status).Observe(duration)
 	TotalRequests.WithLabelValues(pattern, method, status).Inc()
-	SSEActiveConnections.Set(0)
 }
 
 // IsServerlessRuntime devolve true quando a aplicação corre em modo serverless.

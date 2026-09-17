@@ -20,7 +20,7 @@ import (
 // TestGetAll tests the GetAll method
 func TestGetAll(t *testing.T) {
 	mockRepo := new(beerRepo.MockBeerRepository)
-	usecase := NewBeerUsecase(mockRepo, nil, moderation.NewNoopModerator(), nil)
+	usecase := NewBeerUsecase(mockRepo, moderation.NewNoopModerator(), nil)
 
 	beers := []model.Beer{{ID: "1", Name: "Beer1"}, {ID: "2", Name: "Beer2"}}
 
@@ -38,7 +38,7 @@ func TestGetAll(t *testing.T) {
 // nome semelhante (Decisão C), com sugestões no detail.
 func TestCreateDuplicate(t *testing.T) {
 	mockRepo := new(beerRepo.MockBeerRepository)
-	usecase := NewBeerUsecase(mockRepo, nil, moderation.NewNoopModerator(), nil)
+	usecase := NewBeerUsecase(mockRepo, moderation.NewNoopModerator(), nil)
 
 	beer := model.Beer{ID: "1", Name: "Heineken"}
 	existing := []model.Beer{{ID: "12", Name: "Heineken Long Neck"}}
@@ -56,7 +56,7 @@ func TestCreateDuplicate(t *testing.T) {
 
 func TestCreate(t *testing.T) {
 	mockRepo := new(beerRepo.MockBeerRepository)
-	usecase := NewBeerUsecase(mockRepo, nil, moderation.NewNoopModerator(), nil)
+	usecase := NewBeerUsecase(mockRepo, moderation.NewNoopModerator(), nil)
 
 	beer := model.Beer{ID: "1", Name: "Beer1"}
 
@@ -73,7 +73,7 @@ func TestCreate(t *testing.T) {
 // TestGetByID tests the GetByID method
 func TestGetByID(t *testing.T) {
 	mockRepo := new(beerRepo.MockBeerRepository)
-	usecase := NewBeerUsecase(mockRepo, nil, moderation.NewNoopModerator(), nil)
+	usecase := NewBeerUsecase(mockRepo, moderation.NewNoopModerator(), nil)
 
 	beer := model.Beer{ID: "1", Name: "Beer1"}
 
@@ -89,7 +89,7 @@ func TestGetByID(t *testing.T) {
 // TestUpdate tests the Update method
 func TestUpdate(t *testing.T) {
 	mockRepo := new(beerRepo.MockBeerRepository)
-	usecase := NewBeerUsecase(mockRepo, nil, moderation.NewNoopModerator(), nil)
+	usecase := NewBeerUsecase(mockRepo, moderation.NewNoopModerator(), nil)
 
 	beer := model.Beer{ID: "1", Name: "Updated Beer"}
 	existing := model.Beer{ID: "1", Name: "Old Beer", CreatedBy: "user-1"}
@@ -106,7 +106,7 @@ func TestUpdate(t *testing.T) {
 // TestDelete tests the Delete method
 func TestDelete(t *testing.T) {
 	mockRepo := new(beerRepo.MockBeerRepository)
-	usecase := NewBeerUsecase(mockRepo, nil, moderation.NewNoopModerator(), nil)
+	usecase := NewBeerUsecase(mockRepo, moderation.NewNoopModerator(), nil)
 
 	existing := model.Beer{ID: "1", Name: "Beer1", CreatedBy: "user-1"}
 
@@ -122,7 +122,7 @@ func TestDelete(t *testing.T) {
 // TestAddComment tests the AddComment method
 func TestAddComment(t *testing.T) {
 	mockRepo := new(beerRepo.MockBeerRepository)
-	usecase := NewBeerUsecase(mockRepo, nil, moderation.NewNoopModerator(), nil)
+	usecase := NewBeerUsecase(mockRepo, moderation.NewNoopModerator(), nil)
 	commentText := "Nice beer!"
 	comment := model.Comment{ID: "c1", Text: commentText}
 
@@ -137,7 +137,7 @@ func TestAddComment(t *testing.T) {
 // TestDeleteComment tests the DeleteComment method (owner can delete)
 func TestDeleteComment(t *testing.T) {
 	mockRepo := new(beerRepo.MockBeerRepository)
-	usecase := NewBeerUsecase(mockRepo, nil, moderation.NewNoopModerator(), nil)
+	usecase := NewBeerUsecase(mockRepo, moderation.NewNoopModerator(), nil)
 
 	mockRepo.On("ExecInTx", mock.Anything, mock.Anything).Return(nil)
 
@@ -150,7 +150,7 @@ func TestDeleteComment(t *testing.T) {
 // TestDeleteCommentForbidden tests that a non-owner (non-admin) gets 403
 func TestDeleteCommentForbidden(t *testing.T) {
 	mockRepo := new(beerRepo.MockBeerRepository)
-	usecase := NewBeerUsecase(mockRepo, nil, moderation.NewNoopModerator(), nil)
+	usecase := NewBeerUsecase(mockRepo, moderation.NewNoopModerator(), nil)
 
 	mockRepo.On("ExecInTx", mock.Anything, mock.Anything).Return(appErrors.NewAppError(403, "forbidden", nil))
 
@@ -166,7 +166,7 @@ func TestDeleteCommentForbidden(t *testing.T) {
 // TestLikeComment tests the LikeComment method
 func TestLikeComment(t *testing.T) {
 	mockRepo := new(beerRepo.MockBeerRepository)
-	usecase := NewBeerUsecase(mockRepo, nil, moderation.NewNoopModerator(), nil)
+	usecase := NewBeerUsecase(mockRepo, moderation.NewNoopModerator(), nil)
 
 	mockRepo.On("ExecInTx", mock.Anything, mock.Anything).Return(nil)
 
@@ -179,7 +179,7 @@ func TestLikeComment(t *testing.T) {
 // TestSearchBeers tests the SearchBeers method
 func TestSearchBeers(t *testing.T) {
 	mockRepo := new(beerRepo.MockBeerRepository)
-	usecase := NewBeerUsecase(mockRepo, nil, moderation.NewNoopModerator(), nil)
+	usecase := NewBeerUsecase(mockRepo, moderation.NewNoopModerator(), nil)
 
 	filters := model.BeerFilters{Query: "Beer", Page: 1, PageSize: 10}
 	beers := []model.Beer{{ID: "1", Name: "Beer1"}}
@@ -199,7 +199,7 @@ func TestSearchBeers(t *testing.T) {
 // TestSearchBeersPropagatesError garante que erro do repositório vira 500.
 func TestSearchBeersPropagatesError(t *testing.T) {
 	mockRepo := new(beerRepo.MockBeerRepository)
-	uc := NewBeerUsecase(mockRepo, nil, moderation.NewNoopModerator(), nil)
+	uc := NewBeerUsecase(mockRepo, moderation.NewNoopModerator(), nil)
 
 	filters := model.BeerFilters{Query: "x", Page: 1, PageSize: 10}
 	mockRepo.On("SearchBeers", mock.Anything, filters).Return([]model.Beer{}, 0, false, stderrors.New("db boom"))
@@ -214,7 +214,7 @@ func TestSearchBeersPropagatesError(t *testing.T) {
 // TestGetAllPropagatesError garante que erro do repositório vira 500.
 func TestGetAllPropagatesError(t *testing.T) {
 	mockRepo := new(beerRepo.MockBeerRepository)
-	uc := NewBeerUsecase(mockRepo, nil, moderation.NewNoopModerator(), nil)
+	uc := NewBeerUsecase(mockRepo, moderation.NewNoopModerator(), nil)
 
 	mockRepo.On("GetAll", mock.Anything).Return([]model.Beer{}, stderrors.New("db boom"))
 
@@ -229,7 +229,7 @@ func TestGetAllPropagatesError(t *testing.T) {
 // semelhantes, o usecase regista o criador (AuthZ) e cria a cerveja.
 func TestCreateSuccessNoDuplicate(t *testing.T) {
 	mockRepo := new(beerRepo.MockBeerRepository)
-	uc := NewBeerUsecase(mockRepo, nil, moderation.NewNoopModerator(), nil)
+	uc := NewBeerUsecase(mockRepo, moderation.NewNoopModerator(), nil)
 
 	beer := model.Beer{ID: "1", Name: "Unica"}
 	mockRepo.On("SearchBeers", mock.Anything, mock.Anything).Return([]model.Beer{}, 0, false, nil)
@@ -247,7 +247,7 @@ func TestCreateSuccessNoDuplicate(t *testing.T) {
 // estrutura do detail (lista de sugestões) devolvida ao cliente.
 func TestCreateDuplicateWithSuggestions(t *testing.T) {
 	mockRepo := new(beerRepo.MockBeerRepository)
-	uc := NewBeerUsecase(mockRepo, nil, moderation.NewNoopModerator(), nil)
+	uc := NewBeerUsecase(mockRepo, moderation.NewNoopModerator(), nil)
 
 	beer := model.Beer{ID: "1", Name: "Heineken"}
 	existing := []model.Beer{{ID: "12", Name: "Heineken Long Neck"}}
@@ -266,7 +266,7 @@ func TestCreateDuplicateWithSuggestions(t *testing.T) {
 // (identificado por user_id, Decisão A) curte duas vezes.
 func TestLikeCommentAlreadyLiked(t *testing.T) {
 	mockRepo := new(beerRepo.MockBeerRepository)
-	uc := NewBeerUsecase(mockRepo, nil, moderation.NewNoopModerator(), nil)
+	uc := NewBeerUsecase(mockRepo, moderation.NewNoopModerator(), nil)
 
 	mockRepo.On("ExecInTx", mock.Anything, mock.Anything).Return(appErrors.NewAppError(400, "already liked", nil))
 
@@ -280,7 +280,7 @@ func TestLikeCommentAlreadyLiked(t *testing.T) {
 // TestLikeCommentCommentNotFound valida o 404 quando o comentário não existe.
 func TestLikeCommentCommentNotFound(t *testing.T) {
 	mockRepo := new(beerRepo.MockBeerRepository)
-	uc := NewBeerUsecase(mockRepo, nil, moderation.NewNoopModerator(), nil)
+	uc := NewBeerUsecase(mockRepo, moderation.NewNoopModerator(), nil)
 
 	mockRepo.On("ExecInTx", mock.Anything, mock.Anything).Return(appErrors.NewAppError(404, "Comment not found", nil))
 
@@ -295,7 +295,7 @@ func TestLikeCommentCommentNotFound(t *testing.T) {
 // admin) tenta apagar o comentário de outro (Gap de Product QA / Decisão B).
 func TestDeleteCommentForbiddenNonOwner(t *testing.T) {
 	mockRepo := new(beerRepo.MockBeerRepository)
-	uc := NewBeerUsecase(mockRepo, nil, moderation.NewNoopModerator(), nil)
+	uc := NewBeerUsecase(mockRepo, moderation.NewNoopModerator(), nil)
 
 	mockRepo.On("ExecInTx", mock.Anything, mock.Anything).Return(appErrors.NewAppError(403, "forbidden", nil))
 
@@ -310,7 +310,7 @@ func TestDeleteCommentForbiddenNonOwner(t *testing.T) {
 // (escopo global de admin), mesmo não sendo o dono.
 func TestDeleteCommentAdminOverride(t *testing.T) {
 	mockRepo := new(beerRepo.MockBeerRepository)
-	uc := NewBeerUsecase(mockRepo, nil, moderation.NewNoopModerator(), nil)
+	uc := NewBeerUsecase(mockRepo, moderation.NewNoopModerator(), nil)
 
 	mockRepo.On("ExecInTx", mock.Anything, mock.Anything).Return(nil)
 
@@ -321,7 +321,7 @@ func TestDeleteCommentAdminOverride(t *testing.T) {
 
 func TestGetPaginated(t *testing.T) {
 	mockRepo := new(beerRepo.MockBeerRepository)
-	uc := NewBeerUsecase(mockRepo, nil, moderation.NewNoopModerator(), nil)
+	uc := NewBeerUsecase(mockRepo, moderation.NewNoopModerator(), nil)
 
 	beers := []model.Beer{{ID: "1", Name: "Beer1"}}
 	mockRepo.On("GetPaginated", mock.Anything, 1, 10).Return(beers, 1, nil)
@@ -336,7 +336,7 @@ func TestGetPaginated(t *testing.T) {
 
 func TestGetPaginatedPropagatesError(t *testing.T) {
 	mockRepo := new(beerRepo.MockBeerRepository)
-	uc := NewBeerUsecase(mockRepo, nil, moderation.NewNoopModerator(), nil)
+	uc := NewBeerUsecase(mockRepo, moderation.NewNoopModerator(), nil)
 
 	mockRepo.On("GetPaginated", mock.Anything, 1, 10).Return([]model.Beer{}, 0, stderrors.New("db boom"))
 
@@ -349,7 +349,7 @@ func TestGetPaginatedPropagatesError(t *testing.T) {
 
 func TestUpdateAdminOverride(t *testing.T) {
 	mockRepo := new(beerRepo.MockBeerRepository)
-	uc := NewBeerUsecase(mockRepo, nil, moderation.NewNoopModerator(), nil)
+	uc := NewBeerUsecase(mockRepo, moderation.NewNoopModerator(), nil)
 
 	existing := model.Beer{ID: "1", Name: "Old", CreatedBy: "owner-1"}
 	updated := model.Beer{ID: "1", Name: "New"}
@@ -365,7 +365,7 @@ func TestUpdateAdminOverride(t *testing.T) {
 
 func TestUpdateForbidden(t *testing.T) {
 	mockRepo := new(beerRepo.MockBeerRepository)
-	uc := NewBeerUsecase(mockRepo, nil, moderation.NewNoopModerator(), nil)
+	uc := NewBeerUsecase(mockRepo, moderation.NewNoopModerator(), nil)
 
 	existing := model.Beer{ID: "1", Name: "Old", CreatedBy: "owner-1"}
 
@@ -381,7 +381,7 @@ func TestUpdateForbidden(t *testing.T) {
 
 func TestDeleteAdminOverride(t *testing.T) {
 	mockRepo := new(beerRepo.MockBeerRepository)
-	uc := NewBeerUsecase(mockRepo, nil, moderation.NewNoopModerator(), nil)
+	uc := NewBeerUsecase(mockRepo, moderation.NewNoopModerator(), nil)
 
 	existing := model.Beer{ID: "1", Name: "Beer1", CreatedBy: "owner-1"}
 
@@ -396,7 +396,7 @@ func TestDeleteAdminOverride(t *testing.T) {
 
 func TestAddMedia(t *testing.T) {
 	mockRepo := new(beerRepo.MockBeerRepository)
-	uc := NewBeerUsecase(mockRepo, nil, moderation.NewNoopModerator(), nil)
+	uc := NewBeerUsecase(mockRepo, moderation.NewNoopModerator(), nil)
 
 	beer := model.Beer{ID: "1", Name: "Beer1", CreatedBy: "owner-1", Media: []model.MediaItem{}}
 	item := model.MediaItem{URL: "http://img", Type: "image"}
@@ -414,7 +414,7 @@ func TestAddMedia(t *testing.T) {
 
 func TestAddMediaForbidden(t *testing.T) {
 	mockRepo := new(beerRepo.MockBeerRepository)
-	uc := NewBeerUsecase(mockRepo, nil, moderation.NewNoopModerator(), nil)
+	uc := NewBeerUsecase(mockRepo, moderation.NewNoopModerator(), nil)
 
 	beer := model.Beer{ID: "1", Name: "Beer1", CreatedBy: "owner-1"}
 
@@ -430,7 +430,7 @@ func TestAddMediaForbidden(t *testing.T) {
 
 func TestGetByIDPropagatesError(t *testing.T) {
 	mockRepo := new(beerRepo.MockBeerRepository)
-	uc := NewBeerUsecase(mockRepo, nil, moderation.NewNoopModerator(), nil)
+	uc := NewBeerUsecase(mockRepo, moderation.NewNoopModerator(), nil)
 
 	mockRepo.On("GetByID", mock.Anything, "1").Return(model.Beer{}, stderrors.New("db boom"))
 
@@ -441,7 +441,7 @@ func TestGetByIDPropagatesError(t *testing.T) {
 
 func TestUpdateBeerNotFound(t *testing.T) {
 	mockRepo := new(beerRepo.MockBeerRepository)
-	uc := NewBeerUsecase(mockRepo, nil, moderation.NewNoopModerator(), nil)
+	uc := NewBeerUsecase(mockRepo, moderation.NewNoopModerator(), nil)
 
 	mockRepo.On("GetByID", mock.Anything, "1").Return(model.Beer{}, stderrors.New("not found"))
 
@@ -471,7 +471,7 @@ func TestCanModify_EmptyOwnerOnlyAdmin(t *testing.T) {
 }
 
 func TestUnavailable_Returns503WhenRepoNil(t *testing.T) {
-	uc := NewBeerUsecase(nil, nil, moderation.NewNoopModerator(), nil)
+	uc := NewBeerUsecase(nil, moderation.NewNoopModerator(), nil)
 
 	_, err := uc.GetAll(context.Background())
 	assert.Error(t, err)
@@ -481,7 +481,7 @@ func TestUnavailable_Returns503WhenRepoNil(t *testing.T) {
 }
 func TestAddMedia_SyncsImageUrl(t *testing.T) {
 	mockRepo := new(beerRepo.MockBeerRepository)
-	uc := NewBeerUsecase(mockRepo, nil, moderation.NewNoopModerator(), nil)
+	uc := NewBeerUsecase(mockRepo, moderation.NewNoopModerator(), nil)
 
 	beer := model.Beer{ID: "1", Name: "Beer1", CreatedBy: "owner-1", ImageUrl: ""}
 	item := model.MediaItem{URL: "https://img.example.com/beer.jpg", Type: "image/jpeg"}
@@ -497,7 +497,7 @@ func TestAddMedia_SyncsImageUrl(t *testing.T) {
 
 func TestLikeComment_UsesUserIDOverDeviceID(t *testing.T) {
 	mockRepo := new(beerRepo.MockBeerRepository)
-	uc := NewBeerUsecase(mockRepo, nil, moderation.NewNoopModerator(), nil)
+	uc := NewBeerUsecase(mockRepo, moderation.NewNoopModerator(), nil)
 
 	mockRepo.On("ExecInTx", mock.Anything, mock.Anything).Return(nil)
 
@@ -507,7 +507,7 @@ func TestLikeComment_UsesUserIDOverDeviceID(t *testing.T) {
 
 func TestLikeComment_DeviceIDFallback(t *testing.T) {
 	mockRepo := new(beerRepo.MockBeerRepository)
-	uc := NewBeerUsecase(mockRepo, nil, moderation.NewNoopModerator(), nil)
+	uc := NewBeerUsecase(mockRepo, moderation.NewNoopModerator(), nil)
 
 	mockRepo.On("ExecInTx", mock.Anything, mock.Anything).Return(nil)
 

@@ -148,12 +148,12 @@ func NewRateLimitMiddleware(limit int, window time.Duration) func(http.Handler) 
 	if window <= 0 {
 		window = defaultWriteRateLimitWindow
 	}
-	rl := newRateLimiterWith(limit, window)
 	if rateLimitDisabled() {
 		return func(next http.Handler) http.Handler {
 			return next
 		}
 	}
+	rl := newRateLimiterWith(limit, window)
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if !isWriteMethod(r.Method) {

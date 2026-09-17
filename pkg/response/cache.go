@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"net/http"
 	"strconv"
+	"strings"
 )
 
 // Pacote response/cache: helpers de HTTP Caching (RFC 9111) para reduzir o
@@ -41,41 +42,12 @@ func IfNoneMatchMatches(r *http.Request, etag string) bool {
 	}
 	// RFC 9111: comparação de ETag é ASCII case-sensitive; múltiplos valores
 	// separados por vírgula são aceites.
-	for _, cand := range splitETags(inm) {
-		if cand == etag {
+	for _, cand := range strings.Split(inm, ",") {
+		if t := strings.TrimSpace(cand); t != "" && t == etag {
 			return true
 		}
 	}
 	return false
-}
-
-// splitETags separa a lista comma-separated de ETags do header.
-func splitETags(inm string) []string {
-	var out []string
-	start := 0
-	for i := 0; i < len(inm); i++ {
-		if inm[i] == ',' {
-			if t := trimSpace(inm[start:i]); t != "" {
-				out = append(out, t)
-			}
-			start = i + 1
-		}
-	}
-	if t := trimSpace(inm[start:]); t != "" {
-		out = append(out, t)
-	}
-	return out
-}
-
-func trimSpace(s string) string {
-	start, end := 0, len(s)
-	for start < end && (s[start] == ' ' || s[start] == '\t') {
-		start++
-	}
-	for end > start && (s[end-1] == ' ' || s[end-1] == '\t') {
-		end--
-	}
-	return s[start:end]
 }
 
 // SetCacheHeaders aplica ETag e Cache-Control numa resposta de leitura. O

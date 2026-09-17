@@ -66,7 +66,7 @@ type eventStore interface {
 // NewBeerUsecase creates a new instance of BeerUsecase.
 // moderator pode ser nil (ex: testes offline); neste caso a moderação é ignorada.
 // events pode ser nil (ex: testes, serverless); neste caso nenhum evento é emitido.
-func NewBeerUsecase(repo repository.BeerRepository, _ interface{}, moderator moderation.Moderator, events eventStore) BeerUsecase {
+func NewBeerUsecase(repo repository.BeerRepository, moderator moderation.Moderator, events eventStore) BeerUsecase {
 	u := &beerUsecase{
 		repo:   repo,
 		events: events,
