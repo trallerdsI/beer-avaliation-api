@@ -5,3 +5,5 @@
 ignore
 coverage.html
 coverage.out
+.vercel
+.env*
