@@ -40,6 +40,7 @@ type OIDCVerifier struct {
 	httpClient     *http.Client
 	fetchJWKS      func(ctx context.Context, url string) (jwt.MapClaims, error)  // hook de teste
 	verifyOverride func(ctx context.Context, idToken string) (OIDCClaims, error) // hook de teste
+	jwksCache      *JWKSCache
 }
 
 // NewOIDCVerifier cria um verificador para o issuer/audience dados.
@@ -54,7 +55,13 @@ func NewOIDCVerifier(issuer, audience, jwksURL string) *OIDCVerifier {
 		jwksURL:  jwksURL,
 		httpClient: &http.Client{
 			Timeout: 5 * time.Second,
+			Transport: &http.Transport{
+				MaxIdleConns:        100,
+				MaxIdleConnsPerHost: 10,
+				IdleConnTimeout:     90 * time.Second,
+			},
 		},
+		jwksCache: NewJWKSCache(24 * time.Hour),
 	}
 }
 
@@ -148,6 +155,7 @@ func (v *OIDCVerifier) InvalidateCache() {
 	v.keyFunc = nil
 	v.cachedAt = time.Time{}
 	v.mu.Unlock()
+	v.jwksCache = NewJWKSCache(24 * time.Hour) // reset cache with default TTL
 }
 
 // SetVerifyOverride injeta uma função de verificação alternativa (apenas para
@@ -190,16 +198,28 @@ func (v *OIDCVerifier) refreshKeys(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+
+	// Populate JWKSCache with new keys
+	for kid, key := range set {
+		v.jwksCache.Set(kid, key)
+	}
+
 	kf := func(t *jwt.Token) (interface{}, error) {
 		kid, _ := t.Header["kid"].(string)
 		if kid == "" {
 			return nil, fmt.Errorf("kid em falta no header do token")
 		}
-		key, ok := set[kid]
-		if !ok {
-			return nil, fmt.Errorf("chave %q não encontrada no JWKS", kid)
+		// First try cache
+		if key, ok := v.jwksCache.Get(kid); ok {
+			return key, nil
 		}
-		return key, nil
+		// Cache miss: trigger refresh and retry once
+		if v.refreshKeys(ctx) == nil {
+			if key, ok := v.jwksCache.Get(kid); ok {
+				return key, nil
+			}
+		}
+		return nil, fmt.Errorf("chave %q não encontrada no JWKS", kid)
 	}
 
 	v.mu.Lock()

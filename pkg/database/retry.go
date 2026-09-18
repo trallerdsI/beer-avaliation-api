@@ -108,6 +108,7 @@ func IsTransientError(err error) bool {
 // retryExec executes a function with exponential backoff + jitter.
 func retryExec[T any](ctx context.Context, maxRetries int, baseDelay time.Duration, operation string, fn func() (T, error)) (T, error) {
 	var lastErr error
+	var timer *time.Timer
 	for attempt := 0; attempt <= maxRetries; attempt++ {
 		if ctx.Err() != nil {
 			var zero T
@@ -136,9 +137,18 @@ func retryExec[T any](ctx context.Context, maxRetries int, baseDelay time.Durati
 			}
 			delay := time.Duration(math.Pow(2, float64(attempt)))*baseDelay + jitter
 
+			if timer == nil {
+				timer = time.NewTimer(delay)
+			} else {
+				timer.Reset(delay)
+			}
+
 			select {
-			case <-time.After(delay):
+			case <-timer.C:
 			case <-ctx.Done():
+				if !timer.Stop() {
+					<-timer.C // drain if fired
+				}
 				var zero T
 				return zero, ctx.Err()
 			}

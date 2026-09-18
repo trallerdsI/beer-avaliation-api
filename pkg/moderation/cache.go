@@ -3,9 +3,9 @@ package moderation
 import (
 	"context"
 	"fmt"
-	"sync"
 	"time"
 
+	"github.com/hashicorp/golang-lru/v2/expirable"
 	"github.com/redis/go-redis/v9"
 
 	"beer-review-app/pkg/metrics"
@@ -17,22 +17,20 @@ type ModerationCache interface {
 	Set(ctx context.Context, key string, value bool) error
 }
 
-// InMemoryModerationCache implements ModerationCache using a simple map.
+// InMemoryModerationCache implements ModerationCache using an LRU cache with TTL.
+// Bounded size (10k entries) and 24h TTL prevent unbounded memory growth.
 type InMemoryModerationCache struct {
-	mu    sync.RWMutex
-	cache map[string]bool
+	lru *expirable.LRU[string, bool]
 }
 
 func NewInMemoryModerationCache() *InMemoryModerationCache {
 	return &InMemoryModerationCache{
-		cache: make(map[string]bool),
+		lru: expirable.NewLRU[string, bool](10000, nil, 24*time.Hour),
 	}
 }
 
 func (c *InMemoryModerationCache) Get(_ context.Context, key string) (bool, bool, error) {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	val, ok := c.cache[key]
+	val, ok := c.lru.Get(key)
 	if ok {
 		metrics.ModerationCacheHitsTotal.WithLabelValues("memory").Inc()
 	}
@@ -40,9 +38,7 @@ func (c *InMemoryModerationCache) Get(_ context.Context, key string) (bool, bool
 }
 
 func (c *InMemoryModerationCache) Set(_ context.Context, key string, value bool) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.cache[key] = value
+	c.lru.Add(key, value)
 	return nil
 }
 

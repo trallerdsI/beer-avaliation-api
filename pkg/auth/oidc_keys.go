@@ -8,13 +8,20 @@ import (
 	"math/big"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 )
 
+type cachedKey struct {
+	key     *rsa.PublicKey
+	expires time.Time
+}
+
 // parseJWKS converte o documento JWKS (mapa genérico) num mapa kid->*rsa.PublicKey.
 // Suporta apenas RSA (RS256), que é o que Google e Apple usam para id_tokens.
+// Keys expire after 24h to handle key rotation without requiring process restart.
 func parseJWKS(raw map[string]interface{}) (map[string]*rsa.PublicKey, error) {
 	keysRaw, ok := raw["keys"].([]interface{})
 	if !ok {
@@ -91,6 +98,59 @@ func parseMaxAge(cc string) (time.Duration, bool) {
 
 func readAll(r io.Reader) ([]byte, error) {
 	return io.ReadAll(r)
+}
+
+// JWKSCache provides a thread-safe cache for JWKS keys with TTL.
+type JWKSCache struct {
+	mu    sync.RWMutex
+	keys  map[string]cachedKey
+	ttl   time.Duration
+}
+
+func NewJWKSCache(ttl time.Duration) *JWKSCache {
+	if ttl <= 0 {
+		ttl = 24 * time.Hour // default 24h
+	}
+	return &JWKSCache{
+		keys: make(map[string]cachedKey),
+		ttl:  ttl,
+	}
+}
+
+func (c *JWKSCache) Get(kid string) (*rsa.PublicKey, bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	ck, ok := c.keys[kid]
+	if !ok || time.Now().After(ck.expires) {
+		return nil, false
+	}
+	return ck.key, true
+}
+
+func (c *JWKSCache) Set(kid string, key *rsa.PublicKey) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.keys[kid] = cachedKey{
+		key:     key,
+		expires: time.Now().Add(c.ttl),
+	}
+}
+
+func (c *JWKSCache) Delete(kid string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	delete(c.keys, kid)
+}
+
+func (c *JWKSCache) CleanupExpired() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	now := time.Now()
+	for kid, ck := range c.keys {
+		if now.After(ck.expires) {
+			delete(c.keys, kid)
+		}
+	}
 }
 
 // compile-time: garantir que jwt.MapClaims é o tipo usado no hook de teste.

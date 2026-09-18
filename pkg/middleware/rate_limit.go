@@ -18,6 +18,8 @@ import (
 const (
 	defaultWriteRateLimit       = 10
 	defaultWriteRateLimitWindow = time.Minute
+	maxRateLimitKeys            = 100000 // hard cap to prevent unbounded memory growth
+	rateLimitCleanupInterval    = 5 * time.Minute
 )
 
 var rateLimitedTotal = prometheus.NewCounterVec(
@@ -33,10 +35,11 @@ func init() {
 }
 
 type rateLimiter struct {
-	mu     sync.Mutex
-	hits   map[string][]time.Time
-	limit  int
-	window time.Duration
+	mu           sync.Mutex
+	hits         map[string][]time.Time
+	limit        int
+	window       time.Duration
+	lastCleanup  time.Time
 }
 
 func newRateLimiter() *rateLimiter {
@@ -45,9 +48,10 @@ func newRateLimiter() *rateLimiter {
 
 func newRateLimiterWith(limit int, window time.Duration) *rateLimiter {
 	return &rateLimiter{
-		hits:   make(map[string][]time.Time),
-		limit:  limit,
-		window: window,
+		hits:        make(map[string][]time.Time),
+		limit:       limit,
+		window:      window,
+		lastCleanup: time.Now(),
 	}
 }
 
@@ -58,22 +62,19 @@ func (rl *rateLimiter) allow(key string) bool {
 	now := time.Now()
 	cutoff := now.Add(-rl.window)
 
-	for k, times := range rl.hits {
-		filtered := make([]time.Time, 0, len(times))
-		for _, t := range times {
-			if t.After(cutoff) {
-				filtered = append(filtered, t)
-			}
-		}
-		if len(filtered) == 0 {
-			delete(rl.hits, k)
-		} else {
-			rl.hits[k] = filtered
-		}
+	// Periodic full cleanup to bound memory (runs at most once per interval)
+	if now.Sub(rl.lastCleanup) >= rateLimitCleanupInterval {
+		rl.cleanupExpired(now)
+		rl.lastCleanup = now
+	}
+
+	// Enforce hard cap: evict oldest entry if at capacity
+	if len(rl.hits) >= maxRateLimitKeys {
+		rl.evictOldest(now)
 	}
 
 	times := rl.hits[key]
-	filtered := make([]time.Time, 0, len(times))
+	filtered := times[:0]
 	for _, t := range times {
 		if t.After(cutoff) {
 			filtered = append(filtered, t)
@@ -85,6 +86,43 @@ func (rl *rateLimiter) allow(key string) bool {
 	}
 	rl.hits[key] = append(filtered, now)
 	return true
+}
+
+func (rl *rateLimiter) cleanupExpired(now time.Time) {
+	cutoff := now.Add(-rl.window)
+	for k, times := range rl.hits {
+		filtered := times[:0]
+		for _, t := range times {
+			if t.After(cutoff) {
+				filtered = append(filtered, t)
+			}
+		}
+		if len(filtered) == 0 {
+			delete(rl.hits, k)
+		} else {
+			rl.hits[k] = filtered
+		}
+	}
+}
+
+func (rl *rateLimiter) evictOldest(now time.Time) {
+	var oldestKey string
+	var oldestTime time.Time
+	first := true
+	for k, times := range rl.hits {
+		if len(times) == 0 {
+			continue
+		}
+		t := times[0]
+		if first || t.Before(oldestTime) {
+			oldestTime = t
+			oldestKey = k
+			first = false
+		}
+	}
+	if oldestKey != "" {
+		delete(rl.hits, oldestKey)
+	}
 }
 
 func clientKey(r *http.Request) string {
