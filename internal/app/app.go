@@ -437,6 +437,7 @@ func migrateDB(db *sql.DB) error {
 		"migrations/use_uuid_pk.sql",
 		"migrations/add_updated_at.sql",
 		"migrations/extend_media.sql",
+		"migrations/015_add_purchase_location_to_beers.sql",
 		"migrations/drop_legacy_comments_table.sql",
 		"migrations/enable_rls.sql",
 		"migrations/create_push_subscriptions.sql",

@@ -87,7 +87,9 @@ func (u *userUsecase) Register(ctx context.Context, user model.User) error {
 	user.Created = time.Now().UTC().Format(time.RFC3339)
 	user.Role = model.RoleUser
 
-	// Create user in the repository (user.ID will be auto-generated)
+	// Genera UUIDv7 (RFC 9562) time-ordered, idêntico ao padrão usado em
+	// OAuthLogin. A coluna id na BD é UUID (use_uuid_pk.sql), não SERIAL.
+	user.ID = uuid.MustNewV7()
 	if err := u.repo.Create(ctx, user); err != nil {
 		slog.ErrorContext(ctx, "failed to create user", "err", err)
 		return errors.NewAppError(500, "failed to create user", err)
